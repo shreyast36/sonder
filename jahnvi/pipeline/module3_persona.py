@@ -1,5 +1,6 @@
 from jahnvi.schemas.user import UserProfile, PersonaQuestionAnswers
 from jahnvi.schemas.enums import EmotionIntent
+from jahnvi.data.persona_templates import PERSONA_TEMPLATES, TEMPLATES_BY_ARCHETYPE
 
 
 def infer_persona(answers: PersonaQuestionAnswers) -> dict:
@@ -7,12 +8,9 @@ def infer_persona(answers: PersonaQuestionAnswers) -> dict:
     Classify the user into a persona archetype based on their preference answers.
     Used by Ali's routing engine and Shreyas's matching algorithm.
 
-    Suggested archetypes (your decision — add/remove as needed):
-        "Cultural Explorer"   → high culture + food interest, relaxed pace
-        "Adventure Seeker"    → high adventure + nature interest, packed pace
-        "Relaxed Wanderer"    → low energy, relaxed pace, mid-range budget
-        "Party Traveller"     → high nightlife interest, packed pace
-        "Foodie"              → food_interest == 5, culture moderate
+    Canonical archetypes are defined in jahnvi/data/persona_templates.py — do not
+    hardcode archetype names here. Use TEMPLATES_BY_ARCHETYPE for the label and
+    embed_keywords once you've classified.
 
     Expected input:
         PersonaQuestionAnswers(food_interest=5, culture_interest=4, adventure_interest=2, pace_preference="relaxed")
@@ -25,7 +23,8 @@ def infer_persona(answers: PersonaQuestionAnswers) -> dict:
             "label": "You love discovering local culture through food and art at a relaxed pace."
         }
     """
-    # TODO: rule-based or weighted classification into archetype
+    # TODO: rule-based or weighted classification — score each PERSONA_TEMPLATE
+    #       against answers.interests and answers.pace_preference, pick highest score.
     raise NotImplementedError
 
 

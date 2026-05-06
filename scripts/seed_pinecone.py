@@ -33,6 +33,7 @@ load_dotenv()
 
 from shreyas.retrieval.client import get_pinecone_index
 from shreyas.retrieval.embeddings import embed_text, embed_batch
+from jahnvi.data.persona_templates import build_embed_text, TEMPLATES_BY_ARCHETYPE
 
 
 # ── Sample data — replace with real data before launch ──────────────────────────
@@ -105,57 +106,31 @@ SAMPLE_ACTIVITIES = [
 
 # Synthetic co-traveller profiles for warm-start matching at launch.
 # Replace / supplement with real user profiles as they sign up.
+#
+# embed_text is generated via build_embed_text() from jahnvi/data/persona_templates.py
+# so it stays consistent with what infer_persona() produces for real users.
+# To add more synthetic profiles: pick an archetype from TEMPLATES_BY_ARCHETYPE and
+# call build_embed_text(template, pace, budget_style, travel_style).
+_ct = [
+    ("ct_001", "synthetic_maya_001",  "Maya Sharma",   "Delhi, India",    "Cultural Explorer", ["food", "culture", "photography"],  "relaxed",  "mid_range", "couple"),
+    ("ct_002", "synthetic_raj_002",   "Raj Patel",     "Mumbai, India",   "Adventure Seeker",  ["adventure", "nature", "hiking"],   "packed",   "mid_range", "solo"),
+    ("ct_003", "synthetic_sarah_003", "Sarah Chen",    "Singapore",       "Foodie",            ["food", "nightlife", "cooking"],    "moderate", "luxury",    "group"),
+    ("ct_004", "synthetic_james_004", "James O'Brien", "London, UK",      "Cultural Explorer", ["history", "culture", "art"],       "relaxed",  "budget",    "solo"),
+    ("ct_005", "synthetic_priya_005", "Priya Nair",    "Bangalore, India","Relaxed Wanderer",  ["yoga", "nature", "wellness"],      "relaxed",  "mid_range", "couple"),
+]
+
 SAMPLE_COTRAVELLERS = [
     {
-        "id":           "ct_001",
-        "profile_id":   "synthetic_maya_001",
-        "display_name": "Maya Sharma",
-        "location":     "Delhi, India",
-        "interests":    ["food", "culture", "photography"],
-        "pace":         "relaxed",
-        "budget_style": "mid_range",
-        "embed_text":   "Cultural Explorer relaxed pace food culture photography mid-range budget couple travel",
-    },
-    {
-        "id":           "ct_002",
-        "profile_id":   "synthetic_raj_002",
-        "display_name": "Raj Patel",
-        "location":     "Mumbai, India",
-        "interests":    ["adventure", "nature", "hiking"],
-        "pace":         "packed",
-        "budget_style": "mid_range",
-        "embed_text":   "Adventure Seeker packed pace adventure nature hiking mid-range budget solo travel",
-    },
-    {
-        "id":           "ct_003",
-        "profile_id":   "synthetic_sarah_003",
-        "display_name": "Sarah Chen",
-        "location":     "Singapore",
-        "interests":    ["food", "nightlife", "shopping"],
-        "pace":         "moderate",
-        "budget_style": "luxury",
-        "embed_text":   "Foodie moderate pace food nightlife shopping luxury budget group travel",
-    },
-    {
-        "id":           "ct_004",
-        "profile_id":   "synthetic_james_004",
-        "display_name": "James O'Brien",
-        "location":     "London, UK",
-        "interests":    ["history", "culture", "architecture"],
-        "pace":         "relaxed",
-        "budget_style": "budget",
-        "embed_text":   "Cultural Explorer relaxed pace history culture architecture budget solo travel",
-    },
-    {
-        "id":           "ct_005",
-        "profile_id":   "synthetic_priya_005",
-        "display_name": "Priya Nair",
-        "location":     "Bangalore, India",
-        "interests":    ["yoga", "nature", "wellness"],
-        "pace":         "relaxed",
-        "budget_style": "mid_range",
-        "embed_text":   "Relaxed Wanderer relaxed pace yoga nature wellness mid-range budget couple travel",
-    },
+        "id":           cid,
+        "profile_id":   pid,
+        "display_name": name,
+        "location":     loc,
+        "interests":    interests,
+        "pace":         pace,
+        "budget_style": budget,
+        "embed_text":   build_embed_text(TEMPLATES_BY_ARCHETYPE[archetype], pace, budget, style),
+    }
+    for cid, pid, name, loc, archetype, interests, pace, budget, style in _ct
 ]
 
 
