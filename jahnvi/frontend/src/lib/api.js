@@ -32,8 +32,10 @@
 //     POST /api/cotraveller/regenerate → list[CoTravellerMatch]
 //     Call when user denies all current matches or taps "Show me different people".
 //
-//   startChat(userId, profileId)
-//     POST /api/chat/start → ChatSession
+//   startChat(userId, profileId, itineraryId)
+//     POST /api/chat/start → ChatStartResponse { session, icebreaker, topics }
+//     icebreaker: string — display as a pre-filled tap-to-send suggestion at top of chat
+//     topics: string[5] — show as tappable chips at the bottom of Screen 5 (suggested topics bar)
 //
 //   approveMatch(sessionId, userId)
 //     POST /api/chat/approve → { status: "approved" | "pending" }

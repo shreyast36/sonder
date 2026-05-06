@@ -76,6 +76,29 @@ class SharedItinerary(BaseModel):
     version:         int = 0  # increment on every write; clients must send current version
 
 
+class ChatStartResponse(BaseModel):
+    """
+    Response from POST /chat/start — bundles the new session with AI-generated
+    conversation starters so the frontend can render them immediately on Screen 5.
+
+    Example:
+        ChatStartResponse(
+            session    = ChatSession(session_id="session_abc", ...),
+            icebreaker = "Hey Maya! Both foodies in Bali — what's top of your must-eat list?",
+            topics     = [
+                "Must-try local food in Bali",
+                "Beach vs adventure balance",
+                "Cultural experiences to explore",
+                "Budget-friendly activities",
+                "Best time to travel & weather"
+            ]
+        )
+    """
+    session:    ChatSession
+    icebreaker: str
+    topics:     list[str]
+
+
 class ItineraryUpdateEvent(BaseModel):
     """
     A real-time event broadcast when the shared itinerary changes.

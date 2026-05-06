@@ -1,25 +1,31 @@
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
-from shared.schemas import ChatSession, ApprovalStatus
+from shared.schemas import ChatSession, ChatStartResponse, ApprovalStatus
 from mushahid.auth import verify_token, verify_ws_token
 
 router = APIRouter()
 
 
-@router.post("/chat/start", response_model=ChatSession)
-async def start_chat(user_id: str, profile_id: str, uid: str = Depends(verify_token)):
+@router.post("/chat/start", response_model=ChatStartResponse)
+async def start_chat(user_id: str, profile_id: str, itinerary_id: str, uid: str = Depends(verify_token)):
     """
-    Create a new chat session between a user and a co-traveller profile.
+    Create a new chat session and return AI-generated conversation starters.
+    itinerary_id is required so generate_topics() can personalise topics to the trip.
 
     Expected output:
-        ChatSession(
-            session_id      = "session_abc123",
-            user_id         = "firebase_uid_abc",
-            profile_id      = "maya_001",
-            approval_status = ApprovalStatus.pending,
-            created_at      = "2025-06-01T09:00:00Z"
+        ChatStartResponse(
+            session    = ChatSession(session_id="session_abc123", user_id="...", profile_id="maya_001", ...),
+            icebreaker = "Hey Maya! Both foodies in Bali — what's top of your must-eat list?",
+            topics     = ["Must-try local food in Bali", "Beach vs adventure balance", ...]
         )
     """
-    # TODO: create ChatSession, write to Firestore, return session
+    # TODO: load UserProfile, CoTravellerMatch, Itinerary from Firestore by user_id / profile_id / itinerary_id
+    # TODO: session = ChatSession(session_id=..., user_id=user_id, profile_id=profile_id, ...)
+    # TODO: write session to Firestore
+    # TODO: icebreaker, topics = await asyncio.gather(
+    #           generate_icebreaker(user_profile, match),
+    #           generate_topics(user_profile, match, itinerary)
+    #       )
+    # TODO: return ChatStartResponse(session=session, icebreaker=icebreaker, topics=topics)
     raise NotImplementedError
 
 
