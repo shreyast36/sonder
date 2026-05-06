@@ -39,5 +39,41 @@ async def generate_itinerary(
     Note: why_this fields are populated separately by ali/rag/explainer.py after generation.
     """
     prompt = build_itinerary_prompt(user_profile, destination, activities)
-    # TODO: async for chunk in stream_request("itinerary_generation", prompt, ITINERARY_SYSTEM_PROMPT): yield chunk
+    # Gap 1: yield every token chunk immediately — do NOT buffer.
+    # Mushahid's orchestrator wraps each chunk in format_event("generating", {"chunk": chunk})
+    # so the frontend sees text appearing in real time.
+    # TODO: async for chunk in stream_request("itinerary_generation", prompt, ITINERARY_SYSTEM_PROMPT):
+    #           yield chunk
+    raise NotImplementedError
+
+
+async def generate_itinerary_by_day(
+    user_profile: UserProfile,
+    destination: Destination,
+    activities: list[Activity],
+):
+    """
+    [Gap 4] Stream the itinerary and yield each ItineraryDay as soon as its JSON
+    is fully parseable — without waiting for all days to finish.
+
+    The orchestrator uses this to immediately launch explain_day() for each completed
+    day while the generator is still producing subsequent days, pipelining generation
+    and explanation.
+
+    Expected streaming output — one ItineraryDay object per yield:
+        ItineraryDay(day_number=1, theme="Culture & Coastal Views", activities=[...])
+        ItineraryDay(day_number=2, theme="Beach & Snorkelling", activities=[...])
+        ...
+
+    Implementation note:
+        Buffer the raw token stream, attempt to parse each completed day object
+        as soon as its closing brace appears in the accumulated JSON.
+        Yield the ItineraryDay immediately on successful parse.
+    """
+    prompt = build_itinerary_prompt(user_profile, destination, activities)
+    # TODO: buffer = ""
+    # TODO: async for chunk in stream_request("itinerary_generation", prompt, ITINERARY_SYSTEM_PROMPT):
+    #           buffer += chunk
+    #           while a complete day object can be extracted from buffer:
+    #               yield parse_day(extracted_day_json)
     raise NotImplementedError

@@ -48,3 +48,24 @@ def build_user_query(user_profile: UserProfile) -> str:
     """
     # TODO: concatenate relevant fields into a single descriptive sentence
     raise NotImplementedError
+
+
+def build_refined_query(user_profile: UserProfile, feedback: str) -> str:
+    """
+    [Gap 2] Extend build_user_query() with the user's explicit feedback text so the
+    re-embedding captures intent that wasn't in the original preference answers.
+    Called by the refinement loop before re-querying Pinecone.
+
+    Expected input:
+        user_profile = UserProfile(compatibility_signals={"pace": "relaxed", "top_interests": ["adventure", "food"]})
+        feedback     = "I want more adventure and less time in museums"
+
+    Expected output:
+        "beach trip | relaxed pace | budget $2000 | food=5 adventure=5 culture=1 | mood: excited | feedback: more adventure, less museums"
+
+    This string is embedded and used to re-query Pinecone — giving the retrieval layer
+    a fresh signal rather than reusing the stale original embedding.
+    """
+    # TODO: base = build_user_query(user_profile)
+    # TODO: return f"{base} | feedback: {feedback}"
+    raise NotImplementedError

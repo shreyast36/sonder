@@ -52,6 +52,9 @@ BEDROCK_EMBED_MODEL_ID = os.getenv("BEDROCK_EMBED_MODEL_ID")  # Shreyas: set if 
 # Provided by ElastiCache; ignored when LOCAL_MODE=true (in-memory fallback is fine locally)
 REDIS_URL = os.getenv("REDIS_URL")
 
+# Presence TTL — users are considered offline if no heartbeat within this window
+PRESENCE_TTL_SECONDS = int(os.getenv("PRESENCE_TTL_SECONDS", "90"))
+
 # App
 LOCAL_MODE = os.getenv("LOCAL_MODE", "true").lower() == "true"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

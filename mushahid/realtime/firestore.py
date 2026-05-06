@@ -50,3 +50,24 @@ async def get_itinerary(itinerary_id: str) -> Itinerary | None:
     # TODO: doc = get_db().collection("itineraries").document(itinerary_id).get()
     # TODO: return Itinerary(**doc.to_dict()) if doc.exists else None
     raise NotImplementedError
+
+
+async def update_user_profile(user_id: str, updates: dict) -> None:
+    """
+    [Gap 3] Write updated profile fields back to Firestore so future sessions
+    start with the user's refined signals rather than the original preference answers.
+
+    Called by the refinement loop after update_profile_from_feedback() runs.
+
+    Firestore path: user_profiles/{user_id}
+    Only writes the fields in `updates` — does not overwrite the whole document.
+
+    Expected input:
+        user_id = "firebase_uid_abc123"
+        updates = {
+            "compatibility_signals":  {"pace": "relaxed", "top_interests": ["adventure", "food"]},
+            "travel_style_embedding": [0.041, -0.193, ...]
+        }
+    """
+    # TODO: get_db().collection("user_profiles").document(user_id).update(updates)
+    raise NotImplementedError

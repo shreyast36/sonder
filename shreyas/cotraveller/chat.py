@@ -68,3 +68,22 @@ class ConnectionManager:
         """Broadcast a seen receipt event."""
         # TODO: broadcast {"type": "seen", "message_id": message_id, "user_id": user_id}
         raise NotImplementedError
+
+    async def handle_ping(self, user_id: str) -> None:
+        """
+        [Gap 5] Handle a heartbeat ping from the client.
+        The client sends {"type": "ping"} every ~30 seconds to keep presence alive.
+        Call presence.heartbeat(user_id) to refresh last_seen in Firestore.
+
+        Client → Server message shape:
+            {"type": "ping"}
+
+        Full inbound message types the WebSocket handler must route:
+            "message" → broadcast_to_session()
+            "typing"  → send_typing_indicator()
+            "seen"    → send_seen_receipt()
+            "ping"    → handle_ping()      ← Gap 5
+        """
+        # TODO: from shreyas.cotraveller.presence import heartbeat
+        # TODO: await heartbeat(user_id)
+        raise NotImplementedError

@@ -83,3 +83,33 @@ def build_travel_style_embedding(profile: UserProfile) -> list[float]:
     """
     # TODO: build a descriptive string from the profile, call shreyas/retrieval/embeddings.py embed_text()
     raise NotImplementedError
+
+
+def update_profile_from_feedback(profile: UserProfile, feedback: str) -> UserProfile:
+    """
+    [Gap 3] Merge explicit user feedback into the profile's signals and re-embed.
+    Called by the refinement loop before every re-ranking pass so Pinecone is
+    queried with signals that reflect what the user actually wants — not just the
+    original preference answers.
+
+    Expected input:
+        profile  = UserProfile(compatibility_signals={"pace": "relaxed", "top_interests": ["food", "culture"]})
+        feedback = "I want more adventure and less time in museums"
+
+    Expected output:
+        UserProfile with updated compatibility_signals:
+            {"pace": "relaxed", "top_interests": ["adventure", "food"], "feedback_weight": 0.4}
+        And updated travel_style_embedding (re-embedded from the merged signals).
+
+    Steps:
+        1. Parse feedback text for intent signals (boost adventure, drop culture, etc.)
+           — rule-based keywords or a SMALL model call (Ali's route_request)
+        2. Merge parsed signals into profile.compatibility_signals
+        3. Rebuild the embedding string with the new signals + feedback text appended
+        4. Re-call embed_text() to get a fresh travel_style_embedding
+        5. Return the updated profile — caller writes it to Firestore
+    """
+    # TODO: parse feedback for signal updates
+    # TODO: merge into profile.compatibility_signals
+    # TODO: profile.travel_style_embedding = build_travel_style_embedding(profile)
+    raise NotImplementedError
