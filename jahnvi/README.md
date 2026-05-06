@@ -85,13 +85,16 @@ Use **Figma Make** to generate your React components directly from your Figma de
 5. Do not skip the Figma step and code directly — Figma Make only works well from a real design
 
 **Design tokens to define in Figma first:**
-- Background: deep dark purple/navy (`~#0a0a1a`)
-- Primary: purple accent (`~#7C3AED`)
-- Surface: glass-morphism cards with subtle borders
-- Match badge: green gradient for high scores
+- Background: deep dark indigo (`#06061a`)
+- Primary: purple accent (`#7C3AED`)
+- Surface: glass-morphism cards with subtle borders (`#11112b` with `rgba` border)
+- Match scores: green (`#22c55e`) — used only for compatibility percentages
+- Live/sync states: cyan (`#22d3ee`) — used only for presence dots and real-time indicators
 - Buttons: rounded, purple primary / red destructive
 
 Once generated, paste Tailwind color tokens into `frontend/tailwind.config.js`.
+
+**Reference UI to look at for inspiration:** Linear.app, Vercel.com, Loom.com — all use dark mode + single accent colour + glass cards effectively.
 
 ---
 
