@@ -147,13 +147,16 @@ candidates   = [CoTravellerProfile(...), ...]  # 20 profiles from Pinecone
 # Client → Server
 {"type": "message", "content": "Hey! Excited to connect!"}
 {"type": "typing"}
-{"type": "seen", "message_id": "msg_001"}
+{"type": "seen",    "message_id": "msg_001"}
+{"type": "ping"}    # presence heartbeat — sent every 30s by frontend; resets 90s TTL in Firestore
 
 # Server → Client (broadcast)
 {"type": "message",  "sender_id": "user_abc", "content": "Hey!",   "timestamp": "2025-06-01T09:30:00Z"}
 {"type": "typing",   "user_id":   "user_abc"}
 {"type": "seen",     "message_id": "msg_001", "user_id": "user_abc"}
 ```
+
+**Note:** `generate_topics()` and `generate_icebreaker()` from `ali/generation/topics.py` are called by Mushahid's `POST /chat/start` route — you do not call them directly. The results are returned to the frontend in `ChatStartResponse`.
 
 **`approval.py`**
 ```python
@@ -173,9 +176,12 @@ SharedItinerary(
     user_ids        = ["firebase_uid_abc", "maya_001"],
     itinerary       = Itinerary(...),
     notes           = [],
-    last_updated_by = None
+    last_updated_by = None,
+    version         = 0   # increment on every write; clients send current version for optimistic locking
 )
 ```
+
+**Optimistic locking:** every write must check `client_version == current_version` in Firestore. If they don't match, return HTTP 409 — the client must re-fetch and re-apply their change. This prevents silent overwrites when both users edit simultaneously.
 
 ---
 

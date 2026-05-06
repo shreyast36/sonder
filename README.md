@@ -11,12 +11,13 @@ AI-powered trip planning, smart co-traveller matching, and real-time collaborati
 Sonder takes a user from zero to a fully personalised, day-by-day itinerary and then matches them with a compatible co-traveller to plan, chat, and travel together in real time.
 
 **User journey:**
-1. Enter trip basics (destination, dates, budget, must-haves)
+1. Enter trip basics (destination, dates, budget in any currency, must-haves)
 2. Answer preference questions (travel style, pace, interests)
-3. Receive a live-generated itinerary with "Why this?" explanations
-4. Refine with free-text feedback — the system adapts automatically
-5. Get matched with a compatible co-traveller (AI scoring)
-6. Chat, approve, and build a shared itinerary together in real time
+3. Receive a live-generated itinerary with "Why this?" explanations per activity
+4. Refine with free-text feedback or tap individual activities to swap/remove them
+5. Get matched with a compatible co-traveller (AI scoring + persona archetypes)
+6. Chat with AI-generated icebreakers and conversation starters
+7. Approve, build a shared itinerary together in real time, then email or download it as PDF
 
 ---
 
@@ -44,9 +45,11 @@ Sonder takes a user from zero to a fully personalised, day-by-day itinerary and 
 
 ```
 sonder/
-├── shared/                  # Pydantic schemas + config — owned by Jahnvi, imported by all
-│   ├── schemas.py
-│   └── config.py
+├── shared/                  # Pydantic schemas + config + utilities — owned by Jahnvi
+│   ├── schemas.py           # Re-exports all models from jahnvi/schemas/
+│   ├── config.py            # All env var reads — never call os.getenv() outside here
+│   ├── currency.py          # Multi-currency conversion (live rates + 30-currency fallback)
+│   └── email.py             # Transactional email — Resend / SendGrid / SES
 │
 ├── shreyas/                 # Retrieval, Ranking, Co-traveller Real-time
 │   ├── retrieval/           # Pinecone vector search + embeddings
@@ -56,6 +59,7 @@ sonder/
 ├── jahnvi/                  # User Pipeline, Schemas, Frontend
 │   ├── schemas/             # All user-facing Pydantic models
 │   ├── pipeline/            # Modules 1–3: constraints, preferences, persona/emotion
+│   ├── data/                # Persona archetype templates — drives infer_persona() + seeding
 │   └── frontend/            # React + Vite app (9 screens, hooks, Firebase client)
 │
 ├── ali/                     # AI Intelligence Layer
@@ -72,6 +76,10 @@ sonder/
 │   ├── refinement/          # Closed-loop regeneration (re-rank → re-query → re-validate)
 │   └── realtime/            # Firestore state, SSE helpers, push notifications
 │
+├── scripts/
+│   ├── seed_pinecone.py     # One-time Pinecone seeding (destinations, activities, co-travellers)
+│   └── progress.py          # Dev tracker — auto-checks TASKS.md on every push
+│
 ├── .env.example
 ├── requirements.txt
 └── TASKS.md
@@ -80,12 +88,12 @@ sonder/
 ### Core System Pipeline
 
 ```
-User Input (Module 1)
+User Input (Module 1) — budget converted to USD at boundary
     → Preferences & Persona (Modules 2–3)           [Jahnvi]
     → Vector Retrieval — Pinecone (Module 4)         [Shreyas]
     → Ranking & Filtering (Module 5)                 [Shreyas]
     → Itinerary Generation — Multi-model (Module 6)  [Ali]
-    → RAG Explanations                               [Ali]
+    → RAG Explanations ("Why this?" per activity)    [Ali]
     → Validation — Critic + Rules                    [Mushahid]
     → Refinement Loop (if REVISE)                    [Mushahid]
     → Co-Traveller Matching                          [Shreyas]
@@ -96,11 +104,13 @@ User Input (Module 1)
 
 Every AI request is routed to the right model based on complexity, latency, and cost:
 
-| Tier | Task Types | Used For |
-|---|---|---|
-| **Small** | Ali's decision | Chat topics, persona labels, quick edits, notifications |
-| **Large** | Ali's decision | Full itinerary generation, RAG explanations, conflict resolution |
-| **Validator** | Ali's decision | Feasibility checks, constraint scoring, improvement suggestions |
+| Tier | Used For |
+|---|---|
+| **Small** | Chat topics, icebreakers, persona labels, quick edits |
+| **Large** | Full itinerary generation, RAG explanations, conflict resolution |
+| **Validator** | Feasibility checks, constraint scoring, improvement suggestions |
+
+Model names and providers are Ali's decision — set via env vars, never hardcoded.
 
 ### Real-Time Experience Layer
 
@@ -133,15 +143,18 @@ Powered by **Firestore + WebSockets**:
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/shreyast36/pearl-travel-planner
-cd pearl-travel-planner
+git clone https://github.com/shreyast36/sonder
+cd sonder
 pip install -r requirements.txt
 
 # 2. Configure environment
 cp .env.example .env
 # Fill in all API keys in .env
 
-# 3. Run backend
+# 3. Seed Pinecone (first time only)
+python -m scripts.seed_pinecone --namespace all
+
+# 4. Run backend
 uvicorn mushahid.main:app --reload --port 8000
 ```
 
@@ -161,17 +174,20 @@ npm run dev
 
 ### API Endpoints
 
-| Method | Route | Description |
-|---|---|---|
-| `POST` | `/plan-trip` | Generate itinerary — returns SSE stream |
-| `POST` | `/update-trip` | Refine itinerary with user feedback |
-| `POST` | `/cotraveller` | Get top-3 co-traveller matches |
-| `POST` | `/chat/start` | Start a chat session |
-| `POST` | `/chat/approve` | Approve a co-traveller match |
-| `POST` | `/chat/deny` | Deny a co-traveller match |
-| `WS` | `/ws/chat/{session_id}` | Real-time chat WebSocket |
-| `GET` | `/visa-check` | Visa requirement lookup |
-| `GET` | `/health` | Service health check |
+| Method | Route | Auth | Returns |
+|---|---|---|---|
+| `GET` | `/health` | None | Service status + Firestore/Pinecone ping |
+| `GET` | `/visa-check` | None | `VisaInfo` |
+| `POST` | `/plan-trip` | Firebase token | SSE stream → `PlanTripResponse` |
+| `POST` | `/update-trip` | Firebase token | `UpdateTripResponse` — accepts free-text or per-activity `ActivityFeedback` |
+| `POST` | `/cotraveller` | Firebase token | `list[CoTravellerMatch]` |
+| `POST` | `/cotraveller/regenerate` | Firebase token | `list[CoTravellerMatch]` — new matches excluding prior profiles |
+| `POST` | `/chat/start` | Firebase token | `ChatStartResponse` (session + icebreaker + 5 topics) |
+| `POST` | `/chat/approve` | Firebase token | `{"status": "approved" \| "pending"}` |
+| `POST` | `/chat/deny` | Firebase token | `{"status": "denied"}` |
+| `WS` | `/ws/chat/{session_id}` | Firebase token (query param) | Real-time chat stream |
+| `POST` | `/export/email` | Firebase token | `{"sent_to": [...]}` — emails itinerary to co-travellers |
+| `GET` | `/export/pdf/{itinerary_id}` | Firebase token (query param) | PDF stream download |
 
 ### SSE Event Sequence (`/plan-trip`)
 
@@ -188,6 +204,22 @@ persona_inferring → persona_inferred
 
 ---
 
+## Key Design Decisions
+
+### Multi-currency
+All internal cost fields (`budget_usd`, `cost_usd`, `avg_daily_cost_usd`, etc.) are always USD. Conversion happens once at the input boundary in `capture_constraints()` via `shared/currency.py`. The frontend sends `budget_amount` + `budget_currency` (ISO 4217), never `budget_usd` directly.
+
+### Per-activity feedback
+`POST /update-trip` accepts both free-text feedback and a list of `ActivityFeedback` objects `{activity_id, action: "swap"|"remove"|"adjust_time", reason?}`. The refinement loop applies targeted changes rather than rewriting the whole itinerary.
+
+### Persona archetypes
+Five canonical archetypes (Cultural Explorer, Adventure Seeker, Relaxed Wanderer, Party Traveller, Foodie) are defined in `jahnvi/data/persona_templates.py`. This drives `infer_persona()` classification and the Pinecone co-traveller seeding script — both use the same vocabulary so embeddings are consistent.
+
+### Chat prompt suggestions
+`POST /chat/start` returns a `ChatStartResponse` with the new session, a personalised icebreaker message, and 5 AI-generated conversation topics. Both are generated by the SMALL model tier in `ali/generation/topics.py`.
+
+---
+
 ## Deployment
 
 ### Backend → Render
@@ -196,6 +228,7 @@ persona_inferring → persona_inferred
 2. Set build command: `pip install -r requirements.txt`
 3. Set start command: `uvicorn mushahid.main:app --host 0.0.0.0 --port 8000`
 4. Add all environment variables from `.env.example`
+5. Set health check path to `/health`
 
 ### Frontend → Vercel
 

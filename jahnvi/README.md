@@ -10,9 +10,10 @@ You define what the product looks like and how users interact with it. Everythin
 |---|---|
 | `schemas/` | All Pydantic models and enums — the single source of truth for data shapes |
 | `pipeline/` | Modules 1–3: constraint capture, preference questions, persona & emotion inference |
+| `data/` | Persona archetype templates — drives `infer_persona()` classification and Pinecone warm-start seeding |
 | `frontend/` | React + Vite app — all 9 screens, Firebase Auth, Firestore listeners, SSE + WebSocket hooks |
 
-**Also owns:** `shared/schemas.py` and `shared/config.py` — copy finalised models here so everyone can import them.
+**Also owns:** `shared/schemas.py`, `shared/config.py`, and `shared/currency.py` — copy finalised models here so everyone can import them.
 
 ---
 
@@ -115,7 +116,8 @@ TripConstraints(
     destination_type = "beach",
     start_date       = date(2025, 6, 1),
     end_date         = date(2025, 6, 7),
-    budget_usd       = 2000.0,
+    budget_usd       = 1796.41,   # always USD — converted at capture time
+    budget_currency  = "INR",     # kept for display purposes
     group_size       = 2,
     pace_preference  = PacePreference.relaxed,
     must_haves       = ["snorkeling", "local food"],
@@ -139,21 +141,35 @@ UserProfile(
 
 ### Module 1 — `capture_constraints`
 
+`capture_constraints` is `async` — it calls `convert_to_usd()` which may hit the exchange rate API.
+
 ```python
 # Input (raw form from Screen 2)
+# Frontend sends budget_amount + budget_currency — never budget_usd directly
 {
-    "destination_type": "beach",
-    "start_date": "2025-06-01",
-    "end_date": "2025-06-07",
-    "budget_usd": 2000.0,
-    "group_size": 2,
-    "pace_preference": "relaxed",
-    "must_haves": ["snorkeling", "local food"],
-    "avoid_list": ["nightclubs"]
+    "destination_type":  "beach",
+    "start_date":        "2025-06-01",
+    "end_date":          "2025-06-07",
+    "budget_amount":     150000.0,
+    "budget_currency":   "INR",    # ISO 4217 — defaults to "USD" if omitted
+    "group_size":        2,
+    "pace_preference":   "relaxed",
+    "must_haves":        ["snorkeling", "local food"],
+    "avoid_list":        ["nightclubs"]
 }
 
-# Output
-TripConstraints(destination_type="beach", start_date=date(2025,6,1), ...)
+# Output — budget_usd is always USD; budget_currency kept for display
+TripConstraints(
+    destination_type = "beach",
+    start_date       = date(2025, 6, 1),
+    end_date         = date(2025, 6, 7),
+    budget_usd       = 1796.41,   # converted from 150000 INR
+    budget_currency  = "INR",
+    group_size       = 2,
+    pace_preference  = PacePreference.relaxed,
+    must_haves       = ["snorkeling", "local food"],
+    avoid_list       = ["nightclubs"]
+)
 ```
 
 ### Module 2 — `parse_answers`
@@ -195,7 +211,7 @@ Design all 9 in Figma → generate with Figma Make → customise in React.
 | 4. Match Detail | `/match/:id` | Compatibility breakdown, topics list, Start Chat → `/chat/:id` |
 | 5. Chat | `/chat/:sessionId` | WebSocket messages, typing indicators, AI icebreakers |
 | 6. Approve / Deny | `/approve/:id` | Two buttons, live status via Firestore listener |
-| 7. Shared Itinerary | `/trip/:id` | Firestore real-time sync, "Added by" labels |
+| 7. Shared Itinerary | `/trip/:id` | Firestore real-time sync, "Added by" labels, email/PDF export |
 | 8. Notes | `/trip/:id/notes` | Firestore notes array, real-time updates |
 | 9. Dashboard | `/dashboard` | Firestore trip list, active chats |
 

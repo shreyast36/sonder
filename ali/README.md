@@ -60,7 +60,7 @@ The routing engine (`routing/engine.py`) reads these at runtime and instantiates
 | **Mushahid** | `generate_itinerary()` streaming generator | `pipeline/orchestrator.py` step 4 | Before the itinerary pipeline runs |
 | **Mushahid** | `explain_itinerary()` — populates all `why_this` fields | `pipeline/orchestrator.py` step 5 | Before the explainer step runs |
 | **Mushahid** | `generate_itinerary()` again for re-generation | `refinement/loop.py` | Before the refinement loop works |
-| **Shreyas** | `generate_topics()` + `generate_icebreaker()` from `generation/topics.py` | `shreyas/cotraveller/chat.py` sends these as AI-generated suggestions | Before chat feature is complete |
+| **Mushahid** | `generate_topics()` + `generate_icebreaker()` from `generation/topics.py` | `mushahid/routes/chat.py` calls both concurrently in `start_chat`, returns in `ChatStartResponse` | Before chat feature is complete |
 | **Everyone** | Decision on `EMBED_MODEL` + `EMBED_DIMENSIONS` | Goes into `shared/config.py`; Shreyas needs this to configure Pinecone | **Announce this early — Shreyas is blocked on it** |
 
 ---
@@ -154,8 +154,10 @@ user_profile = UserProfile(persona_answers=PersonaQuestionAnswers(culture_intere
 
 ### `generation/topics.py` — chat topics
 
+Both functions are called by Mushahid's `POST /chat/start` route via `asyncio.gather` and returned in `ChatStartResponse`. You do not expose these as separate endpoints.
+
 ```python
-# generate_topics — output (shown on Screen 4 and Screen 5)
+# generate_topics — output (5 chips shown at bottom of Screen 5)
 [
     "Must-try local food in Bali",
     "Beach vs adventure balance",
@@ -164,9 +166,11 @@ user_profile = UserProfile(persona_answers=PersonaQuestionAnswers(culture_intere
     "Best time to travel & weather"
 ]
 
-# generate_icebreaker — output (suggested first message on Screen 5)
+# generate_icebreaker — output (pre-filled tap-to-send suggestion at top of Screen 5)
 "Hey Maya! I noticed you're also a foodie — what's the one dish you're most excited to try in Bali?"
 ```
+
+Inputs: `user_profile: UserProfile`, `match: CoTravellerMatch`, and (for `generate_topics`) `itinerary: Itinerary` so topics are grounded in the actual trip plan.
 
 ### `generation/output_parser.py` — JSON parsing
 

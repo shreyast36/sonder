@@ -70,29 +70,25 @@ You own the API, the pipeline that ties all modules together, the validation loo
 
 ---
 
-### Email notifications
-For important events when the app is closed (co-traveller match found, mutual approval reached).
+### Email notifications + itinerary export
+Email is used for two purposes: (1) event notifications when the app is closed, (2) user-triggered itinerary delivery via `POST /export/email`.
+
+The provider is unified via `shared/email.py` — set `EMAIL_PROVIDER` in `.env` to switch:
 
 | Option | Notes |
 |---|---|
-| **Amazon SES** | Already on AWS — cheapest option ($0.10 per 1k emails), best deliverability. Requires domain verification. |
-| **SendGrid** | Easier setup, good free tier (100 emails/day). Better developer experience, rich templates. |
-| **Resend** | Modern API, excellent developer experience, generous free tier (3k emails/month). Worth considering. |
-
-**Recommended: SES** if you're committed to the AWS stack. **SendGrid or Resend** if you want faster setup.
+| **Resend** | Best developer experience, generous free tier (3k/month), modern API. Recommended for getting started fast. |
+| **SendGrid** | Good free tier (100/day), rich templates, broad deliverability tooling. |
+| **AWS SES** | Cheapest at scale ($0.10/1k), best deliverability. Requires domain verification + production access request. |
 
 Add to `.env`:
 ```bash
-# SES
-AWS_SES_FROM_EMAIL=noreply@yourdomain.com
-
-# or SendGrid
-SENDGRID_API_KEY=SG...
-SENDGRID_FROM_EMAIL=noreply@yourdomain.com
-
-# or Resend
-RESEND_API_KEY=re_...
+EMAIL_PROVIDER=resend        # resend | sendgrid | ses
+EMAIL_API_KEY=               # API key for chosen provider
+EMAIL_FROM=itinerary@sonder.app  # verified sender address
 ```
+
+PDF export uses `weasyprint` to render the same HTML template as the email — add it to `requirements.txt`.
 
 ---
 
@@ -121,15 +117,18 @@ SHERPA_API_KEY=your-key          # if using Sherpa
 
 | Method | Route | Auth | Returns |
 |---|---|---|---|
-| `GET` | `/health` | None | Service status dict |
+| `GET` | `/health` | None | `{"status": "healthy"\|"degraded", "services": {...}}` |
 | `GET` | `/visa-check?destination_country=X&nationality=Y` | None | `VisaInfo` |
 | `POST` | `/plan-trip` | Firebase token | SSE stream → `PlanTripResponse` |
-| `POST` | `/update-trip` | Firebase token | `UpdateTripResponse` |
+| `POST` | `/update-trip` | Firebase token | `UpdateTripResponse` — accepts `activity_feedback` for targeted swaps |
 | `POST` | `/cotraveller` | Firebase token | `list[CoTravellerMatch]` |
-| `POST` | `/chat/start` | Firebase token | `ChatSession` |
+| `POST` | `/cotraveller/regenerate` | Firebase token | `list[CoTravellerMatch]` — excludes prior profiles |
+| `POST` | `/chat/start` | Firebase token | `ChatStartResponse` (session + icebreaker + 5 topics) |
 | `POST` | `/chat/approve` | Firebase token | `{"status": "approved" \| "pending"}` |
 | `POST` | `/chat/deny` | Firebase token | `{"status": "denied"}` |
-| `WS` | `/ws/chat/{session_id}` | Firebase token | Real-time chat stream |
+| `WS` | `/ws/chat/{session_id}` | Firebase token (query param) | Real-time chat stream |
+| `POST` | `/export/email` | Firebase token | `{"sent_to": [...]}` |
+| `GET` | `/export/pdf/{itinerary_id}` | Firebase token (query param) | PDF stream |
 
 ### Auth Pattern — every protected route
 
@@ -293,13 +292,15 @@ presence/{user_id}                  ← { "online": true, "last_seen": "..." }
 
 1. `main.py` + Firebase Admin init in `realtime/firestore.py`
 2. `realtime/sse.py` — needed by orchestrator
-3. `routes/health.py` + `routes/visa.py` — test the server is running
+3. `routes/health.py` + `routes/visa.py` — verify server is running
 4. `validation/rules.py` (no LLM dependency, easy to test)
-5. `validation/critic.py` (depends on Ali's routing engine being ready)
+5. `validation/critic.py` (depends on Ali's routing engine)
 6. `realtime/notifications.py`
-7. `pipeline/orchestrator.py` (depends on everyone else — build last)
-8. All remaining routes
-9. `refinement/loop.py`
+7. `routes/chat.py` — `start_chat` calls `generate_topics()` + `generate_icebreaker()` concurrently via `asyncio.gather`
+8. `pipeline/orchestrator.py` (depends on everyone else — build last)
+9. All remaining routes
+10. `refinement/loop.py` — accepts `activity_feedback` in addition to free-text
+11. `routes/export.py` — email + PDF; add `weasyprint` to `requirements.txt`
 
 ## Deployment
 
