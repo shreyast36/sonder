@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Literal, Optional
 from jahnvi.schemas.user import TripConstraints, PersonaQuestionAnswers, UserProfile
 from jahnvi.schemas.trip import Itinerary
 from jahnvi.schemas.cotraveller import CoTravellerMatch
@@ -63,19 +64,58 @@ class PlanTripResponse(BaseModel):
 
 # ── Update Trip ───────────────────────────────────────────────────────────────────
 
+class ActivityFeedback(BaseModel):
+    """
+    Per-activity feedback submitted when the user taps "swap" or thumbs-down on an
+    activity card. Passed alongside free-text feedback in UpdateTripRequest so the
+    refinement loop can apply targeted changes instead of rewriting the whole itinerary.
+
+    action values:
+        "swap"        — replace this activity with something different
+        "remove"      — drop this activity entirely, free up the time slot
+        "adjust_time" — keep the activity but move it (reason should specify when)
+
+    Example:
+        ActivityFeedback(
+            activity_id = "uluwatu_001",
+            action      = "swap",
+            reason      = "Not into temples — prefer something more active"
+        )
+    """
+    activity_id: str
+    action:      Literal["swap", "remove", "adjust_time"]
+    reason:      Optional[str] = None
+
+
 class UpdateTripRequest(BaseModel):
     """
     Request body for POST /update-trip.
 
-    Example:
+    Send either free-text feedback, per-activity feedback, or both.
+    The refinement loop converts activity_feedback to structured signal updates
+    before re-embedding — so targeted swaps don't pollute the whole profile.
+
+    Example (free-text only):
         UpdateTripRequest(
             itinerary_id      = "itin_abc123",
             feedback          = "I want more free time each day, fewer activities.",
             current_itinerary = Itinerary(...)
         )
+
+    Example (per-activity):
+        UpdateTripRequest(
+            itinerary_id      = "itin_abc123",
+            feedback          = "",
+            activity_feedback = [
+                ActivityFeedback(activity_id="uluwatu_001", action="swap", reason="prefer active over temples"),
+                ActivityFeedback(activity_id="seminyak_001", action="remove")
+            ],
+            current_itinerary = Itinerary(...)
+        )
     """
     itinerary_id:       str
-    feedback:           str
+    feedback:           str = ""
+    activity_feedback:  list[ActivityFeedback] = []
     current_itinerary:  Itinerary
 
 

@@ -1,4 +1,4 @@
-from shared.schemas import Itinerary, UserProfile, ValidationResult, UpdateTripResponse
+from shared.schemas import Itinerary, UserProfile, ValidationResult, UpdateTripResponse, ActivityFeedback
 from shared.config import MAX_REFINEMENT_ATTEMPTS
 # TODO: from jahnvi.pipeline.module3_persona import update_profile_from_feedback
 # TODO: from shreyas.retrieval.embeddings import build_refined_query, embed_text
@@ -11,6 +11,7 @@ async def run_refinement_loop(
     user_profile: UserProfile,
     feedback: str,
     validation_result: ValidationResult,
+    activity_feedback: list[ActivityFeedback] | None = None,
 ) -> UpdateTripResponse:
     """
     Closed-loop regeneration. Iterates up to MAX_REFINEMENT_ATTEMPTS times until
@@ -65,6 +66,13 @@ async def run_refinement_loop(
         )
     """
     # TODO: for attempt in range(MAX_REFINEMENT_ATTEMPTS):
+    #
+    #   Merge per-activity feedback into free-text before profile update so the
+    #   signal update sees both. Convert activity_feedback to a structured string:
+    #   e.g. "swap uluwatu_001 (prefer active over temples); remove seminyak_001"
+    #   and append to feedback so update_profile_from_feedback() processes it once.
+    #   Also pass activity_feedback directly to generate_itinerary() so the prompt
+    #   can explicitly exclude or replace the flagged activity_ids.
     #
     #   Gap 3 — update profile from feedback (call before re-embedding)
     #   user_profile = update_profile_from_feedback(user_profile, feedback)

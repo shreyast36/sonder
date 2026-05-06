@@ -24,6 +24,9 @@
 //
 //   updateTrip(request)
 //     POST /api/update-trip → UpdateTripResponse
+//     request: { itinerary_id, feedback?, activity_feedback?, current_itinerary }
+//     Send feedback (string), activity_feedback (ActivityFeedback[]), or both.
+//     activity_feedback: [{ activity_id, action: "swap"|"remove"|"adjust_time", reason? }]
 //
 //   getCotravellers(userId, itineraryId)
 //     POST /api/cotraveller → list[CoTravellerMatch]
