@@ -21,13 +21,14 @@ class TripConstraints(BaseModel):
         )
     """
     destination_type: str
-    start_date: date
-    end_date: date
-    budget_usd: float
-    group_size: int
-    pace_preference: PacePreference
-    must_haves: list[str] = Field(default_factory=list)
-    avoid_list: list[str] = Field(default_factory=list)
+    start_date:       date
+    end_date:         date
+    budget_usd:       float         # always USD — converted from budget_input_amount by capture_constraints()
+    budget_currency:  str = "USD"   # ISO 4217 code the user entered; kept for display only
+    group_size:       int
+    pace_preference:  PacePreference
+    must_haves:       list[str] = Field(default_factory=list)
+    avoid_list:       list[str] = Field(default_factory=list)
 
 
 class PersonaQuestionAnswers(BaseModel):
