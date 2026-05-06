@@ -24,12 +24,20 @@ TASK_RE = re.compile(r'^(\s*- )\[([ x])\] `([^`]+\.py)`(.*)')
 def file_has_stubs(path: Path) -> bool:
     """
     Return True if the file doesn't exist yet, or if any public function
-    in the file still raises NotImplementedError.
+    in the file still raises NotImplementedError, or if it contains TODO
+    markers that indicate the core work hasn't been done.
     """
     if not path.exists():
         return True
+    source = path.read_text(encoding="utf-8")
+
+    # Special case: main.py is done only when routers are actually registered,
+    # not just commented out.
+    if path.name == "main.py" and "# app.include_router(" in source:
+        return True
+
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        tree = ast.parse(source)
     except SyntaxError:
         return True
 
@@ -77,7 +85,7 @@ def update() -> dict[str, tuple[int, int]]:
             changed_lines.append(line)
             continue
 
-        bullet, current_mark, filepath_str, rest = m.groups()
+        _, current_mark, filepath_str, _ = m.groups()
         counts.setdefault(current_owner, [0, 0])
         counts[current_owner][1] += 1      # total
 
@@ -87,7 +95,8 @@ def update() -> dict[str, tuple[int, int]]:
         if new_mark == "x":
             counts[current_owner][0] += 1  # done
 
-        changed_lines.append(f"{bullet}[{new_mark}] `{filepath_str}`{rest}")
+        # Replace the mark in-place — never reconstruct the line, so \r\n endings survive.
+        changed_lines.append(line.replace(f"[{current_mark}]", f"[{new_mark}]", 1))
 
     TASKS_FILE.write_text("".join(changed_lines), encoding="utf-8")
     return {owner: (d, t) for owner, (d, t) in counts.items()}
