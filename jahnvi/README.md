@@ -243,6 +243,148 @@ fetch('/api/plan-trip', { headers: { Authorization: `Bearer ${token}` } })
 
 ---
 
+## Welcome Screen — What Was Built (Design Reference)
+
+A working Welcome screen (`src/pages/Welcome.jsx`) was scaffolded as a design starting point. **This is a suggestion, not a constraint — you own this entirely and should redesign it in Figma first, then replace it.**
+
+### Design decisions made
+
+**Colour palette** (in `tailwind.config.js` and `globals.css`):
+```
+bg:        #06061a  — deep indigo base
+surface:   #11112b  — card background
+border:    #2e2e58  — subtle borders
+primary:   #7C3AED  — purple, used for AI/generation actions
+cyan:      #22d3ee  — live/real-time states only (sync badges, presence dots)
+green:     #22c55e  — match scores and success states only
+muted:     #8b8fb0  — secondary text
+```
+
+**Why these three accent colours:**
+- Purple = AI, premium, generation
+- Cyan = live/real-time (anything that's syncing or updating)
+- Green = match quality and success states
+
+Keep this separation consistent across all 9 screens — it makes the product feel like a live system rather than a static app.
+
+**Utility classes** (in `globals.css`) you should reuse:
+```css
+.glass       — subtle frosted card (low emphasis)
+.glass-card  — high-contrast card with depth shadow (primary UI cards)
+.glass-strong — tinted purple glass (feature cards, CTAs)
+.glow        — purple button glow
+.text-gradient — purple→lavender→indigo gradient text
+.live-dot    — pulsing cyan dot for presence/sync indicators
+```
+
+**Background:**
+Three layered radial gradient blobs (violet top-left, teal right, indigo bottom) + an SVG star field. Gives the "night sky over an exotic destination" feel without a background image.
+
+**What works well — keep these patterns:**
+- Floating itinerary card + match card side by side in the hero instantly communicates the product without needing text
+- Colour-coded activity tags (culture=purple, food=cyan, beach=green)
+- "2 people editing" presence indicator on the match card — shows real-time collaboration immediately
+- The floating card layout is better than an iPhone mockup for the hero — don't replace it
+
+---
+
+## Figma Make — Recommended Workflow
+
+Use **Figma Make** to generate your React screens directly from your Figma designs. This is faster and more consistent than coding from scratch.
+
+### Step-by-step
+
+1. **Design all 9 screens in Figma** using the design tokens above
+   - Set up a local styles library: background `#06061a`, primary `#7C3AED`, cyan `#22d3ee`, green `#22c55e`
+   - Design at 390×844 (iPhone 14 Pro size)
+   - Build a component library first: ActivityCard, MatchCard, ChatBubble, BottomNav, Tag
+
+2. **Use Figma Make on each screen**
+   - Select the frame → right-click → "Make with AI" (or the Make plugin)
+   - Prompt it: *"Generate React JSX using Tailwind CSS. Use framer-motion for entrance animations. Dark theme."*
+   - It outputs JSX — copy it into the relevant `pages/` or `components/` file
+
+3. **Clean up the generated code**
+   - Replace hardcoded colours with Tailwind tokens (`bg-surface`, `text-accent`, etc.)
+   - Replace static data with props
+   - Wire up real hooks (`useAuth`, `useFirestore`, `useWebSocket`)
+   - Delete any inline `style` blocks Figma Make generates — use the utility classes instead
+
+4. **What Figma Make is good at vs. bad at**
+
+   | Good at | Not good at |
+   |---|---|
+   | Layout, spacing, visual hierarchy | Real data wiring |
+   | Generating component structure quickly | Animation logic |
+   | Matching your Figma design pixel-for-pixel | API calls and state management |
+   | Saving time on boilerplate | TypeScript types |
+
+   Use it for the visual shell, then layer in the real logic yourself.
+
+---
+
+## Connecting Figma to Claude Code (Figma MCP)
+
+Claude Code can read your Figma files directly via the **Figma MCP server**. Once connected, you can paste a Figma frame URL into Claude Code and ask it to generate code directly from the design — without exporting anything.
+
+### Setup
+
+**1. Install the Figma MCP server**
+
+```bash
+npm install -g @modelcontextprotocol/server-figma
+```
+
+Or use the community Figma MCP (more actively maintained):
+```bash
+npx figma-mcp
+```
+
+**2. Get a Figma API token**
+
+- Go to figma.com → Settings → Account → Personal Access Tokens
+- Create a token with read access
+- Copy it
+
+**3. Add it to Claude Code's MCP config**
+
+Open (or create) `~/.claude/claude_code_config.json` and add:
+
+```json
+{
+  "mcpServers": {
+    "figma": {
+      "command": "npx",
+      "args": ["figma-mcp"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "your-token-here"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Code after saving.
+
+**4. Use it**
+
+Once connected, paste a Figma frame URL into Claude Code and ask:
+
+```
+Here's my Figma design for Screen 3 (Itinerary):
+https://www.figma.com/file/xxx/Sonder?node-id=123:456
+
+Generate the React JSX for this screen using our existing Tailwind tokens
+and the glass-card utility class. Use framer-motion for the activity cards
+fading in. Wire up the useSSE hook for the streaming skeleton state.
+```
+
+Claude Code will read the design directly and generate code that matches it — including colours, spacing, font sizes, and component structure.
+
+**Tip:** Share the Figma file with "anyone with the link can view" so the API token can access it without needing explicit collaborator permissions.
+
+---
+
 ## Build Order
 
 1. **`schemas/`** → copy to `shared/schemas.py` → tell the team ← **do this first**
