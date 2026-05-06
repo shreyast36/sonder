@@ -17,6 +17,41 @@ You own the API, the pipeline that ties all modules together, the validation loo
 
 ---
 
+## Dependencies
+
+### What I need from others
+
+| From | What exactly | Where I use it | Status needed by |
+|---|---|---|---|
+| **Jahnvi** | `shared/schemas.py` finalised | Every route handler and model imports from here | **Right now — blocks everything** |
+| **Jahnvi** | `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest`, `UpdateTripResponse` shapes | Route handler type annotations | Before I can define route handlers |
+| **Jahnvi** | `module1_constraints.capture_constraints(raw)` working | `pipeline/orchestrator.py` step 1a | Before orchestrator runs |
+| **Jahnvi** | `module2_preferences.parse_answers(raw)` working | `pipeline/orchestrator.py` step 1b | Before orchestrator runs |
+| **Jahnvi** | `module3_persona.infer_persona()` + `infer_emotion()` working | `pipeline/orchestrator.py` step 1c | Before orchestrator runs |
+| **Shreyas** | `search_destinations()` + `search_activities()` | `pipeline/orchestrator.py` step 2 | Before retrieval step runs |
+| **Shreyas** | `rank_destinations()` + `rank_activities()` | `pipeline/orchestrator.py` step 3 | Before ranking step runs |
+| **Shreyas** | `search_cotravellers()` + `get_top_matches()` | `pipeline/orchestrator.py` step 7 + `routes/cotraveller.py` | Before co-traveller step runs |
+| **Shreyas** | `ConnectionManager` from `cotraveller/chat.py` | `routes/chat.py` WebSocket handler | Before `/ws/chat/{session_id}` works |
+| **Shreyas** | `approve_match()` + `deny_match()` from `cotraveller/approval.py` | `routes/chat.py` approve/deny routes | Before Screen 6 works end-to-end |
+| **Ali** | `route_request()` + `stream_request()` from `routing/engine.py` | `validation/critic.py` + `refinement/loop.py` | Before validation works |
+| **Ali** | `generate_itinerary()` streaming generator | `pipeline/orchestrator.py` step 4 | Before itinerary generation runs |
+| **Ali** | `explain_itinerary()` — populates `why_this` fields | `pipeline/orchestrator.py` step 5 | Before explainer step runs |
+
+### What others need from me
+
+| Who | What exactly | Which file | When they're blocked |
+|---|---|---|---|
+| **Shreyas** | `get_db()` in `realtime/firestore.py` working | `shreyas/cotraveller/presence.py`, `shared_itinerary.py`, `approval.py` | Before Shreyas builds real-time features |
+| **Shreyas** | `notify_co_traveller_approved()` in `realtime/notifications.py` | `shreyas/cotraveller/approval.py` calls this on mutual approval | Before approval flow is complete |
+| **Jahnvi** | Backend running locally on `http://localhost:8000` | Testing all frontend API calls | Before Screen 2 can be tested |
+| **Jahnvi** | `POST /plan-trip` SSE stream firing named events in sequence | Screen 2 → Screen 3 loading states | Before the Itinerary screen is built |
+| **Jahnvi** | `POST /cotraveller` returning `list[CoTravellerMatch]` | Screen 4 Match Detail | Before match screens are built |
+| **Jahnvi** | `POST /chat/start` + `WS /ws/chat/{id}` working | Screen 5 Chat | Before chat screen is built |
+| **Jahnvi** | `POST /chat/approve` + `POST /chat/deny` | Screen 6 Approve/Deny | Before approval screen is built |
+| **Jahnvi** | Render backend URL once deployed | `frontend/vercel.json` API rewrite | Before deploying to Vercel |
+
+---
+
 ## API Surface
 
 ### HTTP Endpoints

@@ -16,110 +16,58 @@ You define what the product looks like and how users interact with it. Everythin
 
 ---
 
-## Do This First — Schemas (Team is Blocked Until Done)
+## Dependencies
 
-**The entire team cannot write a single function until your schemas exist.** Before writing any pipeline or frontend code:
+### What I need from others
 
-1. Finalise all models in `schemas/` (enums, user, trip, cotraveller, chat)
-2. Copy them into `shared/schemas.py`
-3. Tell Shreyas, Ali, and Mushahid in the group chat — they can start immediately after
+| From | What exactly | Where I use it | Status needed by |
+|---|---|---|---|
+| **Shreyas** | `shreyas/retrieval/embeddings.embed_text(text)` working — accepts a string, returns `list[float]` | `pipeline/module3_persona.build_travel_style_embedding()` | Before I can finish Module 3 |
+| **Mushahid** | Backend running locally on port 8000 | Testing all frontend API calls | Before Screen 2 |
+| **Mushahid** | `POST /plan-trip` SSE stream firing named events in sequence | Screen 2 → Screen 3 loading states | Before I build the Itinerary screen |
+| **Mushahid** | `POST /cotraveller` returning `list[CoTravellerMatch]` | Screen 4 Match Detail | Before I build match screens |
+| **Mushahid** | `POST /chat/start`, `WS /ws/chat/{id}` working | Screen 5 Chat | Before I build chat screen |
+| **Mushahid** | `POST /chat/approve` and `POST /chat/deny` | Screen 6 Approve/Deny | Before I build approval screen |
+| **Mushahid** | Render backend URL once deployed | `frontend/vercel.json` API rewrite | Before deploying to Vercel |
+| **Ali** | Decision on `EMBED_MODEL` and `EMBED_DIMENSIONS` | Goes into `shared/config.py` so Shreyas can configure Pinecone | Before Shreyas starts retrieval |
+
+### What others need from me
+
+| Who | What exactly | Which file | When they're blocked |
+|---|---|---|---|
+| **Everyone** | `shared/schemas.py` finalised and announced | `shared/schemas.py` | **Right now — blocks the entire team** |
+| **Shreyas** | `UserProfile` shape with `compatibility_signals` and `travel_style_embedding` fields | `jahnvi/schemas/user.py` | Before he builds co-traveller matching |
+| **Shreyas** | `CoTravellerProfile` and `CoTravellerMatch` shapes | `jahnvi/schemas/cotraveller.py` | Before he builds matching |
+| **Shreyas** | `module3_persona.build_compatibility_signals(user_profile)` returning a populated dict | `jahnvi/pipeline/module3_persona.py` | Before his scoring algorithm can read signals |
+| **Shreyas** | `module3_persona.build_travel_style_embedding(user_profile)` returning a `list[float]` | `jahnvi/pipeline/module3_persona.py` | Before his Pinecone co-traveller search works |
+| **Ali** | `Itinerary`, `ItineraryDay`, `ItineraryActivity` shapes | `jahnvi/schemas/trip.py` | Before he can write the output parser |
+| **Ali** | `UserProfile` shape finalised | `jahnvi/schemas/user.py` | Before he can write itinerary prompt builders |
+| **Mushahid** | `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest`, `UpdateTripResponse` shapes | `shared/schemas.py` | Before he can define route handlers |
+| **Mushahid** | `module1_constraints.capture_constraints(raw)` working | `jahnvi/pipeline/module1_constraints.py` | Orchestrator step 1 calls this |
+| **Mushahid** | `module2_preferences.parse_answers(raw)` working | `jahnvi/pipeline/module2_preferences.py` | Orchestrator step 1 calls this |
+| **Mushahid** | `module3_persona.infer_persona()`, `infer_emotion()` working | `jahnvi/pipeline/module3_persona.py` | Orchestrator step 1 calls these |
 
 ---
 
 ## Figma Make → React Workflow
 
-Use **Figma Make** to generate your React components directly from your Figma designs. This saves you from writing boilerplate UI code manually.
+Use **Figma Make** to generate your React components directly from your Figma designs.
 
 **Recommended workflow:**
-1. Design all 9 screens in Figma using the dark purple design system (reference: the Tripora mockup shared in the group)
+1. Design all 9 screens in Figma using the dark purple design system (reference: Tripora mockup)
 2. Use **Figma Make** to generate the initial React/JSX component code from your designs
-3. Export the generated components into `frontend/src/pages/` and `frontend/src/components/`
+3. Export generated components into `frontend/src/pages/` and `frontend/src/components/`
 4. Clean up the generated code — wire up real props, hooks, and API calls
-5. Do **not** skip the Figma step and code directly — Figma Make only works well from a real design
+5. Do not skip the Figma step and code directly — Figma Make only works well from a real design
 
-**Design tokens to define in Figma before generating:**
-- Background: deep dark purple/navy (~`#0a0a1a`)
-- Primary: purple accent (~`#7C3AED`)
+**Design tokens to define in Figma first:**
+- Background: deep dark purple/navy (`~#0a0a1a`)
+- Primary: purple accent (`~#7C3AED`)
 - Surface: glass-morphism cards with subtle borders
-- Text: white primary, muted secondary
 - Match badge: green gradient for high scores
 - Buttons: rounded, purple primary / red destructive
 
-Once generated, paste the Tailwind color tokens into `frontend/tailwind.config.js` so everything stays consistent.
-
----
-
-## Dependencies — What You Need From Others
-
-These are the things **you cannot build until someone else delivers them**. Chase these early.
-
-### From Shreyas
-
-| What you need | Where it's used | File to call |
-|---|---|---|
-| `embed_text(text)` working | `pipeline/module3_persona.py` — `build_travel_style_embedding()` calls this | `shreyas/retrieval/embeddings.py` |
-
-> **What to tell Shreyas:** "I need `embed_text()` to work before I can finish module3. It just needs to accept a string and return a list of floats — the model choice is yours."
-
-### From Mushahid
-
-| What you need | Where it's used | When you need it |
-|---|---|---|
-| Backend running locally on port 8000 | All API calls from the frontend | Before you start Screen 2 |
-| `POST /plan-trip` SSE stream working | Screen 2 → Screen 3 transition | Before implementing Itinerary screen |
-| `POST /cotraveller` returning matches | Screen 4 (Match Detail) | Before implementing match screens |
-| `POST /chat/start`, `WS /ws/chat/:id` | Screen 5 (Chat) | Before implementing chat screen |
-| `POST /chat/approve`, `POST /chat/deny` | Screen 6 (Approve/Deny) | Before implementing approval screen |
-| Render backend URL | `frontend/vercel.json` API rewrite | Before deploying to Vercel |
-
-> **What to tell Mushahid:** "I need `/health` and `/plan-trip` working first so I can test the itinerary flow end-to-end. The SSE events don't all need real data initially — I just need the event names to fire in sequence so I can build the loading states."
-
-### From Ali
-
-| What you need | Where it's used | When you need it |
-|---|---|---|
-| `EMBED_MODEL` and `EMBED_DIMENSIONS` decided | `shared/config.py` needs real values | Before Shreyas can run embeddings |
-
-> **What to tell Ali:** "What embedding model are you using? Shreyas needs `EMBED_MODEL` and `EMBED_DIMENSIONS` set in `.env` before he can build the retrieval layer, which I depend on for module3."
-
-### From the whole team
-
-| What you need | When |
-|---|---|
-| Firebase project created (Auth + Firestore enabled) | Before you can test `firebase.js` locally |
-| Firebase config values (API key, project ID, etc.) | Fill in `VITE_FIREBASE_*` in `.env.local` |
-
----
-
-## What Others Need From You — Your Output Is Their Input
-
-### Shreyas needs from you
-
-| What | When | Why |
-|---|---|---|
-| `shared/schemas.py` finalised | **Immediately — he's blocked** | All his type annotations import from here |
-| `UserProfile` shape finalised | Before he builds ranking | His scoring functions take `UserProfile` as input |
-| `CoTravellerProfile` shape finalised | Before he builds matching | His `score_compatibility()` takes this |
-| `module3_persona.py` → `build_compatibility_signals()` working | Before co-traveller matching | His matching algorithm reads `user_profile.compatibility_signals` |
-| `module3_persona.py` → `build_travel_style_embedding()` working | Before co-traveller search | His Pinecone query uses `user_profile.travel_style_embedding` |
-
-### Ali needs from you
-
-| What | When | Why |
-|---|---|---|
-| `shared/schemas.py` finalised | **Immediately — he's blocked** | All his prompt builders and parsers use these models |
-| `Itinerary`, `ItineraryDay`, `ItineraryActivity` shapes | Before he builds the output parser | His parser maps LLM JSON → these models |
-| `UserProfile` shape finalised | Before he writes itinerary prompts | His prompt builder reads `persona_answers`, `constraints`, `emotion_intent` |
-
-### Mushahid needs from you
-
-| What | When | Why |
-|---|---|---|
-| `shared/schemas.py` finalised | **Immediately — he's blocked** | All route request/response types come from here |
-| `PlanTripRequest`, `PlanTripResponse` shapes | Before he builds `/plan-trip` route | His route handler uses these as input/output |
-| `module1_constraints.py` working | Before orchestrator step 1 | Orchestrator calls `capture_constraints()` on raw request data |
-| `module2_preferences.py` working | Before orchestrator step 1 | Orchestrator calls `parse_answers()` |
-| `module3_persona.py` → `infer_persona()`, `infer_emotion()` working | Before orchestrator step 1 | Orchestrator calls these in the first pipeline step |
+Once generated, paste Tailwind color tokens into `frontend/tailwind.config.js`.
 
 ---
 
@@ -157,8 +105,8 @@ UserProfile(
     constraints            = TripConstraints(...),
     persona_answers        = PersonaQuestionAnswers(...),
     emotion_intent         = EmotionIntent.excited,
-    travel_style_embedding = [0.023, ...],  # set by module3 — Shreyas reads this
-    compatibility_signals  = {"pace": "relaxed", "top_interests": ["food", "culture"]}  # Shreyas reads this
+    travel_style_embedding = [0.023, ...],  # Shreyas reads this for co-traveller search
+    compatibility_signals  = {"pace": "relaxed", "top_interests": ["food", "culture"]}  # Shreyas reads this for matching
 )
 ```
 
@@ -188,7 +136,7 @@ TripConstraints(destination_type="beach", start_date=date(2025,6,1), ...)
 ### Module 2 — `parse_answers`
 
 ```python
-# Input (raw form from Screen 2, preference section)
+# Input
 {"food_interest": 5, "adventure_interest": 2, "culture_interest": 4, ...}
 
 # Output
@@ -203,10 +151,10 @@ PersonaQuestionAnswers(food_interest=5, culture_interest=4, adventure_interest=2
 
 # Output
 {
-    "archetype":      "Cultural Explorer",
-    "top_interests":  ["food", "culture"],
-    "energy":         "low-moderate",
-    "label":          "You love discovering local culture through food and art at a relaxed pace."
+    "archetype":     "Cultural Explorer",
+    "top_interests": ["food", "culture"],
+    "energy":        "low-moderate",
+    "label":         "You love discovering local culture through food and art at a relaxed pace."
 }
 ```
 
@@ -231,31 +179,25 @@ Design all 9 in Figma → generate with Figma Make → customise in React.
 ### SSE Events to Handle (Screen 3)
 
 ```javascript
-// These arrive from POST /api/plan-trip as the pipeline runs
-"persona_inferring"    → show "Understanding your travel style..."
-"retrieving"           → show "Finding the best destinations..."
-"ranking"              → show "Ranking options for you..."
-"generating"           → show "Building your itinerary..." + skeleton cards
-"explaining"           → show "Adding personalised insights..."
-"validating"           → show "Checking everything looks right..."
-"revision"             → show "Refining based on feedback..." (may repeat)
-"matched"              → show "Finding your perfect travel buddy..."
-"done"                 → render full PlanTripResponse
+"persona_inferring"  → "Understanding your travel style..."
+"retrieving"         → "Finding the best destinations..."
+"ranking"            → "Ranking options for you..."
+"generating"         → "Building your itinerary..." + skeleton cards
+"explaining"         → "Adding personalised insights..."
+"validating"         → "Checking everything looks right..."
+"revision"           → "Refining based on feedback..." (may repeat)
+"matched"            → "Finding your perfect travel buddy..."
+"done"               → render full PlanTripResponse
 ```
 
 ### Firebase Auth Pattern
 
 ```javascript
-// src/lib/firebase.js
-import { initializeApp } from 'firebase/app'
-import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
-
 const app  = initializeApp({ /* VITE_ env vars */ })
 export const auth = getAuth(app)
 export const db   = getFirestore(app)
 
-// Every API call must attach the ID token:
+// Attach ID token to every backend request
 const token = await auth.currentUser.getIdToken()
 fetch('/api/plan-trip', { headers: { Authorization: `Bearer ${token}` } })
 ```
@@ -264,14 +206,14 @@ fetch('/api/plan-trip', { headers: { Authorization: `Bearer ${token}` } })
 
 ## Build Order
 
-1. **`schemas/`** — finish all models, copy to `shared/schemas.py`, tell the team ← **do this today**
-2. **Figma** — design all 9 screens + component library, share link with team
-3. **`pipeline/module1_constraints.py`** → **`module2_preferences.py`** (no dependencies, build in parallel with Figma)
+1. **`schemas/`** → copy to `shared/schemas.py` → tell the team ← **do this first**
+2. **Figma** — all 9 screens + component library
+3. **`pipeline/module1_constraints.py`** + **`module2_preferences.py`** (no external deps)
 4. **`pipeline/module3_persona.py`** ← needs `embed_text()` from Shreyas first
-5. **Frontend foundation** — Firebase init, auth hook, API client, Tailwind tokens from Figma
-6. **Figma Make** → generate component code from Figma screens, drop into `pages/` and `components/`
-7. **Screens 1–2** (Welcome, TripPreferences) — can test without backend
-8. **Screen 3** (Itinerary) ← needs Mushahid's `/plan-trip` SSE working
-9. **Screens 4–6** (Match, Chat, Approve) ← needs Mushahid's `/cotraveller` + `/chat/*` + Shreyas's WebSocket
-10. **Screens 7–9** (Shared Itinerary, Notes, Dashboard) ← needs Shreyas's Firestore sync
-11. Update `vercel.json` with Mushahid's Render URL → deploy to Vercel
+5. **Frontend foundation** — Firebase init, auth hook, API client, Tailwind tokens
+6. **Figma Make** → generate components → drop into `pages/` and `components/`
+7. **Screens 1–2** (can test without backend)
+8. **Screen 3** ← needs Mushahid's `/plan-trip` SSE
+9. **Screens 4–6** ← needs Mushahid's `/cotraveller` + Shreyas's WebSocket
+10. **Screens 7–9** ← needs Shreyas's Firestore sync
+11. Update `vercel.json` with Mushahid's Render URL → deploy

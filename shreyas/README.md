@@ -14,6 +14,32 @@ You own the intelligence layer that finds the right destinations, activities, an
 
 ---
 
+## Dependencies
+
+### What I need from others
+
+| From | What exactly | Where I use it | Status needed by |
+|---|---|---|---|
+| **Jahnvi** | `shared/schemas.py` finalised | Every module imports schemas | **Right now — blocks everything** |
+| **Jahnvi** | `UserProfile` shape with `compatibility_signals` and `travel_style_embedding` fields | `cotraveller/matching.py` + `retrieval/search.py` | Before I build co-traveller search |
+| **Jahnvi** | `CoTravellerProfile` and `CoTravellerMatch` shapes | `cotraveller/matching.py` | Before I build matching |
+| **Mushahid** | `get_db()` in `realtime/firestore.py` working | `presence.py`, `shared_itinerary.py`, `approval.py` all call Firestore | Before I build real-time features |
+| **Mushahid** | `notify_co_traveller_approved()` in `realtime/notifications.py` working | `cotraveller/approval.py` calls this on mutual approval | Before I complete approval flow |
+
+### What others need from me
+
+| Who | What exactly | Which file | When they're blocked |
+|---|---|---|---|
+| **Jahnvi** | `embed_text(text) → list[float]` working | `jahnvi/pipeline/module3_persona.py` calls this for `build_travel_style_embedding()` | Before she can finish Module 3 |
+| **Ali** | `retrieval/search.py` — `search_destinations()` and `search_activities()` | `ali/rag/retriever.py` fetches RAG context via these | Before Ali can build the RAG explainer |
+| **Mushahid** | `search_destinations()` + `search_activities()` returning ranked candidates | `orchestrator.py` steps 2 | Before orchestrator runs end-to-end |
+| **Mushahid** | `rank_destinations()` + `rank_activities()` | `orchestrator.py` step 3 | Before orchestrator runs end-to-end |
+| **Mushahid** | `search_cotravellers()` + `get_top_matches()` | `orchestrator.py` step 7 + `/cotraveller` route | Before co-traveller feature works |
+| **Mushahid** | `ConnectionManager` from `cotraveller/chat.py` | `routes/chat.py` WebSocket proxy | Before `/ws/chat/{session_id}` works |
+| **Mushahid** | `approve_match()` + `deny_match()` from `cotraveller/approval.py` | `routes/chat.py` approve/deny endpoints | Before Screen 6 works end-to-end |
+
+---
+
 ## Module Contracts
 
 ### `retrieval/` — inputs & outputs

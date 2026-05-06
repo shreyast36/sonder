@@ -41,6 +41,29 @@ The routing engine (`routing/engine.py`) reads these at runtime and instantiates
 
 ---
 
+## Dependencies
+
+### What I need from others
+
+| From | What exactly | Where I use it | Status needed by |
+|---|---|---|---|
+| **Jahnvi** | `shared/schemas.py` finalised | All generation and parsing code imports schemas | **Right now — blocks everything** |
+| **Jahnvi** | `UserProfile`, `Itinerary`, `ItineraryDay`, `ItineraryActivity`, `Activity`, `Destination` shapes | `generation/itinerary_generator.py`, `rag/explainer.py`, `generation/output_parser.py` | Before I write any generation code |
+| **Shreyas** | `retrieval/search.py` — `search_destinations()` and `search_activities()` | `rag/retriever.py` calls these to fetch context chunks | Before I can build the RAG explainer |
+
+### What others need from me
+
+| Who | What exactly | Which file | When they're blocked |
+|---|---|---|---|
+| **Mushahid** | `route_request()` + `stream_request()` from `routing/engine.py` | `validation/critic.py` + `pipeline/orchestrator.py` | Before validation and orchestrator run |
+| **Mushahid** | `generate_itinerary()` streaming generator | `pipeline/orchestrator.py` step 4 | Before the itinerary pipeline runs |
+| **Mushahid** | `explain_itinerary()` — populates all `why_this` fields | `pipeline/orchestrator.py` step 5 | Before the explainer step runs |
+| **Mushahid** | `generate_itinerary()` again for re-generation | `refinement/loop.py` | Before the refinement loop works |
+| **Shreyas** | `generate_topics()` + `generate_icebreaker()` from `generation/topics.py` | `shreyas/cotraveller/chat.py` sends these as AI-generated suggestions | Before chat feature is complete |
+| **Everyone** | Decision on `EMBED_MODEL` + `EMBED_DIMENSIONS` | Goes into `shared/config.py`; Shreyas needs this to configure Pinecone | **Announce this early — Shreyas is blocked on it** |
+
+---
+
 ## Architecture
 
 ```
