@@ -27,7 +27,7 @@ VALIDATOR_MODEL_PROVIDER = os.getenv("VALIDATOR_MODEL_PROVIDER")
 VALIDATOR_MODEL_NAME = os.getenv("VALIDATOR_MODEL_NAME")
 
 # Embeddings — Shreyas decides provider and model
-EMBED_MODEL_PROVIDER = os.getenv("EMBED_MODEL_PROVIDER")   # openai | bedrock | (others)
+EMBED_MODEL_PROVIDER = os.getenv("EMBED_MODEL_PROVIDER")   # Shreyas decides
 EMBED_MODEL = os.getenv("EMBED_MODEL")                     # model name / ID within that provider
 EMBED_DIMENSIONS = int(os.getenv("EMBED_DIMENSIONS", "1536"))
 

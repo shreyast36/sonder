@@ -14,7 +14,7 @@ def get_client(tier: ModelTier) -> BaseLLMClient:
     VALIDATOR_MODEL_PROVIDER). Add fallback logic here if a provider is unavailable.
 
     Expected input:  ModelTier.large
-    Expected output: AnthropicLargeClient() | OpenAILargeClient() | GoogleLargeClient()
+    Expected output: the correct BaseLLMClient subclass for the given tier and provider
     """
     if tier == ModelTier.small:
         provider = SMALL_MODEL_PROVIDER
@@ -23,16 +23,8 @@ def get_client(tier: ModelTier) -> BaseLLMClient:
     else:
         provider = VALIDATOR_MODEL_PROVIDER
 
-    # TODO: import and return the correct client class based on provider string
-    # Example:
-    #   if provider == "openai":     return OpenAILargeClient()    if LARGE
-    #   if provider == "anthropic":  return AnthropicLargeClient() if LARGE
-    #   if provider == "google":     return GoogleLargeClient()    if LARGE
-    #   if provider == "groq":       return GroqSmallClient()      if SMALL
-    #   if provider == "mistral":    return MistralSmallClient()   if SMALL
-    #   if provider == "bedrock":    return BedrockLargeClient()   if LARGE
-    #                                return BedrockSmallClient()   if SMALL
-    #                                return BedrockValidatorClient() if VALIDATOR
+    # TODO: import and return the correct client class based on (provider, tier)
+    # Add a case for each provider you decide to support.
     raise NotImplementedError
 
 

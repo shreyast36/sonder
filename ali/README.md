@@ -9,7 +9,7 @@ You own the brain of the product. Every AI decision — which model runs, what i
 | Folder | Responsibility |
 |---|---|
 | `routing/` | Multi-model routing engine — classifies tasks, picks the right model tier |
-| `clients/` | Provider wrappers for all LLM APIs (OpenAI, Anthropic, Google, Groq, Mistral) |
+| `clients/` | LLM provider client wrappers — one file per provider |
 | `generation/` | Itinerary generation, output parsing, prompt templates, chat topic generation |
 | `rag/` | RAG retrieval + "Why this?" activity explanations |
 
@@ -21,20 +21,21 @@ You own the brain of the product. Every AI decision — which model runs, what i
 
 ```bash
 # Small tier (fast + cheap — chat topics, persona labels, quick edits)
-SMALL_MODEL_PROVIDER=openai     # openai | groq | mistral
-SMALL_MODEL_NAME=               # your choice
+SMALL_MODEL_PROVIDER=           # your choice of provider
+SMALL_MODEL_NAME=               # your choice of model
 
 # Large tier (complex — itinerary generation, RAG explanations)
-LARGE_MODEL_PROVIDER=anthropic  # openai | anthropic | google
-LARGE_MODEL_NAME=               # your choice
+LARGE_MODEL_PROVIDER=           # your choice of provider
+LARGE_MODEL_NAME=               # your choice of model
 
 # Validator tier (critic mode — feasibility + quality checks)
-VALIDATOR_MODEL_PROVIDER=openai # openai | anthropic
-VALIDATOR_MODEL_NAME=           # your choice
+VALIDATOR_MODEL_PROVIDER=       # your choice of provider
+VALIDATOR_MODEL_NAME=           # your choice of model
 
-# Embeddings (for Pinecone upserts and RAG retrieval)
-EMBED_MODEL=                    # your choice
-EMBED_DIMENSIONS=1536           # must match your chosen embed model
+# Bedrock model IDs (only needed if you set any provider above to "bedrock")
+BEDROCK_SMALL_MODEL_ID=         # your choice
+BEDROCK_LARGE_MODEL_ID=         # your choice
+BEDROCK_VALIDATOR_MODEL_ID=     # your choice
 ```
 
 The routing engine (`routing/engine.py`) reads these at runtime and instantiates the right client.
@@ -73,13 +74,7 @@ route_request(task_type, prompt, system)
     │
     └── engine.py → get_client(tier)
             │
-            ├── SMALL_MODEL_PROVIDER=openai   → OpenAISmallClient()
-            ├── SMALL_MODEL_PROVIDER=groq     → GroqSmallClient()
-            ├── SMALL_MODEL_PROVIDER=mistral  → MistralSmallClient()
-            ├── LARGE_MODEL_PROVIDER=openai   → OpenAILargeClient()
-            ├── LARGE_MODEL_PROVIDER=anthropic → AnthropicLargeClient()
-            ├── LARGE_MODEL_PROVIDER=google   → GoogleLargeClient()
-            └── VALIDATOR_MODEL_PROVIDER=*    → respective validator client
+            └── reads *_MODEL_PROVIDER from env → returns the matching client class
 ```
 
 ---
@@ -205,7 +200,7 @@ Itinerary(days=[...], total_budget_usd=840.0, ...)
 ## Build Order
 
 1. `clients/base.py` — define the interface first
-2. All 5 provider clients (`openai`, `anthropic`, `google`, `groq`, `mistral`)
+2. All provider clients in `clients/` — implement whichever providers you choose to support
 3. `routing/classifier.py` → `routing/engine.py`
 4. `generation/prompts.py` → `generation/output_parser.py` → `generation/itinerary_generator.py`
 5. `rag/retriever.py` → `rag/explainer.py`

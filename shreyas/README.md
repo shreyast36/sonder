@@ -191,11 +191,7 @@ Fix before production:
 - When `LOCAL_MODE=true` the in-memory fallback is fine
 
 ### Embeddings — provider your choice
-Set `EMBED_MODEL_PROVIDER` and `EMBED_MODEL` in `.env`. Options:
-- `openai` — uses `OPENAI_API_KEY` + `EMBED_MODEL`
-- `bedrock` — uses IAM role + `BEDROCK_EMBED_MODEL_ID` (no extra keys needed on ECS)
-
-Vectors always go into Pinecone regardless of which provider generates them. `EMBED_DIMENSIONS` must match the model you pick.
+Set `EMBED_MODEL_PROVIDER`, `EMBED_MODEL` (or `BEDROCK_EMBED_MODEL_ID` if using Bedrock), and `EMBED_DIMENSIONS` in `.env`. Vectors always go into Pinecone regardless of which provider generates them.
 
 ---
 

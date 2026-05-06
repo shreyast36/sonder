@@ -107,11 +107,12 @@ Each section lists one person's title, their ownership boundaries, and every tas
 ### LLM Clients (do first — routing engine depends on these)
 
 - [ ] `ali/clients/base.py` — Abstract base class: `complete()`, `stream()`, model name, tier, cost
-- [ ] `ali/clients/openai_client.py` — GPT-4o mini (SMALL) + GPT-4o (LARGE)
-- [ ] `ali/clients/anthropic_client.py` — Claude 3.5 Sonnet (LARGE + VALIDATOR)
-- [ ] `ali/clients/google_client.py` — Gemini 1.5 Pro (LARGE)
-- [ ] `ali/clients/groq_client.py` — Llama 3.1 8B (SMALL)
-- [ ] `ali/clients/mistral_client.py` — Mistral 7B (SMALL)
+- [ ] `ali/clients/openai_client.py`
+- [ ] `ali/clients/anthropic_client.py`
+- [ ] `ali/clients/google_client.py`
+- [ ] `ali/clients/groq_client.py`
+- [ ] `ali/clients/mistral_client.py`
+- [ ] `ali/clients/bedrock_client.py`
 
 ### Routing Engine
 

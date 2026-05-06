@@ -11,22 +11,13 @@ from shared.schemas import ModelTier
 
 # Ali: Bedrock's invoke format varies by model family — you must handle this yourself.
 #
-# Anthropic Claude family:
-#   body = {"anthropic_version": "bedrock-2023-05-31", "max_tokens": 4096,
-#           "system": system, "messages": [{"role": "user", "content": prompt}]}
-#
-# Meta Llama family:
-#   body = {"prompt": f"<s>[INST] {system}\n{prompt} [/INST]", "max_gen_len": 4096}
-#
-# Mistral family:
-#   body = {"prompt": f"<s>[INST] {prompt} [/INST]", "max_tokens": 4096}
-#
-# Check the AWS Bedrock docs for the exact body shape of whichever model ID you set
-# in BEDROCK_SMALL_MODEL_ID / BEDROCK_LARGE_MODEL_ID / BEDROCK_VALIDATOR_MODEL_ID.
+# The request body shape and response delta field differ depending on which model ID
+# you set in BEDROCK_SMALL_MODEL_ID / BEDROCK_LARGE_MODEL_ID / BEDROCK_VALIDATOR_MODEL_ID.
+# Check the AWS Bedrock docs for your chosen model IDs to get the exact body format.
 #
 # Streaming: invoke_model_with_response_stream returns an EventStream.
 # Each event is event["chunk"]["bytes"] — decode and parse to extract the text delta.
-# The delta field name also varies by family ("delta.text" for Claude, "generation" for Llama).
+# The delta field name varies by model family; check the docs for your chosen model.
 
 
 class BedrockSmallClient(BaseLLMClient):

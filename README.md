@@ -31,9 +31,9 @@ Sonder takes a user from zero to a fully personalised, day-by-day itinerary and 
 | Real-time DB | Cloud Firestore |
 | Backend API | FastAPI (Python) on Render |
 | Vector DB | Pinecone |
-| AI — Small LLMs | GPT-4o mini, Llama 3.1 8B (Groq), Mistral 7B |
-| AI — Large LLMs | GPT-4o, Claude 3.5 Sonnet, Gemini 1.5 Pro |
-| AI — Validator LLM | GPT-4o (critic mode), Claude 3.5 Sonnet |
+| AI — Small LLMs | Ali's decision — set via `SMALL_MODEL_PROVIDER` + `SMALL_MODEL_NAME` |
+| AI — Large LLMs | Ali's decision — set via `LARGE_MODEL_PROVIDER` + `LARGE_MODEL_NAME` |
+| AI — Validator LLM | Ali's decision — set via `VALIDATOR_MODEL_PROVIDER` + `VALIDATOR_MODEL_NAME` |
 | Storage | Firebase Storage / AWS S3 |
 | Real-time Comms | WebSockets + Firestore Listeners + Cloud Functions |
 | Frontend Hosting | Vercel |
@@ -60,7 +60,7 @@ sonder/
 │
 ├── ali/                     # AI Intelligence Layer
 │   ├── routing/             # Multi-model routing engine + intent classifier
-│   ├── clients/             # OpenAI, Anthropic, Google, Groq, Mistral wrappers
+│   ├── clients/             # LLM provider client wrappers
 │   ├── generation/          # Itinerary generation, output parsing, prompts, chat topics
 │   └── rag/                 # RAG retriever + "Why this?" explainer
 │
@@ -96,11 +96,11 @@ User Input (Module 1)
 
 Every AI request is routed to the right model based on complexity, latency, and cost:
 
-| Tier | Models | Used For |
+| Tier | Task Types | Used For |
 |---|---|---|
-| **Small** | GPT-4o mini, Llama 3.1 8B, Mistral 7B | Chat topics, persona labels, quick edits, notifications |
-| **Large** | GPT-4o, Claude 3.5 Sonnet, Gemini 1.5 Pro | Full itinerary generation, RAG explanations, conflict resolution |
-| **Validator** | GPT-4o (critic), Claude 3.5 Sonnet | Feasibility checks, constraint scoring, improvement suggestions |
+| **Small** | Ali's decision | Chat topics, persona labels, quick edits, notifications |
+| **Large** | Ali's decision | Full itinerary generation, RAG explanations, conflict resolution |
+| **Validator** | Ali's decision | Feasibility checks, constraint scoring, improvement suggestions |
 
 ### Real-Time Experience Layer
 
@@ -127,7 +127,7 @@ Powered by **Firestore + WebSockets**:
 - Node.js 20+
 - Firebase project (Auth + Firestore enabled)
 - Pinecone account
-- API keys: OpenAI, Anthropic, Google, Groq, Mistral
+- LLM API keys for whichever providers Ali selects
 
 ### Backend Setup
 
