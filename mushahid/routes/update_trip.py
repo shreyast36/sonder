@@ -1,11 +1,12 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from shared.schemas import UpdateTripRequest, UpdateTripResponse
+from mushahid.auth import verify_token
 
 router = APIRouter()
 
 
 @router.post("/update-trip", response_model=UpdateTripResponse)
-async def update_trip(request: UpdateTripRequest):
+async def update_trip(body: UpdateTripRequest, uid: str = Depends(verify_token)):
     """
     Refine an existing itinerary based on user feedback.
     Triggers the refinement loop, pushes result to Firestore.

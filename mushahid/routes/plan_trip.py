@@ -3,13 +3,14 @@ from fastapi.responses import StreamingResponse
 from shared.schemas import PlanTripRequest
 from shared.config import PLAN_TRIP_RATE_LIMIT
 from mushahid.main import limiter
+from mushahid.auth import verify_token
 
 router = APIRouter()
 
 
 @router.post("/plan-trip")
 @limiter.limit(PLAN_TRIP_RATE_LIMIT)
-async def plan_trip(request: Request, body: PlanTripRequest):
+async def plan_trip(request: Request, body: PlanTripRequest, uid: str = Depends(verify_token)):
     """
     Generate a personalised itinerary. Returns a Server-Sent Events stream.
     Each event signals a pipeline stage completion so the frontend can update live.

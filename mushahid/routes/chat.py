@@ -1,11 +1,12 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from shared.schemas import ChatSession, ApprovalStatus
+from mushahid.auth import verify_token, verify_ws_token
 
 router = APIRouter()
 
 
 @router.post("/chat/start", response_model=ChatSession)
-async def start_chat(user_id: str, profile_id: str):
+async def start_chat(user_id: str, profile_id: str, uid: str = Depends(verify_token)):
     """
     Create a new chat session between a user and a co-traveller profile.
 
@@ -23,7 +24,7 @@ async def start_chat(user_id: str, profile_id: str):
 
 
 @router.post("/chat/approve")
-async def approve_match(session_id: str, user_id: str):
+async def approve_match(session_id: str, user_id: str, uid: str = Depends(verify_token)):
     """
     Record user's approval. Triggers shared itinerary creation if both users approve.
 
@@ -36,7 +37,7 @@ async def approve_match(session_id: str, user_id: str):
 
 
 @router.post("/chat/deny")
-async def deny_match(session_id: str, user_id: str):
+async def deny_match(session_id: str, user_id: str, uid: str = Depends(verify_token)):
     """
     Record user's denial. Closes session and notifies the other participant.
 
@@ -48,7 +49,7 @@ async def deny_match(session_id: str, user_id: str):
 
 
 @router.websocket("/ws/chat/{session_id}")
-async def chat_websocket(websocket: WebSocket, session_id: str):
+async def chat_websocket(websocket: WebSocket, session_id: str, uid: str = Depends(verify_ws_token)):
     """
     Real-time chat WebSocket. Proxies to Shreyas's ConnectionManager.
 

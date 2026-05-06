@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from mushahid.auth import verify_token
 
 router = APIRouter()
 
@@ -9,7 +10,7 @@ class CreateProfileRequest(BaseModel):
 
 
 @router.post("/users/profile", status_code=201)
-async def create_user_profile(body: CreateProfileRequest):
+async def create_user_profile(body: CreateProfileRequest, uid: str = Depends(verify_token)):
     """
     Create a UserProfile document in Firestore on first sign-in.
     Call this once immediately after Firebase Auth creates the account — before
@@ -34,7 +35,7 @@ async def create_user_profile(body: CreateProfileRequest):
 
 
 @router.get("/users/profile")
-async def get_user_profile():
+async def get_user_profile(uid: str = Depends(verify_token)):
     """
     Fetch the current user's profile from Firestore.
 

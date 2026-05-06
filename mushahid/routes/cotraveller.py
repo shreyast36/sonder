@@ -1,12 +1,13 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from shared.schemas import CoTravellerMatch
+from mushahid.auth import verify_token
 
 router = APIRouter()
 
 
 @router.post("/cotraveller", response_model=list[CoTravellerMatch])
-async def get_cotraveller_matches(user_id: str, itinerary_id: str):
+async def get_cotraveller_matches(user_id: str, itinerary_id: str, uid: str = Depends(verify_token)):
     """
     Return the top 3 co-traveller matches for a user.
 
@@ -35,7 +36,7 @@ class RegenerateMatchesRequest(BaseModel):
 
 
 @router.post("/cotraveller/regenerate", response_model=list[CoTravellerMatch])
-async def regenerate_cotraveller_matches(body: RegenerateMatchesRequest):
+async def regenerate_cotraveller_matches(body: RegenerateMatchesRequest, uid: str = Depends(verify_token)):
     """
     Find a fresh batch of co-traveller matches, skipping already-shown profiles.
     Called when a user denies all current matches or requests new ones.

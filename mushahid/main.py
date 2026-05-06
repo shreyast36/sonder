@@ -7,9 +7,8 @@ from slowapi.errors import RateLimitExceeded
 from shared.config import ALLOWED_ORIGINS, PLAN_TRIP_RATE_LIMIT
 
 
-# Rate limiter — keyed by IP by default.
-# TODO: once Firebase auth is wired, switch the key function to extract the user UID
-# from the Authorization header so the limit is per-user, not per-IP:
+# Rate limiter — keyed by IP until auth is implemented, then switch to UID.
+# Once mushahid/auth.py verify_token is working, replace with:
 #   def get_user_id(request: Request) -> str:
 #       token = request.headers.get("Authorization", "").replace("Bearer ", "")
 #       return firebase_auth.verify_id_token(token)["uid"]
