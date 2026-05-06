@@ -1,5 +1,9 @@
 from shared.schemas import Itinerary, UserProfile, ValidationResult, UpdateTripResponse
 from shared.config import MAX_REFINEMENT_ATTEMPTS
+# TODO: from jahnvi.pipeline.module3_persona import update_profile_from_feedback
+# TODO: from shreyas.retrieval.embeddings import build_refined_query, embed_text
+# TODO: from shreyas.retrieval.search import search_destinations, search_activities
+# TODO: from mushahid.realtime.firestore import update_user_profile, write_itinerary
 
 
 async def run_refinement_loop(

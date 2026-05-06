@@ -12,11 +12,10 @@
 #   jahnvi/schemas/api.py         → VisaInfo, PlanTripRequest, PlanTripResponse,
 #                                    UpdateTripRequest, UpdateTripResponse
 #
-# Once schemas are finalised, replace the TODOs below with real imports:
-# TODO: from jahnvi.schemas.enums       import *
-# TODO: from jahnvi.schemas.user        import *
-# TODO: from jahnvi.schemas.trip        import *
-# TODO: from jahnvi.schemas.validation  import *
-# TODO: from jahnvi.schemas.cotraveller import *
-# TODO: from jahnvi.schemas.chat        import *
-# TODO: from jahnvi.schemas.api         import *
+from jahnvi.schemas.enums       import *
+from jahnvi.schemas.user        import *
+from jahnvi.schemas.trip        import *
+from jahnvi.schemas.validation  import *
+from jahnvi.schemas.cotraveller import *
+from jahnvi.schemas.chat        import *
+from jahnvi.schemas.api         import *

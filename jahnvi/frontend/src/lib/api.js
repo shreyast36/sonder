@@ -44,3 +44,15 @@
 //   openChatSocket(sessionId, token)
 //     Returns a WebSocket connected to /ws/chat/{sessionId}?token=<firebase_id_token>
 //     Token passed as query param — browsers cannot set headers on WebSocket connections.
+//
+//     IMPORTANT — presence heartbeat:
+//       After opening the socket, send {"type": "ping"} every ~30 seconds to keep the
+//       user's presence alive. The backend TTL is 90s — missing 3 pings marks the user offline.
+//       Clear the interval on socket close or component unmount.
+//
+//       Example:
+//         const ws = openChatSocket(sessionId, token)
+//         const pingInterval = setInterval(() => {
+//           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }))
+//         }, 30_000)
+//         ws.addEventListener("close", () => clearInterval(pingInterval))

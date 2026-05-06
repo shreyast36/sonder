@@ -21,16 +21,6 @@ async def create_shared_itinerary(itinerary: Itinerary, user_ids: list[str]) -> 
     raise NotImplementedError
 
 
-async def add_note(itinerary_id: str, user_id: str, note: str) -> None:
-    """
-    Append a note to the shared itinerary. Triggers a live update for both users.
-
-    Expected Firestore update:
-        shared_itineraries/{itinerary_id}.notes → arrayUnion({ "user_id": user_id, "note": note, "timestamp": ... })
-    """
-    # TODO: Firestore arrayUnion on notes field
-    raise NotImplementedError
-
 
 async def add_activity(
     itinerary_id: str,
