@@ -244,6 +244,17 @@ presence/{user_id}                  ← { "online": true, "last_seen": "..." }
 # Run locally
 uvicorn mushahid.main:app --reload --port 8000
 
-# Render start command
+# Production start command (ECS Fargate + Render both use this)
 uvicorn mushahid.main:app --host 0.0.0.0 --port 8000
 ```
+
+### Local vs Production
+
+| Concern | Local | Production (ECS) |
+|---|---|---|
+| Secrets | `.env` file | AWS Secrets Manager (auto-injected by ECS) |
+| LLM inference | Direct API keys | Bedrock via IAM task role (no keys needed if `*_PROVIDER=bedrock`) |
+| WebSocket sessions | In-memory dict (Shreyas's `ConnectionManager`) | ElastiCache Redis — required when running >1 container |
+| Logs | stdout | CloudWatch `/ecs/sonder-backend` |
+
+See `infra/README.md` for full AWS setup steps, IAM roles, and the ECS task definition.

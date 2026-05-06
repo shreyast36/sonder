@@ -1,0 +1,69 @@
+{
+  "family": "sonder-backend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/sonderTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "sonder-api",
+      "image": "<ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/sonder-backend:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "LOCAL_MODE",              "value": "false" },
+        { "name": "LOG_LEVEL",               "value": "INFO"  },
+        { "name": "AWS_REGION",              "value": "<AWS_REGION>" }
+      ],
+      "secrets": [
+        { "name": "FIREBASE_PROJECT_ID",     "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/firebase:FIREBASE_PROJECT_ID::" },
+        { "name": "FIREBASE_PRIVATE_KEY",    "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/firebase:FIREBASE_PRIVATE_KEY::" },
+        { "name": "FIREBASE_CLIENT_EMAIL",   "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/firebase:FIREBASE_CLIENT_EMAIL::" },
+        { "name": "PINECONE_API_KEY",        "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/pinecone:PINECONE_API_KEY::" },
+        { "name": "PINECONE_INDEX_NAME",     "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/pinecone:PINECONE_INDEX_NAME::" },
+        { "name": "OPENAI_API_KEY",          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/llm:OPENAI_API_KEY::" },
+        { "name": "ANTHROPIC_API_KEY",       "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/llm:ANTHROPIC_API_KEY::" },
+        { "name": "GOOGLE_API_KEY",          "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/llm:GOOGLE_API_KEY::" },
+        { "name": "GROQ_API_KEY",            "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/llm:GROQ_API_KEY::" },
+        { "name": "MISTRAL_API_KEY",         "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/llm:MISTRAL_API_KEY::" },
+        { "name": "REDIS_URL",               "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/redis:REDIS_URL::" },
+        { "name": "SMALL_MODEL_PROVIDER",    "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/models:SMALL_MODEL_PROVIDER::" },
+        { "name": "SMALL_MODEL_NAME",        "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/models:SMALL_MODEL_NAME::" },
+        { "name": "LARGE_MODEL_PROVIDER",    "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/models:LARGE_MODEL_PROVIDER::" },
+        { "name": "LARGE_MODEL_NAME",        "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/models:LARGE_MODEL_NAME::" },
+        { "name": "VALIDATOR_MODEL_PROVIDER","valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/models:VALIDATOR_MODEL_PROVIDER::" },
+        { "name": "VALIDATOR_MODEL_NAME",    "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/models:VALIDATOR_MODEL_NAME::" },
+        { "name": "BEDROCK_SMALL_MODEL_ID",  "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/models:BEDROCK_SMALL_MODEL_ID::" },
+        { "name": "BEDROCK_LARGE_MODEL_ID",  "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/models:BEDROCK_LARGE_MODEL_ID::" },
+        { "name": "BEDROCK_VALIDATOR_MODEL_ID","valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/models:BEDROCK_VALIDATOR_MODEL_ID::" },
+        { "name": "EMBED_MODEL_PROVIDER",    "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/models:EMBED_MODEL_PROVIDER::" },
+        { "name": "EMBED_MODEL",             "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/models:EMBED_MODEL::" },
+        { "name": "EMBED_DIMENSIONS",        "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/models:EMBED_DIMENSIONS::" },
+        { "name": "BEDROCK_EMBED_MODEL_ID",  "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/models:BEDROCK_EMBED_MODEL_ID::" },
+        { "name": "SENTRY_DSN",              "valueFrom": "arn:aws:secretsmanager:<AWS_REGION>:<ACCOUNT_ID>:secret:sonder/monitoring:SENTRY_DSN::" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/sonder-backend",
+          "awslogs-region": "<AWS_REGION>",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 10
+      }
+    }
+  ]
+}

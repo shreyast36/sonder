@@ -178,6 +178,27 @@ SharedItinerary(
 
 ---
 
+## Production Notes
+
+### ConnectionManager — Redis required in production
+Your `ConnectionManager` in `cotraveller/chat.py` currently holds WebSocket sessions in a Python dict. This is fine locally, but **breaks on ECS** — multiple container instances each have their own memory, so a message sent to one container won't reach sessions on another.
+
+Fix before production:
+- Replace the in-memory dict with Redis pub/sub using `aioredis`
+- Each container subscribes to a `session:{session_id}` channel
+- `broadcast_to_session()` publishes to Redis; all containers receive and forward to their local sockets
+- `REDIS_URL` is already in `shared/config.py` — read it there
+- When `LOCAL_MODE=true` the in-memory fallback is fine
+
+### Embeddings — provider your choice
+Set `EMBED_MODEL_PROVIDER` and `EMBED_MODEL` in `.env`. Options:
+- `openai` — uses `OPENAI_API_KEY` + `EMBED_MODEL`
+- `bedrock` — uses IAM role + `BEDROCK_EMBED_MODEL_ID` (no extra keys needed on ECS)
+
+Vectors always go into Pinecone regardless of which provider generates them. `EMBED_DIMENSIONS` must match the model you pick.
+
+---
+
 ## Build Order
 
 1. `retrieval/client.py` first — everything else needs a working Pinecone connection

@@ -1,7 +1,16 @@
-from shared.config import EMBED_MODEL, OPENAI_API_KEY
+from shared.config import EMBED_MODEL, EMBED_MODEL_PROVIDER, OPENAI_API_KEY, BEDROCK_EMBED_MODEL_ID, AWS_REGION
 from shared.schemas import UserProfile
 
-# Expected: text → vector using whichever embedding model Ali configures via EMBED_MODEL.
+# Expected: text → vector using whichever embedding provider/model Shreyas configures.
+#
+# EMBED_MODEL_PROVIDER controls which API to call:
+#   "openai"  → OpenAI embeddings API (OPENAI_API_KEY + EMBED_MODEL)
+#   "bedrock" → Amazon Bedrock embeddings (AWS credentials + BEDROCK_EMBED_MODEL_ID)
+#               boto3.client("bedrock-runtime").invoke_model — request/response format
+#               varies by model family, check Bedrock docs for your chosen model ID
+#
+# Vectors always go into Pinecone regardless of which provider generates them.
+# EMBED_DIMENSIONS must match the model you choose.
 
 def embed_text(text: str) -> list[float]:
     """

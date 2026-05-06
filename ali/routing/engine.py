@@ -25,9 +25,14 @@ def get_client(tier: ModelTier) -> BaseLLMClient:
 
     # TODO: import and return the correct client class based on provider string
     # Example:
-    #   if provider == "openai":    return OpenAILargeClient()
-    #   if provider == "anthropic": return AnthropicLargeClient()
-    #   if provider == "google":    return GoogleLargeClient()
+    #   if provider == "openai":     return OpenAILargeClient()    if LARGE
+    #   if provider == "anthropic":  return AnthropicLargeClient() if LARGE
+    #   if provider == "google":     return GoogleLargeClient()    if LARGE
+    #   if provider == "groq":       return GroqSmallClient()      if SMALL
+    #   if provider == "mistral":    return MistralSmallClient()   if SMALL
+    #   if provider == "bedrock":    return BedrockLargeClient()   if LARGE
+    #                                return BedrockSmallClient()   if SMALL
+    #                                return BedrockValidatorClient() if VALIDATOR
     raise NotImplementedError
 
 
