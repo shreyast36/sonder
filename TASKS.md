@@ -10,25 +10,14 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Retrieval
 
-- [ ] `shreyas/retrieval/client.py` — Initialise Pinecone client, create index if missing
-- [ ] `shreyas/retrieval/embeddings.py` — `embed_text()`, `embed_batch()`, `build_user_query()`
-- [ ] `shreyas/retrieval/search.py` — `search_destinations()`, `search_activities()`, `search_cotravellers()`, `upsert_*()` functions
-- [ ] Seed Pinecone index with destinations, activities, and synthetic co-traveller profiles
+- [ ] `shreyas/retrieval/client.py` — Initialise Pinecone client, create index if missing- [ ] `shreyas/retrieval/embeddings.py` — `embed_text()`, `embed_batch()`, `build_user_query()`- [ ] `shreyas/retrieval/search.py` — `search_destinations()`, `search_activities()`, `search_cotravellers()`, `upsert_*()` functions- [ ] Seed Pinecone index with destinations, activities, and synthetic co-traveller profiles
 
 ### Ranking & Filtering
 
-- [ ] `shreyas/ranking/filters.py` — Hard constraint filters for destinations and activities
-- [ ] `shreyas/ranking/destination_ranker.py` — `score_destination()`, `rank_destinations()`
-- [ ] `shreyas/ranking/activity_ranker.py` — `score_activity()`, `rank_activities()`
-
+- [ ] `shreyas/ranking/filters.py` — Hard constraint filters for destinations and activities- [ ] `shreyas/ranking/destination_ranker.py` — `score_destination()`, `rank_destinations()`- [ ] `shreyas/ranking/activity_ranker.py` — `score_activity()`, `rank_activities()`
 ### Co-Traveller Matching
 
-- [ ] `shreyas/cotraveller/matching.py` — `score_compatibility()`, `get_top_matches()`
-- [ ] `shreyas/cotraveller/chat.py` — `ConnectionManager` WebSocket engine (connect, disconnect, send, broadcast)
-- [ ] `shreyas/cotraveller/presence.py` — `set_online()`, `set_offline()`, `is_online()`, `listen_presence()`
-- [ ] `shreyas/cotraveller/shared_itinerary.py` — `create_shared_itinerary()`, `add_note()`, `add_activity()`, `sync_changes()`
-- [ ] `shreyas/cotraveller/approval.py` — `approve_match()`, `deny_match()`, `get_approval_status()`
-
+- [ ] `shreyas/cotraveller/matching.py` — `score_compatibility()`, `get_top_matches()`- [ ] `shreyas/cotraveller/chat.py` — `ConnectionManager` WebSocket engine (connect, disconnect, send, broadcast)- [ ] `shreyas/cotraveller/presence.py` — `set_online()`, `set_offline()`, `is_online()`, `listen_presence()`- [ ] `shreyas/cotraveller/shared_itinerary.py` — `create_shared_itinerary()`, `add_note()`, `add_activity()`, `sync_changes()`- [ ] `shreyas/cotraveller/approval.py` — `approve_match()`, `deny_match()`, `get_approval_status()`
 ### Integration
 
 - [ ] Confirm interface with Mushahid: `ConnectionManager` must be importable from `mushahid/routes/chat.py`
@@ -42,19 +31,11 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Schemas (do first — everyone is blocked on these)
 
-- [ ] `jahnvi/schemas/enums.py` — All enums: `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`, `ValidationStatus`, `VisaRequirement`, `ModelTier`, `ApprovalStatus`
-- [ ] `jahnvi/schemas/user.py` — `TripConstraints`, `PersonaQuestionAnswers`, `UserProfile`
-- [ ] `jahnvi/schemas/trip.py` — `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary`
-- [ ] `jahnvi/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch`
-- [ ] `jahnvi/schemas/chat.py` — `ChatMessage`, `ChatSession`, `SharedItinerary`, `ItineraryUpdateEvent`
-- [ ] Copy finalised models into `shared/schemas.py` and `shared/config.py` (single source of truth)
+- [x] `jahnvi/schemas/enums.py` — All enums: `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`, `ValidationStatus`, `VisaRequirement`, `ModelTier`, `ApprovalStatus`- [x] `jahnvi/schemas/user.py` — `TripConstraints`, `PersonaQuestionAnswers`, `UserProfile`- [x] `jahnvi/schemas/trip.py` — `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary`- [x] `jahnvi/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch`- [x] `jahnvi/schemas/chat.py` — `ChatMessage`, `ChatSession`, `SharedItinerary`, `ItineraryUpdateEvent`- [ ] Copy finalised models into `shared/schemas.py` and `shared/config.py` (single source of truth)
 
 ### User Pipeline
 
-- [ ] `jahnvi/pipeline/module1_constraints.py` — `capture_constraints(raw_input) → TripConstraints`
-- [ ] `jahnvi/pipeline/module2_preferences.py` — `get_questions()`, `parse_answers() → PersonaQuestionAnswers`
-- [ ] `jahnvi/pipeline/module3_persona.py` — `infer_persona()`, `infer_emotion()`, `build_compatibility_signals()`, `build_travel_style_embedding()`
-
+- [ ] `jahnvi/pipeline/module1_constraints.py` — `capture_constraints(raw_input) → TripConstraints`- [ ] `jahnvi/pipeline/module2_preferences.py` — `get_questions()`, `parse_answers() → PersonaQuestionAnswers`- [ ] `jahnvi/pipeline/module3_persona.py` — `infer_persona()`, `infer_emotion()`, `build_compatibility_signals()`, `build_travel_style_embedding()`
 ### Design (before any frontend code)
 
 - [ ] Figma: design system tokens (colours, typography, spacing) matching dark purple UI
@@ -106,38 +87,23 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### LLM Clients (do first — routing engine depends on these)
 
-- [ ] `ali/clients/base.py` — Abstract base class: `complete()`, `stream()`, model name, tier, cost
-- [ ] `ali/clients/openai_client.py`
-- [ ] `ali/clients/anthropic_client.py`
-- [ ] `ali/clients/google_client.py`
-- [ ] `ali/clients/groq_client.py`
-- [ ] `ali/clients/mistral_client.py`
-- [ ] `ali/clients/bedrock_client.py`
-
+- [x] `ali/clients/base.py` — Abstract base class: `complete()`, `stream()`, model name, tier, cost- [ ] `ali/clients/openai_client.py`- [ ] `ali/clients/anthropic_client.py`- [ ] `ali/clients/google_client.py`- [ ] `ali/clients/groq_client.py`- [ ] `ali/clients/mistral_client.py`- [ ] `ali/clients/bedrock_client.py`
 ### Routing Engine
 
-- [ ] `ali/routing/classifier.py` — `classify(task_type, context) → ModelTier`, `estimate_tokens(prompt) → int`
-- [ ] `ali/routing/engine.py` — `route_request(task_type, context) → LLMResponse`
-  - Route SMALL → fastest available small model
+- [ ] `ali/routing/classifier.py` — `classify(task_type, context) → ModelTier`, `estimate_tokens(prompt) → int`- [ ] `ali/routing/engine.py` — `route_request(task_type, context) → LLMResponse`  - Route SMALL → fastest available small model
   - Route LARGE → best large model for context length
   - Route VALIDATOR → GPT-4o critic or Claude 3.5 Sonnet
   - Fall back to next model in tier if one fails
 
 ### Itinerary Generation
 
-- [ ] `ali/generation/prompts.py` — `ITINERARY_SYSTEM_PROMPT`, `build_itinerary_prompt()`, `REFINEMENT_SYSTEM_PROMPT`, `build_refinement_prompt()`
-- [ ] `ali/generation/output_parser.py` — `parse_itinerary()`, `validate_structure()`, retry on malformed JSON
-- [ ] `ali/generation/itinerary_generator.py` — `generate_itinerary()` streaming to Mushahid's SSE layer
-
+- [ ] `ali/generation/prompts.py` — `ITINERARY_SYSTEM_PROMPT`, `build_itinerary_prompt()`, `REFINEMENT_SYSTEM_PROMPT`, `build_refinement_prompt()`- [ ] `ali/generation/output_parser.py` — `parse_itinerary()`, `validate_structure()`, retry on malformed JSON- [ ] `ali/generation/itinerary_generator.py` — `generate_itinerary()` streaming to Mushahid's SSE layer
 ### RAG
 
-- [ ] `ali/rag/retriever.py` — `retrieve_activity_context()`, `retrieve_destination_context()` via Shreyas's search
-- [ ] `ali/rag/explainer.py` — `explain_activity()`, `explain_itinerary()` — populates `why_this` field on each activity
-
+- [ ] `ali/rag/retriever.py` — `retrieve_activity_context()`, `retrieve_destination_context()` via Shreyas's search- [ ] `ali/rag/explainer.py` — `explain_activity()`, `explain_itinerary()` — populates `why_this` field on each activity
 ### Chat Topics
 
 - [ ] `ali/generation/topics.py` — `generate_topics()` (5 topics, SMALL model), `generate_icebreaker()` (SMALL model)
-
 ### Integration
 
 - [ ] Confirm streaming interface with Mushahid: `generate_itinerary()` must yield token chunks for SSE
@@ -151,37 +117,23 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### FastAPI App (do first)
 
-- [ ] `mushahid/main.py` — FastAPI app, CORS, lifespan hooks, register all routers
-- [ ] Firebase Auth middleware — verify ID token on all protected routes
+- [x] `mushahid/main.py` — FastAPI app, CORS, lifespan hooks, register all routers- [ ] Firebase Auth middleware — verify ID token on all protected routes
 
 ### Routes
 
-- [ ] `mushahid/routes/health.py` — `/health` checks Firestore + Pinecone reachability
-- [ ] `mushahid/routes/visa.py` — `/visa-check` with static lookup or third-party API
-- [ ] `mushahid/routes/plan_trip.py` — `POST /plan-trip` → SSE stream via orchestrator
-- [ ] `mushahid/routes/update_trip.py` — `POST /update-trip` → refinement loop → Firestore push
-- [ ] `mushahid/routes/cotraveller.py` — `POST /cotraveller` → Shreyas's search + matching
-- [ ] `mushahid/routes/chat.py` — `POST /chat/start`, `/approve`, `/deny` + `WS /ws/chat/{id}`
-
+- [x] `mushahid/routes/health.py` — `/health` checks Firestore + Pinecone reachability- [ ] `mushahid/routes/visa.py` — `/visa-check` with static lookup or third-party API- [ ] `mushahid/routes/plan_trip.py` — `POST /plan-trip` → SSE stream via orchestrator- [ ] `mushahid/routes/update_trip.py` — `POST /update-trip` → refinement loop → Firestore push- [ ] `mushahid/routes/cotraveller.py` — `POST /cotraveller` → Shreyas's search + matching- [ ] `mushahid/routes/chat.py` — `POST /chat/start`, `/approve`, `/deny` + `WS /ws/chat/{id}`
 ### Real-time Layer
 
-- [ ] `mushahid/realtime/firestore.py` — Firebase Admin init, `write_itinerary_status()`, `write_itinerary()`, `get_itinerary()`
-- [ ] `mushahid/realtime/sse.py` — `format_event()`, `stream_pipeline_events()`
-- [ ] `mushahid/realtime/notifications.py` — `push_notification()`, `notify_match_found()`, `notify_itinerary_ready()`, `notify_co_traveller_approved()`
-
+- [ ] `mushahid/realtime/firestore.py` — Firebase Admin init, `write_itinerary_status()`, `write_itinerary()`, `get_itinerary()`- [x] `mushahid/realtime/sse.py` — `format_event()`, `stream_pipeline_events()`- [ ] `mushahid/realtime/notifications.py` — `push_notification()`, `notify_match_found()`, `notify_itinerary_ready()`, `notify_co_traveller_approved()`
 ### Pipeline Orchestrator
 
 - [ ] `mushahid/pipeline/orchestrator.py` — `run_plan_trip_pipeline()` async generator, all 7 steps with SSE events
-
 ### Validation
 
-- [ ] `mushahid/validation/rules.py` — 5 deterministic checks: `check_budget()`, `check_duration()`, `check_pace()`, `check_must_haves()`, `check_avoid_list()`, `run_all_checks()`
-- [ ] `mushahid/validation/critic.py` — `validate_with_llm()` via Ali's VALIDATOR tier
-
+- [ ] `mushahid/validation/rules.py` — 5 deterministic checks: `check_budget()`, `check_duration()`, `check_pace()`, `check_must_haves()`, `check_avoid_list()`, `run_all_checks()`- [ ] `mushahid/validation/critic.py` — `validate_with_llm()` via Ali's VALIDATOR tier
 ### Refinement Loop
 
 - [ ] `mushahid/refinement/loop.py` — `run_refinement_loop()` max `MAX_REFINEMENT_ATTEMPTS` iterations
-
 ### Monitoring & Deployment
 
 - [ ] Integrate Sentry SDK in `main.py` (error tracking)
