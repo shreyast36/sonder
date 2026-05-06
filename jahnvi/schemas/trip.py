@@ -74,14 +74,14 @@ class ItineraryDay(BaseModel):
     Example:
         ItineraryDay(
             day_number       = 1,
-            date             = date(2025, 6, 1),
+            trip_date        = date(2025, 6, 1),
             activities       = [ItineraryActivity(...), ItineraryActivity(...)],
             daily_cost_usd   = 145.0,
             theme            = "Culture & Coastal Views"
         )
     """
     day_number:     int
-    date:           Optional[date] = None
+    trip_date:      Optional[date] = None   # renamed from 'date' — field name shadowed the datetime.date type in Pydantic v2
     activities:     list[ItineraryActivity]
     daily_cost_usd: float
     theme:          Optional[str] = None
