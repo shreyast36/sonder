@@ -1,0 +1,7 @@
+/* TODO: Jahnvi — global styles and Tailwind directives.
+   Define CSS custom properties for the Sonder dark purple design system.
+   Reference: Figma design tokens (background, surface, primary, text, border colours).
+*/
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

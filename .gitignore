@@ -1,0 +1,33 @@
+# Environment
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Node
+jahnvi/frontend/node_modules/
+jahnvi/frontend/dist/
+jahnvi/frontend/.env
+jahnvi/frontend/.env.local
+
+# Vector store
+vector_store/
+*.index
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Firebase
+firebase-service-account.json
