@@ -52,6 +52,69 @@ You own the API, the pipeline that ties all modules together, the validation loo
 
 ---
 
+## Your Decisions
+
+### Push notifications
+`realtime/notifications.py` currently writes to Firestore only — users only see notifications when the app is open. You need to extend this with real push delivery.
+
+| Option | Notes |
+|---|---|
+| **Firebase Cloud Messaging (FCM)** | Already using Firebase — natural choice, zero new dependencies. Works for web (PWA), Android, and iOS. Store the FCM device token on `UserProfile` at login. Free. |
+| **Amazon SNS** | AWS-native if you want to avoid another Firebase dependency. More complex setup. Only worth it if you move away from Firebase entirely. |
+
+**Recommended: FCM.** Steps:
+1. Add `fcm_token: Optional[str]` to `UserProfile` in `jahnvi/schemas/user.py`
+2. Frontend sends FCM token to `POST /users/profile` on login
+3. `push_notification()` in `notifications.py` calls `firebase_admin.messaging.send()` using the stored token
+4. Add `FIREBASE_VAPID_KEY` to `.env` for web push
+
+---
+
+### Email notifications
+For important events when the app is closed (co-traveller match found, mutual approval reached).
+
+| Option | Notes |
+|---|---|
+| **Amazon SES** | Already on AWS — cheapest option ($0.10 per 1k emails), best deliverability. Requires domain verification. |
+| **SendGrid** | Easier setup, good free tier (100 emails/day). Better developer experience, rich templates. |
+| **Resend** | Modern API, excellent developer experience, generous free tier (3k emails/month). Worth considering. |
+
+**Recommended: SES** if you're committed to the AWS stack. **SendGrid or Resend** if you want faster setup.
+
+Add to `.env`:
+```bash
+# SES
+AWS_SES_FROM_EMAIL=noreply@yourdomain.com
+
+# or SendGrid
+SENDGRID_API_KEY=SG...
+SENDGRID_FROM_EMAIL=noreply@yourdomain.com
+
+# or Resend
+RESEND_API_KEY=re_...
+```
+
+---
+
+### Visa check data source
+`routes/visa.py` is stubbed. You decide where the data comes from.
+
+| Option | Notes |
+|---|---|
+| **Sherpa API** | Best coverage, real-time visa requirements, entry restrictions. Paid (~$200/month). Most reliable for production. |
+| **VisaHQ API** | Good coverage, paid. Slightly cheaper than Sherpa. |
+| **Static JSON dataset** | Fastest to ship — a curated JSON file mapping (nationality, destination) → visa requirement. Maintained manually. Use for demo launch; switch to Sherpa later. Free. |
+| **IATA Timatic** | The authoritative source airlines use. Enterprise pricing. Overkill unless you have serious compliance needs. |
+
+**Recommended for launch: static JSON dataset** covering the top 20 nationality/destination combinations. Add `data/visa_requirements.json` and read from it in `routes/visa.py`. Upgrade to Sherpa once you have paying users.
+
+Add to `.env`:
+```bash
+SHERPA_API_KEY=your-key          # if using Sherpa
+```
+
+---
+
 ## API Surface
 
 ### HTTP Endpoints

@@ -16,6 +16,29 @@ You define what the product looks like and how users interact with it. Everythin
 
 ---
 
+## Your Decisions
+
+### Image source
+Activity cards and destination cards need images. You decide the source and add `image_url: Optional[str]` to `Destination` and `Activity` in `jahnvi/schemas/trip.py` (and copy to `shared/schemas.py`).
+
+| Option | Notes |
+|---|---|
+| **Unsplash API** | Free, high quality, easy to integrate. Query by destination or activity name. Rate-limited to 50 requests/hour on the free tier — cache aggressively. |
+| **Pexels API** | Free, no rate limit on standard plan, good travel photo coverage. Slightly lower quality than Unsplash. |
+| **Cloudinary** | Paid CDN + image transformation. Best for performance — resize, compress, and serve optimised images at the edge. Worth it if you're worried about mobile load times. |
+| **Static placeholder URLs** | Fastest to ship — hard-code a Unsplash URL per destination for the demo, replace later. Zero API dependency. |
+
+Recommended for launch: static placeholder URLs per destination in the seeding script, switch to Unsplash API once the rest of the product is stable.
+
+Add to `.env`:
+```bash
+UNSPLASH_ACCESS_KEY=your-key     # if using Unsplash
+PEXELS_API_KEY=your-key          # if using Pexels
+CLOUDINARY_URL=cloudinary://...  # if using Cloudinary
+```
+
+---
+
 ## Dependencies
 
 ### What I need from others
