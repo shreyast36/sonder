@@ -82,3 +82,13 @@ class UserProfile(BaseModel):
     emotion_intent: Optional[EmotionIntent] = None
     travel_style_embedding: Optional[list[float]] = None
     compatibility_signals: dict = Field(default_factory=dict)
+
+
+def scaffold_review() -> None:
+    """
+    Jahnvi — TripConstraints, PersonaQuestionAnswers, and UserProfile were
+    pre-populated as scaffold. Add any missing fields (e.g. fcm_token if using FCM
+    for push notifications), verify field types match your frontend forms, then
+    delete this function.
+    """
+    raise NotImplementedError

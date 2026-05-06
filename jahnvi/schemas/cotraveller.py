@@ -61,3 +61,12 @@ class CoTravellerMatch(BaseModel):
     match_score:              float = Field(ge=0.0, le=1.0)
     match_reasons:            list[str]
     compatibility_breakdown:  dict
+
+
+def scaffold_review() -> None:
+    """
+    Jahnvi — CoTravellerProfile and CoTravellerMatch were pre-populated as scaffold.
+    Verify the fields match what Shreyas needs for matching and what the frontend
+    needs to render Screen 4 (Match Detail). Delete this function when finalised.
+    """
+    raise NotImplementedError

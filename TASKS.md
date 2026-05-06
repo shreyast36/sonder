@@ -42,11 +42,11 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Schemas (do first — everyone is blocked on these)
 
-- [x] `jahnvi/schemas/enums.py` — All enums: `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`, `ValidationStatus`, `VisaRequirement`, `ModelTier`, `ApprovalStatus`
-- [x] `jahnvi/schemas/user.py` — `TripConstraints`, `PersonaQuestionAnswers`, `UserProfile`
-- [x] `jahnvi/schemas/trip.py` — `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary`
-- [x] `jahnvi/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch`
-- [x] `jahnvi/schemas/chat.py` — `ChatMessage`, `ChatSession`, `SharedItinerary`, `ItineraryUpdateEvent`
+- [ ] `jahnvi/schemas/enums.py` — All enums: `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`, `ValidationStatus`, `VisaRequirement`, `ModelTier`, `ApprovalStatus`
+- [ ] `jahnvi/schemas/user.py` — `TripConstraints`, `PersonaQuestionAnswers`, `UserProfile`
+- [ ] `jahnvi/schemas/trip.py` — `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary`
+- [ ] `jahnvi/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch`
+- [ ] `jahnvi/schemas/chat.py` — `ChatMessage`, `ChatSession`, `SharedItinerary`, `ItineraryUpdateEvent`
 - [ ] Copy finalised models into `shared/schemas.py` and `shared/config.py` (single source of truth)
 
 ### User Pipeline
@@ -106,7 +106,7 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### LLM Clients (do first — routing engine depends on these)
 
-- [x] `ali/clients/base.py` — Abstract base class: `complete()`, `stream()`, model name, tier, cost
+- [ ] `ali/clients/base.py` — Abstract base class: `complete()`, `stream()`, model name, tier, cost
 - [ ] `ali/clients/openai_client.py`
 - [ ] `ali/clients/anthropic_client.py`
 - [ ] `ali/clients/google_client.py`
@@ -156,7 +156,7 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Routes
 
-- [x] `mushahid/routes/health.py` — `/health` checks Firestore + Pinecone reachability
+- [ ] `mushahid/routes/health.py` — `/health` checks Firestore + Pinecone reachability
 - [ ] `mushahid/routes/visa.py` — `/visa-check` with static lookup or third-party API
 - [ ] `mushahid/routes/plan_trip.py` — `POST /plan-trip` → SSE stream via orchestrator
 - [ ] `mushahid/routes/update_trip.py` — `POST /update-trip` → refinement loop → Firestore push

@@ -97,3 +97,13 @@ class ItineraryUpdateEvent(BaseModel):
     user_id:      str
     payload:      dict
     timestamp:    str
+
+
+def scaffold_review() -> None:
+    """
+    Jahnvi — ChatMessage, ChatSession, SharedItinerary, and ItineraryUpdateEvent
+    were pre-populated as scaffold. Verify these match what Shreyas needs for the
+    WebSocket layer and what the frontend needs for Screens 5–8. Delete this
+    function when finalised.
+    """
+    raise NotImplementedError

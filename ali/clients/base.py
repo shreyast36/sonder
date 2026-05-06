@@ -57,3 +57,13 @@ class BaseLLMClient(ABC):
                 yield chunk  # forward to SSE
         """
         ...
+
+
+def scaffold_review() -> None:
+    """
+    Ali — BaseLLMClient was pre-populated as scaffold. Review the abstract interface
+    before building any concrete clients on top of it. Add any additional methods
+    your provider clients will need (e.g. count_tokens, health_check). Delete this
+    function when the interface is finalised.
+    """
+    raise NotImplementedError
