@@ -51,16 +51,21 @@ class SharedItinerary(BaseModel):
     A collaborative itinerary shared between two users after mutual approval.
     Stored in Firestore and synced in real time.
 
+    version is incremented on every write and used for optimistic locking:
+    a write is only accepted if the client's version matches the current Firestore version.
+    This prevents the last-write-wins silent overwrite when both users edit simultaneously.
+
     Example:
         SharedItinerary(
             itinerary_id   = "itin_abc123",
             user_ids       = ["firebase_uid_abc123", "maya_001"],
             itinerary      = Itinerary(...),
             notes          = [
-                {"user_id": "maya_001",  "note": "Let's wake up early on Day 2 for Mount Batur sunrise!", "timestamp": "..."},
-                {"user_id": "user_abc",  "note": "Great idea! I'll add it to the plan.",                 "timestamp": "..."}
+                {"user_id": "maya_001",  "note": "Let's wake up early on Day 2!", "timestamp": "..."},
+                {"user_id": "user_abc",  "note": "Great idea!", "timestamp": "..."}
             ],
-            last_updated_by = "maya_001"
+            last_updated_by = "maya_001",
+            version         = 4
         )
     """
     itinerary_id:    str
@@ -68,6 +73,7 @@ class SharedItinerary(BaseModel):
     itinerary:       Itinerary
     notes:           list[dict] = Field(default_factory=list)
     last_updated_by: Optional[str] = None
+    version:         int = 0  # increment on every write; clients must send current version
 
 
 class ItineraryUpdateEvent(BaseModel):

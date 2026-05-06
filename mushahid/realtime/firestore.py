@@ -52,6 +52,30 @@ async def get_itinerary(itinerary_id: str) -> Itinerary | None:
     raise NotImplementedError
 
 
+async def create_user_profile(user_id: str, display_name: str) -> None:
+    """
+    Create a bare UserProfile document in Firestore on first sign-in.
+    Called by POST /users/profile immediately after Firebase Auth creates the account.
+
+    Firestore path: user_profiles/{user_id}
+    Creates a minimal document — constraints and persona answers are populated
+    later when the user completes the trip preferences form (Screen 2).
+
+    Expected Firestore write:
+        {
+            "user_id":                user_id,
+            "display_name":           display_name,
+            "constraints":            null,
+            "persona_answers":        null,
+            "compatibility_signals":  {},
+            "travel_style_embedding": [],
+            "created_at":             "<now>"
+        }
+    """
+    # TODO: get_db().collection("user_profiles").document(user_id).set({...})
+    raise NotImplementedError
+
+
 async def update_user_profile(user_id: str, updates: dict) -> None:
     """
     [Gap 3] Write updated profile fields back to Firestore so future sessions

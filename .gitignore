@@ -31,3 +31,21 @@ Thumbs.db
 
 # Firebase
 firebase-service-account.json
+*-service-account.json
+
+# Test / coverage
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
+
+# Logs
+*.log
+logs/
+
+# Scripts output
+scripts/output/
+scripts/*.json
+
+# AWS
+.aws/

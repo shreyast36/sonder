@@ -50,3 +50,38 @@ def get_top_matches(
     """
     # TODO: score each candidate, sort, return top_n
     raise NotImplementedError
+
+
+def regenerate_matches(
+    user_profile: UserProfile,
+    excluded_profile_ids: list[str],
+    feedback: str = "",
+    top_n: int = 3,
+) -> list[CoTravellerMatch]:
+    """
+    Find a fresh batch of co-traveller matches, skipping already-shown profiles.
+    Called when a user denies all current matches or explicitly asks for new ones.
+
+    If feedback is provided (e.g. "someone more adventurous"), update the user's
+    compatibility signals before re-querying Pinecone so the new batch reflects
+    what the user actually wants — not just a different random slice.
+
+    Expected input:
+        user_profile         = UserProfile(...)
+        excluded_profile_ids = ["maya_001", "raj_002", "sarah_003"]  # already shown
+        feedback             = "I want someone more adventurous"      # optional
+
+    Expected output:  3 new CoTravellerMatch objects, none in excluded_profile_ids
+
+    Steps:
+        1. If feedback provided: update_profile_from_feedback(user_profile, feedback)
+           and re-embed travel_style_embedding (same as refinement loop Gap 2+3)
+        2. search_cotravellers(user_profile) → new Pinecone query with updated embedding
+        3. Filter out excluded_profile_ids from candidates
+        4. get_top_matches(user_profile, remaining_candidates, top_n)
+    """
+    # TODO: optionally update profile signals from feedback
+    # TODO: search_cotravellers(user_profile) — fresh Pinecone query
+    # TODO: filter candidates where profile_id not in excluded_profile_ids
+    # TODO: return get_top_matches(user_profile, filtered_candidates, top_n)
+    raise NotImplementedError

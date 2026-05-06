@@ -60,6 +60,12 @@ LOCAL_MODE = os.getenv("LOCAL_MODE", "true").lower() == "true"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 MAX_REFINEMENT_ATTEMPTS = int(os.getenv("MAX_REFINEMENT_ATTEMPTS", "3"))
 
+# CORS — comma-separated list of allowed frontend origins
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")]
+
+# Rate limiting — max /plan-trip calls per user per window
+PLAN_TRIP_RATE_LIMIT = os.getenv("PLAN_TRIP_RATE_LIMIT", "5/hour")
+
 # Monitoring
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 POSTHOG_API_KEY = os.getenv("POSTHOG_API_KEY")

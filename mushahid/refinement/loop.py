@@ -44,11 +44,20 @@ async def run_refinement_loop(
         feedback          = "I want more free time each day"
         validation_result = ValidationResult(status=REVISE, feedback="Too many activities on Day 3")
 
-    Expected output:
+    Expected output (approved):
         UpdateTripResponse(
-            itinerary           = Itinerary(...),  # approved revised itinerary
-            validation          = ValidationResult(status=approved, score=0.96),
-            refinement_attempts = 2
+            itinerary             = Itinerary(...),
+            validation            = ValidationResult(status=approved, score=0.96),
+            refinement_attempts   = 2,
+            reached_max_attempts  = False
+        )
+
+    Expected output (max attempts hit — return best result, do not raise):
+        UpdateTripResponse(
+            itinerary             = Itinerary(...),  # best itinerary seen across all attempts
+            validation            = ValidationResult(status=revise, score=0.71),
+            refinement_attempts   = MAX_REFINEMENT_ATTEMPTS,
+            reached_max_attempts  = True             # frontend shows soft warning to user
         )
     """
     # TODO: for attempt in range(MAX_REFINEMENT_ATTEMPTS):
