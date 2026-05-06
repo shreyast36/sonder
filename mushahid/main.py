@@ -38,7 +38,7 @@ app.add_middleware(
 )
 
 # TODO: import and register all routers once implemented
-# from mushahid.routes import plan_trip, update_trip, cotraveller, chat, health, visa, users
+# from mushahid.routes import plan_trip, update_trip, cotraveller, chat, health, visa, users, export
 # app.include_router(plan_trip.router)
 # app.include_router(update_trip.router)
 # app.include_router(cotraveller.router)
@@ -46,5 +46,6 @@ app.add_middleware(
 # app.include_router(health.router)
 # app.include_router(visa.router)
 # app.include_router(users.router)
+# app.include_router(export.router)
 
 # Run with: uvicorn mushahid.main:app --reload --port 8000

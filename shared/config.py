@@ -63,6 +63,11 @@ MAX_REFINEMENT_ATTEMPTS = int(os.getenv("MAX_REFINEMENT_ATTEMPTS", "3"))
 # Currency conversion — optional; falls back to static rates in shared/currency.py if unset
 EXCHANGE_RATE_API_KEY = os.getenv("EXCHANGE_RATE_API_KEY")
 
+# Email — transactional itinerary delivery
+EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "resend")  # resend | sendgrid | ses
+EMAIL_API_KEY  = os.getenv("EMAIL_API_KEY")
+EMAIL_FROM     = os.getenv("EMAIL_FROM", "itinerary@sonder.app")
+
 # CORS — comma-separated list of allowed frontend origins
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")]
 

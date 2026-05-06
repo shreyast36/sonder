@@ -119,6 +119,22 @@ class UpdateTripRequest(BaseModel):
     current_itinerary:  Itinerary
 
 
+class EmailItineraryRequest(BaseModel):
+    """
+    Request body for POST /export/email.
+
+    Example:
+        EmailItineraryRequest(
+            itinerary_id  = "itin_abc123",
+            recipients    = ["user@example.com", "cotraveller@example.com"],
+            include_notes = True
+        )
+    """
+    itinerary_id:  str
+    recipients:    list[str]
+    include_notes: bool = True
+
+
 class UpdateTripResponse(BaseModel):
     """
     Response from POST /update-trip.

@@ -46,6 +46,14 @@
 //   denyMatch(sessionId, userId)
 //     POST /api/chat/deny → { status: "denied" }
 //
+//   emailItinerary(itineraryId, recipients, includeNotes = true)
+//     POST /api/export/email → { sent_to: string[] }
+//     recipients: list of email addresses (both co-travellers, or just one)
+//
+//   downloadItineraryPdf(itineraryId, idToken)
+//     GET /api/export/pdf/:itineraryId?token=<firebase_id_token>
+//     Returns a PDF stream — open in new tab: window.open(url) handles the save prompt.
+//
 //   openChatSocket(sessionId, token)
 //     Returns a WebSocket connected to /ws/chat/{sessionId}?token=<firebase_id_token>
 //     Token passed as query param — browsers cannot set headers on WebSocket connections.
