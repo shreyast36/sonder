@@ -36,7 +36,6 @@ PERSON_LIST_KEYWORDS = {
     "Ali":      ["ali"],
 }
 
-DOING_KEYWORDS = ["doing"]
 DONE_KEYWORDS  = ["done"]
 
 
@@ -158,13 +157,11 @@ def main():
         lid, lists = get_or_create_list(lists, list_name)
         person_lists[person] = lid
 
-    doing_list, lists = get_or_create_list(lists, "Doing")
-    done_list,  lists = get_or_create_list(lists, "Done")
+    done_list, lists = get_or_create_list(lists, "Done")
 
     print("\nLists ready:")
     for person, lid in person_lists.items():
         print(f"  {person}: {lid}")
-    print(f"  Doing: {doing_list}")
     print(f"  Done:  {done_list}\n")
 
     # --- Fetch existing cards (matched by name so we don't duplicate) ---
@@ -185,8 +182,6 @@ def main():
 
         if status == "done":
             target = done_list
-        elif status == "doing":
-            target = doing_list
         else:
             target = person_lists[sec["person"]]
 
