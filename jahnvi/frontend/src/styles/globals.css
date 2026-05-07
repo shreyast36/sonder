@@ -9,10 +9,11 @@
 
   html {
     scroll-behavior: smooth;
+    background-color: #080807;
   }
 
   body {
-    background-color: #040404;
+    background-color: #080807;
     color: #F5F1E8;
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
