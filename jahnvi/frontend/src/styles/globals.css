@@ -1,7 +1,75 @@
-/* TODO: Jahnvi — global styles and Tailwind directives.
-   Define CSS custom properties for the Sonder dark purple design system.
-   Reference: Figma design tokens (background, surface, primary, text, border colours).
-*/
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: #040404;
+    color: #F5F1E8;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: rgba(15, 15, 18, 0.72);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .glass-card {
+    background: rgba(15, 15, 18, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    box-shadow: 0 4px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+
+  .glass-strong {
+    background: rgba(15, 15, 18, 0.96);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(216, 183, 122, 0.18);
+  }
+
+  .glow-gold {
+    box-shadow: 0 0 24px rgba(216, 183, 122, 0.2), 0 0 48px rgba(216, 183, 122, 0.08);
+  }
+
+  .glow {
+    box-shadow: 0 0 24px rgba(216, 183, 122, 0.2), 0 0 48px rgba(216, 183, 122, 0.08);
+  }
+
+  .text-gradient {
+    background: linear-gradient(135deg, #EDD59A 0%, #D8B77A 55%, #A07828 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #8B5CF6;
+    box-shadow: 0 0 6px rgba(139, 92, 246, 0.7);
+    animation: pulse-dot 2.8s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.45; transform: scale(0.82); }
+  }
+}
