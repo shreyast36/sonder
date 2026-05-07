@@ -65,12 +65,13 @@ def find_list(lists, keywords):
 def parse_sections(path):
     """
     Parse TASKS.md into sections by H2 (person) and H3 (subsection).
-    Returns list of dicts: {person, subsection, card_name, checked, total}
+    Returns list of dicts: {person, subsection, card_name, checked, total, desc}
     """
     sections = []
     current_person = None
     current_sub    = None
     checked = total = 0
+    task_lines = []
 
     def flush():
         if current_person and current_sub:
@@ -80,6 +81,7 @@ def parse_sections(path):
                 "card_name":  f"{current_person}: {current_sub}",
                 "checked":    checked,
                 "total":      total,
+                "desc":       "\n".join(task_lines),
             })
 
     with open(path, encoding="utf-8") as f:
@@ -91,6 +93,7 @@ def parse_sections(path):
                 current_person = m.group(1).strip()
                 current_sub    = None
                 checked = total = 0
+                task_lines     = []
                 continue
 
             # H3 = subsection  (e.g. "### Frontend — Screens")
@@ -99,13 +102,17 @@ def parse_sections(path):
                 flush()
                 current_sub = m.group(1).strip()
                 checked = total = 0
+                task_lines  = []
                 continue
 
             # Checkbox line
-            m = re.match(r"\s*-\s*\[([xX ])\]", line)
+            m = re.match(r"\s*-\s*\[([xX ])\]\s*(.*)", line)
             if m and current_sub:
+                done = m.group(1).lower() == "x"
+                text = m.group(2).strip()
+                task_lines.append(("✅" if done else "☐") + " " + text)
                 total += 1
-                if m.group(1).lower() == "x":
+                if done:
                     checked += 1
 
     flush()
@@ -171,7 +178,7 @@ def main():
             target = person_lists[sec["person"]]
 
         if name not in card_by_name:
-            new_card = trello("POST", "/cards", {"name": name, "idList": target})
+            new_card = trello("POST", "/cards", {"name": name, "idList": target, "desc": sec["desc"]})
             card_by_name[name] = new_card
             print(f"  + [{label}]  {name}  ({prog}) — created")
             created += 1
@@ -179,11 +186,12 @@ def main():
             card    = card_by_name[name]
             current = card["idList"]
             if current != target:
-                trello("PUT", f"/cards/{card['id']}", {"idList": target})
+                trello("PUT", f"/cards/{card['id']}", {"idList": target, "desc": sec["desc"]})
                 print(f"  ✓ [{label}]  {name}  ({prog}) — moved")
                 moved += 1
             else:
-                print(f"  = [{label}]  {name}  ({prog}) — already correct")
+                trello("PUT", f"/cards/{card['id']}", {"desc": sec["desc"]})
+                print(f"  = [{label}]  {name}  ({prog}) — description updated")
                 skipped += 1
 
     print(f"\nSync complete — {created} created, {moved} moved, {skipped} already correct.")
