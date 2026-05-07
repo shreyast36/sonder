@@ -63,7 +63,7 @@ export default function TripPreferences() {
     {
       number: '01',
       heading: 'Where are you dreaming of?',
-      sub: 'A city, a coast, a country you've always meant to visit.',
+      sub: "A city, a coast, a country you've always meant to visit.",
       content: (
         <div style={{ marginTop: 40 }}>
           <ElegantInput value={destination} onChange={setDest} placeholder="Bali, Kyoto, Patagonia…" icon={Globe}/>
