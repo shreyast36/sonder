@@ -7,43 +7,49 @@ import ActivityCard from '../components/ActivityCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 
+const SKY    = '#38BDF8'
+const spring = { type: 'spring', stiffness: 280, damping: 22 }
+
 const DAYS = [
   {
     day: 1, theme: 'Arrival & First Light',
     activities: [
-      { id: 'a1', name: 'Alaya Ubud',                  category: 'Accommodation', time: '3:00 PM',  why: 'Boutique resort with wellness focus — matched to your relaxed pace and mid-range budget.' },
-      { id: 'a2', name: 'Sacred Monkey Forest',         category: 'Nature',        time: '5:00 PM',  why: 'A 10-minute walk from your hotel. UNESCO-listed and perfect for a gentle first evening.' },
-      { id: 'a3', name: 'Locavore NXT',                 category: 'Fine Dining',   time: '7:30 PM',  why: "Ubud's most celebrated chef-led tasting menu. Reservations rare — booked ahead for you." },
+      { id: 'a1', name: 'Alaya Ubud',                 category: 'Accommodation', time: '3:00 PM',  why: 'Boutique resort with wellness focus — matched to your relaxed pace and mid-range budget.' },
+      { id: 'a2', name: 'Sacred Monkey Forest',        category: 'Nature',        time: '5:00 PM',  why: 'A 10-minute walk from your hotel. UNESCO-listed and perfect for a gentle first evening.' },
+      { id: 'a3', name: 'Locavore NXT',                category: 'Fine Dining',   time: '7:30 PM',  why: "Ubud's most celebrated chef-led tasting menu. Reservations rare — booked ahead for you." },
     ],
   },
   {
     day: 2, theme: 'Culture & Ceremony',
     activities: [
-      { id: 'b1', name: 'Tirta Empul Temple',           category: 'Culture',       time: '8:00 AM',  why: 'Best visited early. The ritual purification pools are a once-in-a-lifetime experience.' },
-      { id: 'b2', name: 'Tegalalang Rice Terraces',     category: 'Nature',        time: '11:00 AM', why: 'Most photogenic terraces near Ubud — morning light is ideal for this time slot.' },
-      { id: 'b3', name: 'Kecak Fire Dance, Uluwatu',    category: 'Culture',       time: '6:00 PM',  why: "Sunset backdrop and traditional Balinese performance — one of Bali's signature experiences." },
+      { id: 'b1', name: 'Tirta Empul Temple',          category: 'Culture',       time: '8:00 AM',  why: 'Best visited early. The ritual purification pools are a once-in-a-lifetime experience.' },
+      { id: 'b2', name: 'Tegalalang Rice Terraces',    category: 'Nature',        time: '11:00 AM', why: 'Most photogenic terraces near Ubud — morning light is ideal for this time slot.' },
+      { id: 'b3', name: 'Kecak Fire Dance, Uluwatu',   category: 'Culture',       time: '6:00 PM',  why: "Sunset backdrop and traditional Balinese performance — one of Bali's signature experiences." },
     ],
   },
   {
     day: 3, theme: 'Coastline & Calm',
     activities: [
-      { id: 'c1', name: 'Uluwatu Temple',               category: 'Culture',       time: '9:00 AM',  why: 'Dramatic 70m cliff views. Aligns with the scenic nature preference you set.' },
-      { id: 'c2', name: 'Padang Padang Beach',          category: 'Nature',        time: '11:30 AM', why: 'Hidden cove accessed by carved stone stairs. Worth every step.' },
-      { id: 'c3', name: 'Jimbaran Seafood, Beachside',  category: 'Dining',        time: '6:30 PM',  why: 'Fresh catch grilled on the beach at sunset. Within your daily budget.' },
+      { id: 'c1', name: 'Uluwatu Temple',              category: 'Culture',       time: '9:00 AM',  why: 'Dramatic 70m cliff views. Aligns with the scenic nature preference you set.' },
+      { id: 'c2', name: 'Padang Padang Beach',         category: 'Nature',        time: '11:30 AM', why: 'Hidden cove accessed by carved stone stairs. Worth every step.' },
+      { id: 'c3', name: 'Jimbaran Seafood, Beachside', category: 'Dining',        time: '6:30 PM',  why: 'Fresh catch grilled on the beach at sunset. Within your daily budget.' },
     ],
   },
   {
     day: 4, theme: 'Rest & Renewal',
     activities: [
-      { id: 'd1', name: 'Balinese Healing Massage',     category: 'Wellness',      time: '10:00 AM', why: 'Your wellness travel flag — 90-min traditional massage at the resort.' },
-      { id: 'd2', name: 'Campuhan Ridge Walk',          category: 'Nature',        time: '1:00 PM',  why: 'Quiet 2km jungle ridge trail. Low effort, high reward.' },
-      { id: 'd3', name: 'Sari Organik',                 category: 'Dining',        time: '6:00 PM',  why: 'Farm-to-table dinner in the rice fields. The most serene setting in Ubud.' },
+      { id: 'd1', name: 'Balinese Healing Massage',    category: 'Wellness',      time: '10:00 AM', why: 'Your wellness travel flag — 90-min traditional massage at the resort.' },
+      { id: 'd2', name: 'Campuhan Ridge Walk',         category: 'Nature',        time: '1:00 PM',  why: 'Quiet 2km jungle ridge trail. Low effort, high reward.' },
+      { id: 'd3', name: 'Sari Organik',                category: 'Dining',        time: '6:00 PM',  why: 'Farm-to-table dinner in the rice fields. The most serene setting in Ubud.' },
     ],
   },
 ]
 
+const stagger    = { show: { transition: { staggerChildren: 0.09 } } }
+const cardReveal = { hidden: { opacity: 0, y: 22 }, show: { opacity: 1, y: 0, transition: { duration: 0.5, ease } } }
+
 export default function Itinerary() {
-  const navigate         = useNavigate()
+  const navigate            = useNavigate()
   const [activeDay, setDay] = useState(0)
   const [feedback, setFb]   = useState([])
 
@@ -53,9 +59,10 @@ export default function Itinerary() {
     <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
       <AppBackground />
 
-      {/* top nav */}
+      {/* nav */}
       <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
-        <button
+        <motion.button
+          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
           onClick={() => navigate('/dashboard')}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTE, padding: 0, lineHeight: 0, display: 'flex', alignItems: 'center', gap: 8, transition: 'color 0.2s' }}
           onMouseEnter={e => { e.currentTarget.style.color = BONE }}
@@ -63,22 +70,22 @@ export default function Itinerary() {
         >
           <ArrowLeft size={18}/>
           <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Dashboard</span>
-        </button>
+        </motion.button>
         <SonderNav3D markSize={32}/>
-        <button
+        <motion.button
+          whileHover={{ borderColor: `${SKY}55`, boxShadow: `0 0 24px ${SKY}22`, scale: 1.04, transition: spring }}
+          whileTap={{ scale: 0.96 }}
           onClick={() => navigate('/shared/1')}
           style={{ background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.2s' }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(212,182,134,0.35)'; e.currentTarget.style.boxShadow = '0 0 20px rgba(212,182,134,0.12)' }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = HAIRLINE; e.currentTarget.style.boxShadow = 'none' }}
         >
-          <Users size={11} style={{ color: GOLD }}/>
-          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD }}>Shared with Priya</span>
-        </button>
+          <Users size={11} style={{ color: SKY }}/>
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: SKY }}>Shared with Priya</span>
+        </motion.button>
       </nav>
 
       {/* destination header */}
       <div style={{ borderBottom: `1px solid ${HAIRLINE}`, padding: '40px 48px', position: 'relative', zIndex: 1, overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 50% 150% at 80% 50%, rgba(212,182,134,0.09) 0%, transparent 65%)', pointerEvents: 'none' }}/>
+        <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse 50% 150% at 80% 50%, ${SKY}0D 0%, transparent 65%)`, pointerEvents: 'none' }}/>
         <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
           <div>
             <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 8 }}>Your itinerary</p>
@@ -98,19 +105,22 @@ export default function Itinerary() {
       <div style={{ borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.75)', backdropFilter: 'blur(16px)', position: 'relative', zIndex: 1 }}>
         <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex' }}>
           {DAYS.map((d, i) => (
-            <button key={d.day} onClick={() => setDay(i)} style={{
-              padding: '18px 28px', background: activeDay === i ? 'rgba(212,182,134,0.08)' : 'none',
-              border: 'none', cursor: 'pointer',
-              borderBottom: `2px solid ${activeDay === i ? GOLD : 'transparent'}`,
-              fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.14em',
-              color: activeDay === i ? GOLD : MUTE, whiteSpace: 'nowrap', transition: 'all 0.2s',
-              boxShadow: activeDay === i ? 'inset 0 1px 0 rgba(212,182,134,0.12)' : 'none',
-            }}
-            onMouseEnter={e => { if (activeDay !== i) e.currentTarget.style.color = BONE }}
-            onMouseLeave={e => { if (activeDay !== i) e.currentTarget.style.color = MUTE }}
+            <motion.button
+              key={d.day}
+              whileHover={activeDay !== i ? { color: BONE, transition: { duration: 0.15 } } : {}}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setDay(i)}
+              style={{
+                padding: '18px 28px', background: activeDay === i ? `${SKY}0F` : 'none',
+                border: 'none', cursor: 'pointer',
+                borderBottom: `2px solid ${activeDay === i ? SKY : 'transparent'}`,
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.14em',
+                color: activeDay === i ? SKY : MUTE, whiteSpace: 'nowrap', transition: 'all 0.2s',
+                boxShadow: activeDay === i ? `inset 0 1px 0 ${SKY}1A` : 'none',
+              }}
             >
               Day {d.day} — {d.theme}
-            </button>
+            </motion.button>
           ))}
         </div>
       </div>
@@ -122,17 +132,13 @@ export default function Itinerary() {
             <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 0 }}>
 
               {/* sidebar */}
-              <div style={{ borderRight: `1px solid ${HAIRLINE}`, padding: '52px 44px 52px 0', position: 'sticky', top: 68, alignSelf: 'start' }}>
+              <div style={{ borderRight: `1px solid ${HAIRLINE}`, padding: '52px 44px 52px 0', position: 'sticky', top: 68, alignSelf: 'start', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: 0, left: -44, right: 0, height: 280, background: `radial-gradient(ellipse 80% 60% at 30% 20%, ${SKY}12 0%, transparent 65%)`, pointerEvents: 'none' }}/>
                 <div style={{ position: 'relative' }}>
                   <motion.span
-                    animate={{ filter: ['drop-shadow(0 0 20px rgba(212,182,134,0.12))', 'drop-shadow(0 0 60px rgba(212,182,134,0.32))', 'drop-shadow(0 0 20px rgba(212,182,134,0.12))'] }}
+                    animate={{ filter: [`drop-shadow(0 0 20px ${SKY}22)`, `drop-shadow(0 0 60px ${SKY}55)`, `drop-shadow(0 0 20px ${SKY}22)`] }}
                     transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-                    style={{
-                      fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
-                      fontSize: 140, lineHeight: 0.9, letterSpacing: '-0.04em',
-                      background: GOLD_GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-                      opacity: 0.18, userSelect: 'none', display: 'block', marginBottom: -28,
-                    }}
+                    style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 140, lineHeight: 0.9, letterSpacing: '-0.04em', color: SKY, opacity: 0.14, userSelect: 'none', display: 'block', marginBottom: -28 }}
                   >
                     {day.day}
                   </motion.span>
@@ -155,23 +161,25 @@ export default function Itinerary() {
               </div>
 
               {/* activity list */}
-              <div style={{ padding: '52px 0 52px 52px' }}>
+              <motion.div variants={stagger} initial="hidden" animate="show" style={{ padding: '52px 0 52px 52px' }}>
                 {day.activities.map(act => (
-                  <ActivityCard key={act.id} activity={act} time={act.time} whyThis={act.why}
-                    onFeedback={fb => setFb(prev => [...prev.filter(f => f.activity_id !== fb.activity_id), fb])}/>
+                  <motion.div key={act.id} variants={cardReveal}>
+                    <ActivityCard activity={act} time={act.time} whyThis={act.why}
+                      onFeedback={fb => setFb(prev => [...prev.filter(f => f.activity_id !== fb.activity_id), fb])}/>
+                  </motion.div>
                 ))}
                 {feedback.length > 0 && (
                   <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                    <button
-                      style={{ padding: '16px 36px', background: GOLD, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: BG, boxShadow: '0 0 48px rgba(212,182,134,0.30), 0 0 96px rgba(212,182,134,0.10)', marginTop: 8, transition: 'all 0.2s' }}
-                      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 0 64px rgba(212,182,134,0.44), 0 0 120px rgba(212,182,134,0.16)' }}
-                      onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 0 48px rgba(212,182,134,0.30), 0 0 96px rgba(212,182,134,0.10)' }}
+                    <motion.button
+                      whileHover={{ y: -3, boxShadow: `0 0 64px ${SKY}55, 0 0 128px ${SKY}22`, transition: spring }}
+                      whileTap={{ scale: 0.97 }}
+                      style={{ padding: '16px 36px', background: `linear-gradient(135deg, ${SKY} 0%, #0284C7 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff', boxShadow: `0 0 48px ${SKY}44, 0 0 96px ${SKY}11`, marginTop: 8 }}
                     >
                       Update itinerary · {feedback.length} change{feedback.length > 1 ? 's' : ''}
-                    </button>
+                    </motion.button>
                   </motion.div>
                 )}
-              </div>
+              </motion.div>
             </div>
           </motion.div>
         </AnimatePresence>

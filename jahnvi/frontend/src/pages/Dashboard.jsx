@@ -172,7 +172,7 @@ export default function Dashboard() {
               </div>
               <motion.button
                 whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.94 }}
-                onClick={() => navigate('/approve/1')}
+                onClick={() => navigate('/discover')}
                 style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: GOLD, background: 'none', border: 'none', cursor: 'pointer' }}
               >
                 View all

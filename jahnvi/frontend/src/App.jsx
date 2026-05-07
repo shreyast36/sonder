@@ -8,6 +8,7 @@ import Chat            from './pages/Chat'
 import ApproveDeny     from './pages/ApproveDeny'
 import SharedItinerary from './pages/SharedItinerary'
 import Notes           from './pages/Notes'
+import Discover        from './pages/Discover'
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
       <Route path="/approve/:sessionId"element={<ApproveDeny/>}/>
       <Route path="/shared/:id"        element={<SharedItinerary/>}/>
       <Route path="/notes/:id"         element={<Notes/>}/>
+      <Route path="/discover"          element={<Discover/>}/>
       <Route path="*"                  element={<Navigate to="/" replace/>}/>
     </Routes>
   )
