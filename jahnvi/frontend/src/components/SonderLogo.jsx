@@ -1,89 +1,94 @@
-// Orbital S mark: two sweeping arcs that interlock to form an S
-// Upper arc — sweeps from left-center, over the top, to right-center (in front)
-const UPPER = "M 25,58 C 16,50 10,34 14,20 C 18,8 32,2 48,4 C 62,6 74,16 78,30 C 82,44 76,58 68,60"
-// Lower arc — sweeps from right-center, under the bottom, to left-center (behind)
-const LOWER = "M 75,42 C 84,50 90,64 86,78 C 82,90 68,98 52,96 C 38,94 26,84 22,70 C 18,56 24,44 32,40"
+// Two filled crescents interlocking to form a luxury S mark
+// Each path: outer arc sweeps wide → inner arc cuts back, forming a closed crescent
+const TOP = 'M 14,68 C 2,48 8,10 36,3 C 53,-1 73,9 80,28 C 70,36 58,46 47,52 C 36,58 24,64 14,68 Z'
+const BOT = 'M 86,32 C 98,52 92,90 64,97 C 47,101 27,91 20,72 C 30,64 42,54 53,48 C 64,42 76,36 86,32 Z'
 
 export function SonderMark({ size = 28, uid = 'a' }) {
   const p = `sm-${uid}`
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        {/* Upper arc: brightest at crown (top of symbol) */}
-        <radialGradient id={`${p}-ug`} cx="50" cy="4" r="68" gradientUnits="userSpaceOnUse">
-          <stop offset="0%"   stopColor="#EDD59A"/>
-          <stop offset="22%"  stopColor="#D4AA54"/>
-          <stop offset="52%"  stopColor="#9A7218"/>
-          <stop offset="80%"  stopColor="#5C3D06"/>
-          <stop offset="100%" stopColor="#251800"/>
+        {/* Top crescent: outer edge is upper-left → bright; inner edge lower-right → dark */}
+        <linearGradient id={`${p}-tg`} x1="5" y1="5" x2="95" y2="95" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stopColor="#F5EBC0"/>
+          <stop offset="14%"  stopColor="#E2C160"/>
+          <stop offset="36%"  stopColor="#B08828"/>
+          <stop offset="60%"  stopColor="#6B4A0E"/>
+          <stop offset="84%"  stopColor="#3A2206"/>
+          <stop offset="100%" stopColor="#180A00"/>
+        </linearGradient>
+        {/* Top specular: white-gold bloom at the outermost tip of the upper arc */}
+        <radialGradient id={`${p}-ts`} cx="36" cy="3" r="48" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stopColor="#FFFDF4" stopOpacity="0.92"/>
+          <stop offset="22%"  stopColor="#F5E8A0" stopOpacity="0.55"/>
+          <stop offset="60%"  stopColor="#D4AA54" stopOpacity="0.14"/>
+          <stop offset="100%" stopColor="#D4AA54" stopOpacity="0"/>
         </radialGradient>
-
-        {/* Lower arc: brightest at crown (bottom of symbol) */}
-        <radialGradient id={`${p}-lg`} cx="52" cy="96" r="68" gradientUnits="userSpaceOnUse">
-          <stop offset="0%"   stopColor="#EDD59A"/>
-          <stop offset="22%"  stopColor="#D4AA54"/>
-          <stop offset="52%"  stopColor="#9A7218"/>
-          <stop offset="80%"  stopColor="#5C3D06"/>
-          <stop offset="100%" stopColor="#251800"/>
-        </radialGradient>
-
-        {/* Specular highlight for upper arc — tight bright strip at crown */}
-        <radialGradient id={`${p}-uhl`} cx="50" cy="2" r="50" gradientUnits="userSpaceOnUse">
-          <stop offset="0%"   stopColor="#FFFCF0" stopOpacity="1"/>
-          <stop offset="35%"  stopColor="#F5E07A" stopOpacity="0.75"/>
-          <stop offset="75%"  stopColor="#C9A840" stopOpacity="0.2"/>
+        {/* Top edge rim: thin bright stroke trace along outer convex edge */}
+        <radialGradient id={`${p}-tr`} cx="52" cy="2" r="62" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stopColor="#FFF8DC" stopOpacity="0.45"/>
+          <stop offset="55%"  stopColor="#C9A840" stopOpacity="0.1"/>
           <stop offset="100%" stopColor="#C9A840" stopOpacity="0"/>
         </radialGradient>
 
-        {/* Specular highlight for lower arc */}
-        <radialGradient id={`${p}-lhl`} cx="52" cy="98" r="50" gradientUnits="userSpaceOnUse">
-          <stop offset="0%"   stopColor="#FFFCF0" stopOpacity="1"/>
-          <stop offset="35%"  stopColor="#F5E07A" stopOpacity="0.75"/>
-          <stop offset="75%"  stopColor="#C9A840" stopOpacity="0.2"/>
+        {/* Bottom crescent: outer edge is lower-right → bright; inner edge upper-left → dark */}
+        <linearGradient id={`${p}-bg`} x1="95" y1="95" x2="5" y2="5" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stopColor="#F5EBC0"/>
+          <stop offset="14%"  stopColor="#E2C160"/>
+          <stop offset="36%"  stopColor="#B08828"/>
+          <stop offset="60%"  stopColor="#6B4A0E"/>
+          <stop offset="84%"  stopColor="#3A2206"/>
+          <stop offset="100%" stopColor="#180A00"/>
+        </linearGradient>
+        {/* Bottom specular: white-gold bloom at the outermost tip of the lower arc */}
+        <radialGradient id={`${p}-bs`} cx="64" cy="97" r="48" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stopColor="#FFFDF4" stopOpacity="0.92"/>
+          <stop offset="22%"  stopColor="#F5E8A0" stopOpacity="0.55"/>
+          <stop offset="60%"  stopColor="#D4AA54" stopOpacity="0.14"/>
+          <stop offset="100%" stopColor="#D4AA54" stopOpacity="0"/>
+        </radialGradient>
+        {/* Bottom edge rim */}
+        <radialGradient id={`${p}-br`} cx="48" cy="98" r="62" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stopColor="#FFF8DC" stopOpacity="0.45"/>
+          <stop offset="55%"  stopColor="#C9A840" stopOpacity="0.1"/>
           <stop offset="100%" stopColor="#C9A840" stopOpacity="0"/>
         </radialGradient>
 
-        {/* Ambient halo filter */}
-        <filter id={`${p}-halo`} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="b"/>
-          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
+        {/* Interlocking weave: redraw bottom crescent's lower half in front of top */}
+        <clipPath id={`${p}-wc`}>
+          <rect x="0" y="50" width="100" height="50"/>
+        </clipPath>
       </defs>
 
-      {/* ── Ambient warm glow behind both arcs ── */}
-      <path d={LOWER} fill="none" stroke="#C9A840" strokeWidth="20" strokeLinecap="round"
-        opacity="0.055" filter={`url(#${p}-halo)`}/>
-      <path d={UPPER} fill="none" stroke="#C9A840" strokeWidth="20" strokeLinecap="round"
-        opacity="0.055" filter={`url(#${p}-halo)`}/>
+      {/* ── Layer 1: Bottom crescent (behind top at center) ── */}
+      <path d={BOT} fill={`url(#${p}-bg)`}/>
+      <path d={BOT} fill={`url(#${p}-bs)`}/>
+      <path d={BOT} fill={`url(#${p}-br)`}/>
 
-      {/* ── Lower arc (behind) ── */}
-      {/* dark base shadow — creates depth and edge definition */}
-      <path d={LOWER} fill="none" stroke="#0E0700" strokeWidth="16" strokeLinecap="round" opacity="0.75"/>
-      {/* brushed metal body */}
-      <path d={LOWER} fill="none" stroke={`url(#${p}-lg)`} strokeWidth="12" strokeLinecap="round"/>
-      {/* inner mid-tone to blend layers */}
-      <path d={LOWER} fill="none" stroke="#8B6618" strokeWidth="7" strokeLinecap="round" opacity="0.22"/>
-      {/* specular edge highlight */}
-      <path d={LOWER} fill="none" stroke={`url(#${p}-lhl)`} strokeWidth="4.5" strokeLinecap="round"/>
+      {/* ── Layer 2: Top crescent (in front at top) ── */}
+      <path d={TOP} fill={`url(#${p}-tg)`}/>
+      <path d={TOP} fill={`url(#${p}-ts)`}/>
+      <path d={TOP} fill={`url(#${p}-tr)`}/>
 
-      {/* ── Upper arc (in front) ── */}
-      <path d={UPPER} fill="none" stroke="#0E0700" strokeWidth="16" strokeLinecap="round" opacity="0.75"/>
-      <path d={UPPER} fill="none" stroke={`url(#${p}-ug)`} strokeWidth="12" strokeLinecap="round"/>
-      <path d={UPPER} fill="none" stroke="#8B6618" strokeWidth="7" strokeLinecap="round" opacity="0.22"/>
-      <path d={UPPER} fill="none" stroke={`url(#${p}-uhl)`} strokeWidth="4.5" strokeLinecap="round"/>
+      {/* ── Layer 3: Bottom crescent lower half redrawn — weaves in front at bottom ── */}
+      <g clipPath={`url(#${p}-wc)`}>
+        <path d={BOT} fill={`url(#${p}-bg)`}/>
+        <path d={BOT} fill={`url(#${p}-bs)`}/>
+        <path d={BOT} fill={`url(#${p}-br)`}/>
+      </g>
     </svg>
   )
 }
 
 export function SonderWordmark({ size = 28 }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: size * 0.32 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: size * 0.36 }}>
       <SonderMark size={size} uid="wm"/>
       <span style={{
         fontFamily: '"Playfair Display", Georgia, serif',
         fontWeight: 400,
-        fontSize: size * 0.7,
-        letterSpacing: '0.2em',
+        fontSize: size * 0.72,
+        letterSpacing: '0.22em',
         color: '#C9A840',
         lineHeight: 1,
       }}>
@@ -95,13 +100,13 @@ export function SonderWordmark({ size = 28 }) {
 
 export function SonderFullLogo({ markSize = 96 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: markSize * 0.18 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: markSize * 0.14 }}>
       <SonderMark size={markSize} uid="full"/>
       <span style={{
         fontFamily: '"Playfair Display", Georgia, serif',
         fontWeight: 400,
-        fontSize: markSize * 0.36,
-        letterSpacing: '0.26em',
+        fontSize: markSize * 0.38,
+        letterSpacing: '0.3em',
         color: '#C9A840',
         lineHeight: 1,
       }}>
@@ -110,12 +115,12 @@ export function SonderFullLogo({ markSize = 96 }) {
       <span style={{
         fontFamily: 'Inter, system-ui, sans-serif',
         fontWeight: 300,
-        fontSize: markSize * 0.095,
-        letterSpacing: '0.4em',
-        color: '#7A5C14',
+        fontSize: markSize * 0.1,
+        letterSpacing: '0.46em',
+        color: '#7C5A14',
         textTransform: 'uppercase',
         lineHeight: 1,
-        marginTop: markSize * 0.04,
+        marginTop: markSize * 0.05,
       }}>
         Travel, Together
       </span>
