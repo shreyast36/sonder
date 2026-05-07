@@ -73,9 +73,11 @@ function DriftParticles({ count, color, size, opacity, spread }) {
 
 function ParticleCanvas() {
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', background: BG }}>
       <Canvas style={{ width: '100%', height: '100%' }} camera={{ position: [0,0,8], fov: 55 }}
-        gl={{ antialias: false, alpha: true }} frameloop="always">
+        gl={{ antialias: false, alpha: false }}
+        onCreated={({ gl }) => gl.setClearColor('#080807', 1)}
+        frameloop="always">
         <DriftParticles count={360} color="#C9A45D" size={0.02}  opacity={0.28} spread={[26,16,10]}/>
         <DriftParticles count={80}  color="#F0DCB0" size={0.06}  opacity={0.06} spread={[32,20,14]}/>
         <DriftParticles count={40}  color="#FAF0CC" size={0.012} opacity={0.55} spread={[18,12,6]}/>
