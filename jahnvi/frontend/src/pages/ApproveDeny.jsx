@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Check, MapPin } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
-import { SonderNavLogo } from '../components/SonderLogoSVG'
+import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 
 const MOCK_MATCH = {
@@ -40,7 +40,7 @@ export default function ApproveDeny() {
           <ArrowLeft size={18}/>
           <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Back</span>
         </button>
-        <SonderNavLogo markHeight={32}/>
+        <SonderNav3D markSize={32}/>
         <div style={{ width: 80 }}/>
       </nav>
 

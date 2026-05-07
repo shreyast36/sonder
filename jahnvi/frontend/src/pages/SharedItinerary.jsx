@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Plus, Share2, Mail, Download, Users } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
 import ActivityCard from '../components/ActivityCard'
-import { SonderNavLogo } from '../components/SonderLogoSVG'
+import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 
 const DAYS = [
@@ -54,7 +54,7 @@ export default function SharedItinerary() {
           <ArrowLeft size={18}/>
           <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Dashboard</span>
         </button>
-        <SonderNavLogo markHeight={32}/>
+        <SonderNav3D markSize={32}/>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button onClick={() => setShare(true)} style={{ background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 20, padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.2s' }} onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(212,182,134,0.35)'; e.currentTarget.style.boxShadow = '0 0 16px rgba(212,182,134,0.10)' }} onMouseLeave={e => { e.currentTarget.style.borderColor = HAIRLINE; e.currentTarget.style.boxShadow = 'none' }}>
             <Share2 size={11} style={{ color: GOLD }}/>

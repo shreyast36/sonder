@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Send, Check, MapPin } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
-import { SonderNavLogo } from '../components/SonderLogoSVG'
+import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 
 const MOCK_MESSAGES = [
@@ -88,7 +88,7 @@ export default function Chat() {
           <ArrowLeft size={18}/>
           <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Back</span>
         </button>
-        <SonderNavLogo markHeight={32}/>
+        <SonderNav3D markSize={32}/>
         <button onClick={() => navigate('/approve/1')} style={{ background: 'none', border: `1px solid rgba(212,182,134,0.28)`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: GOLD, transition: 'all 0.2s' }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(212,182,134,0.08)'; e.currentTarget.style.boxShadow = '0 0 20px rgba(212,182,134,0.14)' }} onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.boxShadow = 'none' }}>
           Review match
         </button>

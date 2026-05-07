@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, MapPin, Check, MessageCircle } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
-import { SonderNavLogo } from '../components/SonderLogoSVG'
+import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 
 const MOCK_MATCH = {
@@ -50,7 +50,7 @@ export default function MatchDetail() {
           <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Back</span>
         </button>
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-          <SonderNavLogo markHeight={32}/>
+          <SonderNav3D markSize={32}/>
         </div>
         <div style={{ width: 80 }}/>
       </nav>

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Users } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
 import ActivityCard from '../components/ActivityCard'
-import { SonderNavLogo } from '../components/SonderLogoSVG'
+import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 
 const DAYS = [
@@ -64,7 +64,7 @@ export default function Itinerary() {
           <ArrowLeft size={18}/>
           <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Dashboard</span>
         </button>
-        <SonderNavLogo markHeight={32}/>
+        <SonderNav3D markSize={32}/>
         <button
           onClick={() => navigate('/shared/1')}
           style={{ background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.2s' }}

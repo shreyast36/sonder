@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Send, Calendar, MapPin } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
-import { SonderNavLogo } from '../components/SonderLogoSVG'
+import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 
 const MOCK_NOTES = [
@@ -75,7 +75,7 @@ export default function Notes() {
           <ArrowLeft size={18}/>
           <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Back</span>
         </button>
-        <SonderNavLogo markHeight={32}/>
+        <SonderNav3D markSize={32}/>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <img src="https://i.pravatar.cc/80?img=32" alt="" style={{ width: 32, height: 32, borderRadius: '50%', border: `2px solid ${BG}`, objectFit: 'cover', zIndex: 2, boxShadow: '0 0 12px rgba(212,182,134,0.12)' }}/>
           <img src="https://i.pravatar.cc/80?img=47" alt="" style={{ width: 32, height: 32, borderRadius: '50%', border: `2px solid ${BG}`, objectFit: 'cover', marginLeft: -10, boxShadow: '0 0 12px rgba(212,182,134,0.12)' }}/>
