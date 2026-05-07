@@ -60,7 +60,7 @@ sonder/
 │   ├── schemas/             # All user-facing Pydantic models
 │   ├── pipeline/            # Modules 1–3: constraints, preferences, persona/emotion
 │   ├── data/                # Persona archetype templates — drives infer_persona() + seeding
-│   └── frontend/            # React + Vite app (9 screens, hooks, Firebase client)
+│   └── frontend/            # React + Vite app (10 screens incl. Discover, hooks, Firebase client)
 │
 ├── ali/                     # AI Intelligence Layer
 │   ├── routing/             # Multi-model routing engine + intent classifier

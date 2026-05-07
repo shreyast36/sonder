@@ -119,6 +119,8 @@ SHERPA_API_KEY=your-key          # if using Sherpa
 |---|---|---|---|
 | `GET` | `/health` | None | `{"status": "healthy"\|"degraded", "services": {...}}` |
 | `GET` | `/visa-check?destination_country=X&nationality=Y` | None | `VisaInfo` |
+| `GET` | `/users/profile` | Firebase token | `UserProfile` — 404 if not yet created |
+| `POST` | `/users/profile` | Firebase token | `UserProfile` — creates profile on first login; accepts `{ display_name, fcm_token? }` |
 | `POST` | `/plan-trip` | Firebase token | SSE stream → `PlanTripResponse` |
 | `POST` | `/update-trip` | Firebase token | `UpdateTripResponse` — accepts `activity_feedback` for targeted swaps |
 | `POST` | `/cotraveller` | Firebase token | `list[CoTravellerMatch]` |

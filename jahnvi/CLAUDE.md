@@ -19,7 +19,7 @@ Read `jahnvi/README.md` for the full picture. This file is a quick-reference for
 | `pipeline/module1_constraints.py` | `capture_constraints(raw)` → `TripConstraints` |
 | `pipeline/module2_preferences.py` | `parse_answers(raw)` → `PersonaQuestionAnswers` |
 | `pipeline/module3_persona.py` | `infer_persona()`, `infer_emotion()`, `build_travel_style_embedding()`, `build_compatibility_signals()`, `update_profile_from_feedback()` |
-| `frontend/` | React + Vite app — 9 screens, Firebase Auth, Firestore listeners, SSE + WebSocket |
+| `frontend/` | React + Vite app — 10 screens (incl. Discover), Firebase Auth, Firestore listeners, SSE + WebSocket |
 
 ---
 
