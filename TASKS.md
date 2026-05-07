@@ -48,7 +48,7 @@ Each section lists one person's title, their ownership boundaries, and every tas
 - [ ] `jahnvi/schemas/trip.py` — Verify `Destination`, `Activity`, `ItineraryActivity` (has `why_this`), `ItineraryDay` (note: field is `trip_date` not `date`), `Itinerary`; decide image source + add `image_url`; delete `scaffold_review()`
 - [ ] `jahnvi/schemas/cotraveller.py` — Verify `CoTravellerProfile`, `CoTravellerMatch` match Screen 4 and Shreyas's matching needs; delete `scaffold_review()`
 - [ ] `jahnvi/schemas/chat.py` — Verify `ChatMessage`, `ChatSession`, `ChatStartResponse` (session + icebreaker + topics), `SharedItinerary`, `ItineraryUpdateEvent` match Screens 5–8 and WebSocket layer; delete `scaffold_review()`
-- [ ] `jahnvi/schemas/api.py` — Verify `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest` (has `activity_feedback: list[ActivityFeedback]`), `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`
+- [x] `jahnvi/schemas/api.py` — Verify `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest` (has `activity_feedback: list[ActivityFeedback]`), `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`
 - [ ] Copy finalised models into `shared/schemas.py` re-exports (already wired — just ensure all new models are exported)
 
 ### Persona Templates
@@ -63,7 +63,7 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Multi-currency
 
-- [ ] `shared/currency.py` — Implement `convert_to_usd(amount, currency_code)` and `format_budget_display(budget_usd, currency_code)`. Set `EXCHANGE_RATE_API_KEY` in `.env` for live rates; static `FALLBACK_RATES` used in LOCAL_MODE
+- [x] `shared/currency.py` — Implement `convert_to_usd(amount, currency_code)` and `format_budget_display(budget_usd, currency_code)`. Set `EXCHANGE_RATE_API_KEY` in `.env` for live rates; static `FALLBACK_RATES` used in LOCAL_MODE
 
 ### Design (before any frontend code)
 
