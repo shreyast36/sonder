@@ -13,7 +13,7 @@ const MOCK_MESSAGES = [
 ]
 
 const SUGGESTED_TOPICS = [
-  'What's on your Bali bucket list?',
+  "What's on your Bali bucket list?",
   'Are you a morning person or night owl traveller?',
   'Any dietary things I should know about?',
 ]
