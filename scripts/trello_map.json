@@ -1,0 +1,98 @@
+{
+  "lists": {
+    "doing": "69f4142b9dfeca0b3188e853",
+    "done":  "69f4142b9dfeca0b3188e854"
+  },
+  "cards": [
+    {
+      "id": "69f7c0c829d28e37f204f08f",
+      "name": "Janvi: Build all screens",
+      "todo_list": "69f4142b9dfeca0b3188e852",
+      "task_keywords": ["Welcome.jsx", "TripPreferences.jsx", "Itinerary.jsx", "MatchDetail.jsx", "Chat.jsx", "ApproveDeny.jsx", "SharedItinerary.jsx", "Notes.jsx", "Dashboard.jsx", "Discover.jsx"]
+    },
+    {
+      "id": "69f7c0c8e66f91b68378e13d",
+      "name": "Collect clean user inputs",
+      "todo_list": "69f4142b9dfeca0b3188e852",
+      "task_keywords": ["module1_constraints", "module2_preferences", "module3_persona", "capture_constraints", "parse_answers", "infer_persona"]
+    },
+    {
+      "id": "69f7c0c91b9bc0f783735259",
+      "name": "Handle UI state + transitions",
+      "todo_list": "69f4142b9dfeca0b3188e852",
+      "task_keywords": ["useAuth.js", "useFirestore.js", "useWebSocket.js", "useSSE.js", "firebase.js", "globals.css", "tailwind.config.js"]
+    },
+    {
+      "id": "69f7c0c9c38a113cc2fec243",
+      "name": "Connect frontend to backend APIs",
+      "todo_list": "69f4142b9dfeca0b3188e852",
+      "task_keywords": ["api.js", "Deploy to Vercel", "vercel.json"]
+    },
+    {
+      "id": "69f7f5fc59cdbe3c229c45c1",
+      "name": "Set up FastAPI backend",
+      "todo_list": "69f7f5f41b7cbb38339b4b80",
+      "task_keywords": ["mushahid/main.py", "mushahid/auth.py", "routes/health.py", "routes/visa.py"]
+    },
+    {
+      "id": "69f7f5fc81cc0b53172593ed",
+      "name": "Define API schema",
+      "todo_list": "69f7f5f41b7cbb38339b4b80",
+      "task_keywords": ["schemas/enums.py", "schemas/user.py", "schemas/trip.py", "schemas/cotraveller.py", "schemas/chat.py", "schemas/api.py", "shared/schemas.py"]
+    },
+    {
+      "id": "69f7f5fccc065025afe0ede4",
+      "name": "Implement pipeline orchestration",
+      "todo_list": "69f7f5f41b7cbb38339b4b80",
+      "task_keywords": ["orchestrator.py", "validation/rules.py", "validation/critic.py", "refinement/loop.py", "routes/export.py", "realtime/notifications.py"]
+    },
+    {
+      "id": "69f7f5fc743789f94bd33b75",
+      "name": "Connect backend to Nemotron for itinerary generation",
+      "todo_list": "69f7f5f41b7cbb38339b4b80",
+      "task_keywords": ["itinerary_generator.py", "generate_itinerary", "routes/plan_trip.py", "routes/update_trip.py"]
+    },
+    {
+      "id": "69f7f6288ab0d99625f8c41e",
+      "name": "Clean and structure datasets",
+      "todo_list": "69f7f6193db84c5c479fd771",
+      "task_keywords": ["seed_pinecone", "retrieval/client.py", "upsert_cotraveller_profile"]
+    },
+    {
+      "id": "69f7f6288ababcce41c7c40c",
+      "name": "Prepare data for embedding",
+      "todo_list": "69f7f6193db84c5c479fd771",
+      "task_keywords": ["embeddings.py", "embed_text", "embed_batch", "search.py", "search_destinations", "search_activities"]
+    },
+    {
+      "id": "69f7f628de29f53eeedc4531",
+      "name": "Set up vector database",
+      "todo_list": "69f7f6193db84c5c479fd771",
+      "task_keywords": ["ranking/filters.py", "destination_ranker.py", "activity_ranker.py", "matching.py", "score_compatibility", "get_top_matches"]
+    },
+    {
+      "id": "69f7f63d8bb6b6fa9eb7c72f",
+      "name": "Build RAG pipeline",
+      "todo_list": "69f7f62fbdb7a5e1e563c845",
+      "task_keywords": ["rag/retriever.py", "rag/explainer.py", "retrieve_activity_context", "explain_activity", "explain_itinerary"]
+    },
+    {
+      "id": "69f7f63d7bc921190dcf7606",
+      "name": "Use vector DB to retrieve relevant context",
+      "todo_list": "69f7f62fbdb7a5e1e563c845",
+      "task_keywords": ["routing/classifier.py", "routing/engine.py", "route_request", "classify"]
+    },
+    {
+      "id": "69f7f63e41ab05d6d5885ab8",
+      "name": "Pass context into Nemotron prompts",
+      "todo_list": "69f7f62fbdb7a5e1e563c845",
+      "task_keywords": ["clients/base.py", "openai_client.py", "anthropic_client.py", "google_client.py", "groq_client.py", "mistral_client.py", "bedrock_client.py"]
+    },
+    {
+      "id": "69f7f63e3958c6867944bb58",
+      "name": "Generate explanations",
+      "todo_list": "69f7f62fbdb7a5e1e563c845",
+      "task_keywords": ["generation/prompts.py", "output_parser.py", "generation/topics.py", "generate_topics", "generate_icebreaker"]
+    }
+  ]
+}
