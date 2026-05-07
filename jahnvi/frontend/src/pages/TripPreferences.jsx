@@ -130,7 +130,7 @@ export default function TripPreferences() {
     },
     {
       number: '04',
-      heading: 'What's your budget?',
+      heading: "What's your budget?",
       sub: 'Total trip spend, not including flights.',
       content: (
         <div style={{ marginTop: 40 }}>
