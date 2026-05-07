@@ -99,7 +99,7 @@ export function SonderFullLogo({ markSize = 96 }) {
         fontWeight: 300,
         fontSize: markSize * 0.095,
         letterSpacing: '0.48em',
-        color: '#7C5A14',
+        color: '#A07830',
         textTransform: 'uppercase',
         lineHeight: 1,
         marginTop: markSize * 0.04,
