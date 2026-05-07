@@ -476,7 +476,7 @@ export default function Welcome() {
           style={{ position: 'relative', zIndex: 1, maxWidth: 860 }}>
 
           <motion.p variants={reveal} style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.40em', textTransform: 'uppercase', color: GOLD, opacity: 0.75, marginBottom: 32 }}>
-            Private Travel Intelligence
+            For the Chronically Curious
           </motion.p>
 
           <motion.h1 variants={reveal} style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 'clamp(52px, 7.5vw, 108px)', lineHeight: 1.02, letterSpacing: '-0.025em', color: BONE, margin: '0 0 4px' }}>
