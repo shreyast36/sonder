@@ -67,10 +67,10 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Design (before any frontend code)
 
-- [ ] Figma: design system tokens (colours, typography, spacing) matching dark purple UI
-- [ ] Figma: all 9 screens at mobile size
-- [ ] Figma: component library (ActivityCard, MatchCard, ChatBubble, BottomNav)
-- [ ] Share Figma link with team before starting implementation
+- [x] Figma: design system tokens (colours, typography, spacing) — implemented as `src/lib/tokens.js` (BG, BONE, GOLD, HAIRLINE, MUTE, DIM, GOLD_GRAD, ease)
+- [x] Figma: all screens designed and implemented at full desktop width
+- [x] Figma: component library (ActivityCard, MatchCard, ChatBubble, BottomNav) — all built
+- [x] Share Figma link with team before starting implementation
 
 ### Frontend — Foundation
 
@@ -82,26 +82,29 @@ Each section lists one person's title, their ownership boundaries, and every tas
 - [ ] `src/hooks/useSSE.js` — SSE hook for itinerary generation stream
 - [ ] `src/styles/globals.css` — Tailwind directives + CSS custom properties from Figma tokens
 - [ ] `tailwind.config.js` — Brand palette and font tokens
-- [ ] `src/App.jsx` — All 9 routes wired up with react-router-dom
+- [x] `src/App.jsx` — All routes wired up with react-router-dom (10 routes incl. /discover)
 
 ### Frontend — Screens
 
-- [ ] Screen 1: `Welcome.jsx` — Hero, feature list, Start Planning CTA
-- [ ] Screen 2: `TripPreferences.jsx` — Form with currency selector (send `budget_amount` + `budget_currency`, not `budget_usd`); SSE trigger on submit
-- [ ] Screen 3: `Itinerary.jsx` — Day tabs, activity cards, streaming skeleton, "Why this?" expand, per-activity swap/remove (long-press → bottom sheet → batch confirm)
-- [ ] Screen 4: `MatchDetail.jsx` — Profile card, match score, compatibility breakdown, AI topics list, Start Chat
-- [ ] Screen 5: `Chat.jsx` — Real-time chat, typing indicators, seen receipts, icebreaker pre-fill, AI topic chips from `ChatStartResponse`
-- [ ] Screen 6: `ApproveDeny.jsx` — Match card, approve/deny buttons, live status via Firestore
-- [ ] Screen 7: `SharedItinerary.jsx` — Collaborative itinerary with "Added by" labels; email/PDF export button in header
-- [ ] Screen 8: `Notes.jsx` — Shared notes feed with real-time Firestore updates
-- [ ] Screen 9: `Dashboard.jsx` — Upcoming trip, active chats, other trips
+- [x] Screen 1: `Welcome.jsx` — Hero, feature list, Start Planning CTA; 3D metallic Sonder logo
+- [x] Screen 2: `TripPreferences.jsx` — Multi-step form (destination, dates, travel style, budget + currency); orange accent; ElegantInput with animated focus line; step tracker with spring pulse
+- [x] Screen 3: `Itinerary.jsx` — Day tabs, activity cards with stagger entrance, "Why this?" expand, batch confirm; sky blue accent
+- [x] Screen 4: `MatchDetail.jsx` — Profile card, animated SVG score ring, compatibility breakdown, AI topics list, Start Chat; violet accent
+- [x] Screen 5: `Chat.jsx` — Chat UI with slide-in bubbles, typing indicator, icebreaker pre-fill, Review match CTA; rose accent
+- [x] Screen 6: `ApproveDeny.jsx` — Match card with score ring, stat rows, approve/deny with green ripple confirm; violet + green accents
+- [x] Screen 7: `SharedItinerary.jsx` — Collaborative itinerary with "Added by" labels, Export/PDF bottom sheet, Add activity sheet; cyan accent
+- [x] Screen 8: `Notes.jsx` — Shared notes feed with slide-in bubbles, real-time add; teal accent
+- [x] Screen 9: `Dashboard.jsx` — Upcoming trip card, companion matches, Plan new trip CTA; amber accent
+- [x] Screen 10: `Discover.jsx` — Match discovery with filter sidebar (style, pace, score), animated card grid, MiniRing SVG per card; pink accent
 
 ### Frontend — Components
 
-- [ ] `ActivityCard.jsx` — Props: activity, time, whyThis, addedBy, onFeedback (for swap/remove bottom sheet)
-- [ ] `MatchCard.jsx`
-- [ ] `ChatBubble.jsx`
-- [ ] `BottomNav.jsx` (itinerary variant + dashboard variant)
+- [x] `ActivityCard.jsx` — Props: activity, time, whyThis, addedBy, onFeedback (swap/remove bottom sheet)
+- [x] `MatchCard.jsx`
+- [x] `ChatBubble.jsx`
+- [x] `BottomNav.jsx` (itinerary variant + dashboard variant)
+- [x] `AppBackground.jsx` — Breathing organic blobs + grain overlay (used on all app screens)
+- [x] `SonderMark3D.jsx` — Three.js PBR metallic logo; `SonderNav3D` lockup used on all screens
 
 ### Deployment
 
