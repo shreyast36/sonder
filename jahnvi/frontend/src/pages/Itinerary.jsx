@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Users } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, GRAIN, ease } from '../lib/tokens'
 import ActivityCard from '../components/ActivityCard'
-import BottomNav from '../components/BottomNav'
+import { SonderNavLogo } from '../components/SonderLogoSVG'
 
 const DAYS = [
   {
@@ -20,7 +20,7 @@ const DAYS = [
     activities: [
       { id: 'b1', name: 'Tirta Empul Temple',           category: 'Culture',       time: '8:00 AM',  why: 'Best visited early. The ritual purification pools are a once-in-a-lifetime experience.' },
       { id: 'b2', name: 'Tegalalang Rice Terraces',     category: 'Nature',        time: '11:00 AM', why: 'Most photogenic terraces near Ubud — morning light is ideal for this time slot.' },
-      { id: 'b3', name: 'Kecak Fire Dance, Uluwatu',    category: 'Culture',       time: '6:00 PM',  why: 'Sunset backdrop and traditional Balinese performance — one of Bali\'s signature experiences.' },
+      { id: 'b3', name: 'Kecak Fire Dance, Uluwatu',    category: 'Culture',       time: '6:00 PM',  why: "Sunset backdrop and traditional Balinese performance — one of Bali's signature experiences." },
     ],
   },
   {
@@ -42,106 +42,111 @@ const DAYS = [
 ]
 
 export default function Itinerary() {
-  const navigate           = useNavigate()
-  const [activeDay, setDay]   = useState(0)
-  const [activeTab, setTab]   = useState('itinerary')
-  const [feedback, setFb]     = useState([])
+  const navigate         = useNavigate()
+  const [activeDay, setDay] = useState(0)
+  const [feedback, setFb]   = useState([])
 
   const day = DAYS[activeDay]
 
   return (
-    <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: BG, color: BONE, overflowX: 'hidden' }}>
+    <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
       <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'none', opacity: 0.025, backgroundImage: GRAIN, backgroundSize: '200px 200px' }}/>
 
-      {/* sticky header */}
-      <div style={{
-        position: 'sticky', top: 0, zIndex: 50,
-        background: 'rgba(8,8,7,0.94)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-        borderBottom: `1px solid ${HAIRLINE}`,
-      }}>
-        <div style={{ padding: '52px 20px 0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <button onClick={() => navigate('/dashboard')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTE, padding: 0, lineHeight: 0 }}>
-              <ArrowLeft size={20}/>
-            </button>
-            <div style={{ flex: 1 }}>
-              <h1 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 22, color: BONE, lineHeight: 1 }}>
-                Bali, Indonesia
-              </h1>
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE, marginTop: 2 }}>Jun 14 – Jun 21 · 7 days</p>
-            </div>
-            <button onClick={() => navigate('/shared/1')} style={{ background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 20, padding: '7px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Users size={11} style={{ color: GOLD }}/>
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', color: GOLD }}>Shared</span>
-            </button>
+      {/* top nav */}
+      <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(8,8,7,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
+        <button onClick={() => navigate('/dashboard')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTE, padding: 0, lineHeight: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ArrowLeft size={18}/>
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Dashboard</span>
+        </button>
+        <SonderNavLogo markHeight={32}/>
+        <button onClick={() => navigate('/shared/1')} style={{ background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 20, padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Users size={11} style={{ color: GOLD }}/>
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD }}>Shared with Priya</span>
+        </button>
+      </nav>
+
+      {/* destination header */}
+      <div style={{ borderBottom: `1px solid ${HAIRLINE}`, padding: '36px 48px', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 50% 150% at 80% 50%, rgba(212,182,134,0.07) 0%, transparent 65%)', pointerEvents: 'none' }}/>
+        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+          <div>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 6 }}>Your itinerary</p>
+            <h1 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 48, color: BONE, lineHeight: 1, letterSpacing: '-0.02em' }}>
+              Bali, Indonesia
+            </h1>
           </div>
-          {/* day tabs */}
-          <div style={{ display: 'flex', overflowX: 'auto', scrollbarWidth: 'none' }}>
-            {DAYS.map((d, i) => (
-              <button key={d.day} onClick={() => setDay(i)} style={{
-                padding: '10px 18px', background: 'none', border: 'none', cursor: 'pointer',
-                borderBottom: `2px solid ${activeDay === i ? GOLD : 'transparent'}`,
-                fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.12em',
-                color: activeDay === i ? GOLD : MUTE, whiteSpace: 'nowrap', transition: 'color 0.2s',
-              }}>
-                Day {d.day}
-              </button>
-            ))}
-          </div>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE }}>Jun 14 – Jun 21 · 7 days</p>
+        </div>
+      </div>
+
+      {/* day tab strip */}
+      <div style={{ borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(8,8,7,0.6)', backdropFilter: 'blur(12px)' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex' }}>
+          {DAYS.map((d, i) => (
+            <button key={d.day} onClick={() => setDay(i)} style={{
+              padding: '16px 28px', background: 'none', border: 'none', cursor: 'pointer',
+              borderBottom: `2px solid ${activeDay === i ? GOLD : 'transparent'}`,
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.14em',
+              color: activeDay === i ? GOLD : MUTE, whiteSpace: 'nowrap', transition: 'color 0.2s',
+            }}>
+              Day {d.day} — {d.theme}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* content */}
-      <div style={{ padding: '32px 24px 100px', position: 'relative', zIndex: 10 }}>
+      <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '0 48px' }}>
         <AnimatePresence mode="wait">
           <motion.div key={activeDay} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -14 }} transition={{ duration: 0.32, ease }}>
 
-            {/* day hero */}
-            <div style={{ position: 'relative', marginBottom: 36 }}>
-              {/* background number */}
-              <span style={{
-                position: 'absolute', top: -20, right: 0,
-                fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
-                fontSize: 100, lineHeight: 1, letterSpacing: '-0.04em',
-                background: GOLD_GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-                opacity: 0.10, userSelect: 'none', pointerEvents: 'none',
-              }}>
-                {day.day}
-              </span>
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 6 }}>
-                Day {day.day}
-              </p>
-              <h2 style={{
-                fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
-                fontSize: 32, lineHeight: 1.2, color: BONE,
-              }}>
-                {day.theme}
-              </h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 0 }}>
+              {/* day info sidebar */}
+              <div style={{ borderRight: `1px solid ${HAIRLINE}`, padding: '48px 40px 48px 0', position: 'sticky', top: 64, alignSelf: 'start' }}>
+                <div style={{ position: 'relative' }}>
+                  <span style={{
+                    fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
+                    fontSize: 120, lineHeight: 1, letterSpacing: '-0.04em',
+                    background: GOLD_GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+                    opacity: 0.15, userSelect: 'none', display: 'block', marginBottom: -20,
+                  }}>
+                    {day.day}
+                  </span>
+                  <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 28, color: BONE, lineHeight: 1.2 }}>
+                    {day.theme}
+                  </h2>
+                </div>
+                <div style={{ marginTop: 32, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ padding: '12px 0', borderTop: `1px solid ${HAIRLINE}` }}>
+                    <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, marginBottom: 4 }}>Activities</p>
+                    <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 14, fontWeight: 500, color: BONE }}>{day.activities.length}</p>
+                  </div>
+                  <div style={{ padding: '12px 0', borderTop: `1px solid ${HAIRLINE}` }}>
+                    <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, marginBottom: 4 }}>Est. spend</p>
+                    <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 14, fontWeight: 500, color: BONE }}>$65 – $90</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* activity list */}
+              <div style={{ padding: '48px 0 48px 48px' }}>
+                {day.activities.map(act => (
+                  <ActivityCard key={act.id} activity={act} time={act.time} whyThis={act.why}
+                    onFeedback={fb => setFb(prev => [...prev.filter(f => f.activity_id !== fb.activity_id), fb])}/>
+                ))}
+                {feedback.length > 0 && (
+                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+                    <button style={{ padding: '16px 32px', background: GOLD, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: BG, boxShadow: '0 0 40px rgba(212,182,134,0.18)', marginTop: 8 }}>
+                      Update itinerary · {feedback.length} change{feedback.length > 1 ? 's' : ''}
+                    </button>
+                  </motion.div>
+                )}
+              </div>
             </div>
 
-            {/* activities */}
-            {day.activities.map(act => (
-              <ActivityCard key={act.id} activity={act} time={act.time} whyThis={act.why} onFeedback={fb => setFb(prev => [...prev.filter(f => f.activity_id !== fb.activity_id), fb])}/>
-            ))}
-
-            {feedback.length > 0 && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                <button style={{
-                  width: '100%', padding: '16px 0', marginTop: 8,
-                  background: GOLD, border: 'none', borderRadius: 12, cursor: 'pointer',
-                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em',
-                  textTransform: 'uppercase', fontWeight: 500, color: BG,
-                  boxShadow: '0 0 40px rgba(212,182,134,0.18)',
-                }}>
-                  Update itinerary · {feedback.length} change{feedback.length > 1 ? 's' : ''}
-                </button>
-              </motion.div>
-            )}
           </motion.div>
         </AnimatePresence>
       </div>
-
-      <BottomNav variant="itinerary" activeTab={activeTab} onTabChange={setTab}/>
     </div>
   )
 }
