@@ -62,6 +62,17 @@ def find_list(lists, keywords):
     return None
 
 
+def get_or_create_list(lists, name):
+    """Return list ID by exact name, creating it on the board if missing."""
+    for lst in lists:
+        if lst["name"].lower() == name.lower():
+            return lst["id"], lists
+    new_list = trello("POST", f"/boards/{BOARD_ID}/lists", {"name": name})
+    lists.append(new_list)
+    print(f"  + Created list: {name}")
+    return new_list["id"], lists
+
+
 def parse_sections(path):
     """
     Parse TASKS.md into sections by H2 (person) and H3 (subsection).
@@ -132,27 +143,29 @@ def main():
         if not os.environ.get(var):
             sys.exit(f"Missing env var: {var}")
 
-    # --- Discover lists ---
+    # --- Discover or create lists ---
     lists = trello("GET", f"/boards/{BOARD_ID}/lists")
 
-    doing_list = find_list(lists, DOING_KEYWORDS)
-    done_list  = find_list(lists, DONE_KEYWORDS)
-
-    person_lists = {
-        person: find_list(lists, keywords)
-        for person, keywords in PERSON_LIST_KEYWORDS.items()
+    person_list_names = {
+        "Shreyas":  "To Do - Shreyas",
+        "Jahnvi":   "To Do - Jahnvi",
+        "Mushahid": "To Do - Mushahid",
+        "Ali":      "To Do - Ali",
     }
 
-    print("Lists found:")
-    for person, lid in person_lists.items():
-        status = lid or "NOT FOUND"
-        print(f"  {person}: {status}")
-    print(f"  Doing:    {doing_list or 'NOT FOUND'}")
-    print(f"  Done:     {done_list  or 'NOT FOUND'}\n")
+    person_lists = {}
+    for person, list_name in person_list_names.items():
+        lid, lists = get_or_create_list(lists, list_name)
+        person_lists[person] = lid
 
-    missing = [k for k, v in {**person_lists, "Doing": doing_list, "Done": done_list}.items() if not v]
-    if missing:
-        sys.exit(f"Could not find lists for: {', '.join(missing)}\nCheck list names on the board match keywords.")
+    doing_list, lists = get_or_create_list(lists, "Doing")
+    done_list,  lists = get_or_create_list(lists, "Done")
+
+    print("\nLists ready:")
+    for person, lid in person_lists.items():
+        print(f"  {person}: {lid}")
+    print(f"  Doing: {doing_list}")
+    print(f"  Done:  {done_list}\n")
 
     # --- Fetch existing cards (matched by name so we don't duplicate) ---
     all_cards   = trello("GET", f"/boards/{BOARD_ID}/cards")
