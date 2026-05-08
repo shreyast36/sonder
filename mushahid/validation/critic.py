@@ -5,8 +5,10 @@ from shared.config import SMALL_VALIDATOR_PROVIDER, SMALL_VALIDATOR_MODEL_NAME, 
 
 def _get_validator_client(provider: str, model_name: str):
     """Instantiate the correct LLM client for the given provider."""
-    # TODO: import and return the matching client from ali/clients/
-    # e.g. provider="anthropic" → AnthropicClient(model_name=model_name)
+    # TODO: instantiate the right client for the given provider.
+    # Ali's concrete client files don't exist yet — create one in ali/clients/ when Ali
+    # picks a provider, or write a thin validator-specific client here.
+    # e.g. provider="anthropic" → your AnthropicClient subclass with model_name set
     raise NotImplementedError
 
 

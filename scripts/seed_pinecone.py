@@ -1,5 +1,5 @@
 """
-Pinecone seeding script — Shreyas owns this.
+Pinecone seeding script — Ali owns the index, Shreyas owns the embedding calls.
 
 Run once before launch to populate the three index namespaces:
     destinations   — one vector per destination
