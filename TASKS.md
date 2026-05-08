@@ -139,24 +139,23 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### LLM Clients (do first — routing engine depends on these)
 
-Each provider file must implement three classes: `{Provider}SmallClient`, `{Provider}LargeClient`, and `{Provider}ValidatorClient`. All three extend `BaseLLMClient`.
+Each provider file implements one client class. Ali configures two slots — Small and Large — via env vars. Mushahid separately configures two validator slots.
 
 - [ ] `ali/clients/base.py` — abstract interface (`complete()`, `stream()`, `model_name`, `tier`, `cost_per_1k_input_tokens`); delete `scaffold_review()`
-- [ ] `ali/clients/openai_client.py` — `OpenAISmallClient`, `OpenAILargeClient`, `OpenAIValidatorClient`
-- [ ] `ali/clients/anthropic_client.py` — `AnthropicSmallClient`, `AnthropicLargeClient`, `AnthropicValidatorClient`
-- [ ] `ali/clients/google_client.py` — `GoogleSmallClient`, `GoogleLargeClient`, `GoogleValidatorClient`
-- [ ] `ali/clients/groq_client.py` — `GroqSmallClient`, `GroqLargeClient`, `GroqValidatorClient`
-- [ ] `ali/clients/mistral_client.py` — `MistralSmallClient`, `MistralLargeClient`, `MistralValidatorClient`
-- [ ] `ali/clients/bedrock_client.py` — `BedrockSmallClient`, `BedrockLargeClient`, `BedrockValidatorClient`
+- [ ] `ali/clients/openai_client.py` — `OpenAIClient`
+- [ ] `ali/clients/anthropic_client.py` — `AnthropicClient`
+- [ ] `ali/clients/google_client.py` — `GoogleClient`
+- [ ] `ali/clients/groq_client.py` — `GroqClient`
+- [ ] `ali/clients/mistral_client.py` — `MistralClient`
+- [ ] `ali/clients/bedrock_client.py` — `BedrockClient`
 
 ### Routing Engine
 
-- [ ] `ali/routing/classifier.py` — `classify(task_type, context) → ModelTier`, `estimate_tokens(prompt) → int`
-- [ ] `ali/routing/engine.py` — `route_request(task_type, context) → LLMResponse`
-  - SMALL → chat_topics, icebreaker, persona_label, quick_edit
-  - LARGE → itinerary_generation, rag_explanation, conflict_resolution
-  - VALIDATOR → validate_itinerary, critic_check
-  - Fallback to next model in tier if one fails
+- [ ] `ali/routing/classifier.py` — `classify(task_type) → "small" | "large"`, `estimate_tokens(prompt) → int`
+- [ ] `ali/routing/engine.py` — `route_request(task_type, prompt, system) → LLMResponse`, `stream_request(task_type, prompt, system) → AsyncGenerator`
+  - SMALL → chat_topics, icebreaker, persona_label, quick_edit, short_explanation
+  - LARGE → itinerary_generation, rag_explanation, conflict_resolution, complex_refinement
+  - Reads `SMALL_MODEL_PROVIDER` + `LARGE_MODEL_PROVIDER` from `shared/config.py` to pick client
 
 ### Itinerary Generation
 
@@ -219,8 +218,10 @@ Each provider file must implement three classes: `{Provider}SmallClient`, `{Prov
 
 ### Validation
 
+Mushahid owns two validator LLMs — one that checks Small model outputs, one that checks Large model outputs. Both are configured via env vars and called directly from `critic.py` (not through Ali's routing engine).
+
 - [ ] `mushahid/validation/rules.py` — `check_budget()`, `check_duration()`, `check_pace()`, `check_must_haves()`, `check_avoid_list()`, `run_all_checks()`
-- [ ] `mushahid/validation/critic.py` — `validate_with_llm()` via Ali's VALIDATOR tier
+- [ ] `mushahid/validation/critic.py` — `validate_small_output(output) → ValidationResult`, `validate_large_output(output) → ValidationResult`; each calls its own validator LLM configured via `SMALL_VALIDATOR_PROVIDER` + `LARGE_VALIDATOR_PROVIDER` in `.env`
 
 ### Refinement Loop
 

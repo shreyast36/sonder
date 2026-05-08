@@ -206,8 +206,20 @@ ConstraintSatisfaction(
 
 ### LLM Critic — `validation/critic.py`
 
+You own two validator LLMs — one that checks Small model outputs (e.g. persona labels, chat topics), one that checks Large model outputs (e.g. full itineraries). Configure them independently in `.env`:
+
+```bash
+SMALL_VALIDATOR_PROVIDER=   # openai | anthropic | google | groq | mistral | bedrock
+SMALL_VALIDATOR_MODEL_NAME= # model that validates small-task outputs
+
+LARGE_VALIDATOR_PROVIDER=   # openai | anthropic | google | groq | mistral | bedrock
+LARGE_VALIDATOR_MODEL_NAME= # model that validates itinerary + large-task outputs
+```
+
+Both validators use Ali's `BaseLLMClient` interface but are instantiated and called directly from `critic.py` — they do not go through Ali's routing engine.
+
 ```python
-# validate_with_llm — output (approved)
+# validate_large_output — approved
 ValidationResult(
     itinerary_id            = "itin_abc123",
     status                  = ValidationStatus.approved,

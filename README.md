@@ -141,15 +141,18 @@ POST /plan-trip
 └── → SSE: done { PlanTripResponse }
 ```
 
-### Multi-Model Routing (Ali)
+### LLM Architecture
 
-Every LLM call is routed by task type — no model names are hardcoded anywhere. Each provider file (`openai_client.py`, `anthropic_client.py`, etc.) implements three classes: `{Provider}SmallClient`, `{Provider}LargeClient`, and `{Provider}ValidatorClient`. You can mix providers across tiers.
+Four LLM slots total — Ali owns two, Mushahid owns two:
 
-| Tier | Task types | Characteristics |
-|---|---|---|
-| **Small** | chat_topics, icebreaker, persona_label, quick_edit | Fast + cheap |
-| **Large** | itinerary_generation, rag_explanation, conflict_resolution | High quality, longer context |
-| **Validator** | validate_itinerary, critic_check | Structured output, scoring — one per provider |
+| Slot | Owner | Purpose | Config |
+|---|---|---|---|
+| **Small** | Ali | Fast tasks — chat topics, icebreaker, persona label, quick edits | `SMALL_MODEL_PROVIDER` + `SMALL_MODEL_NAME` |
+| **Large** | Ali | Complex tasks — itinerary generation, RAG explanation, conflict resolution | `LARGE_MODEL_PROVIDER` + `LARGE_MODEL_NAME` |
+| **Small Validator** | Mushahid | Verifies Small model outputs (persona labels, topics) | `SMALL_VALIDATOR_PROVIDER` + `SMALL_VALIDATOR_MODEL_NAME` |
+| **Large Validator** | Mushahid | Verifies Large model outputs (full itineraries) | `LARGE_VALIDATOR_PROVIDER` + `LARGE_VALIDATOR_MODEL_NAME` |
+
+Each provider file is one class (`OpenAIClient`, `AnthropicClient`, etc.). The routing engine (Ali) and critic (Mushahid) each instantiate the client they need from `shared/config.py`. Providers can be mixed across slots.
 
 ### Real-Time Layer
 

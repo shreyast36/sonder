@@ -56,7 +56,7 @@ You own the seed script (`scripts/seed_pinecone.py`) and decide where the data c
 | **Curated CSV** | Fastest to ship — 20–30 destinations, 5–10 activities each. Use for demo. |
 
 ### LLM model selection
-No model names are hardcoded. Every provider file implements three client classes — Small, Large, and Validator. Set which provider + model to use for each tier in `.env`:
+You own two LLM slots — Small and Large. Each provider file is one class (`OpenAIClient`, `AnthropicClient`, etc.). The routing engine picks which instance to use based on task type. Mushahid separately owns the two validator LLMs.
 
 ```bash
 SMALL_MODEL_PROVIDER=       # openai | anthropic | google | groq | mistral | bedrock
@@ -65,16 +65,12 @@ SMALL_MODEL_NAME=           # e.g. gpt-4o-mini, claude-haiku-4-5, gemini-flash
 LARGE_MODEL_PROVIDER=       # openai | anthropic | google | groq | mistral | bedrock
 LARGE_MODEL_NAME=           # e.g. gpt-4o, claude-opus-4-7, gemini-pro
 
-VALIDATOR_MODEL_PROVIDER=   # openai | anthropic | google | groq | mistral | bedrock
-VALIDATOR_MODEL_NAME=       # e.g. gpt-4o, claude-sonnet-4-6 — needs structured output support
-
-# Only needed if any provider above is set to "bedrock":
+# Only needed if using Bedrock:
 BEDROCK_SMALL_MODEL_ID=
 BEDROCK_LARGE_MODEL_ID=
-BEDROCK_VALIDATOR_MODEL_ID=
 ```
 
-The routing engine reads these at runtime and instantiates `{Provider}{Tier}Client` accordingly — e.g. `SMALL_MODEL_PROVIDER=anthropic` → `AnthropicSmallClient`. You can mix providers across tiers (e.g. Groq for Small, Anthropic for Large, OpenAI for Validator).
+You can mix providers (e.g. Groq for Small, Anthropic for Large). Validator model config lives in Mushahid's `.env` section — not your concern.
 
 ---
 
