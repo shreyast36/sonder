@@ -139,13 +139,15 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### LLM Clients (do first — routing engine depends on these)
 
+Each provider file must implement three classes: `{Provider}SmallClient`, `{Provider}LargeClient`, and `{Provider}ValidatorClient`. All three extend `BaseLLMClient`.
+
 - [ ] `ali/clients/base.py` — abstract interface (`complete()`, `stream()`, `model_name`, `tier`, `cost_per_1k_input_tokens`); delete `scaffold_review()`
-- [ ] `ali/clients/openai_client.py`
-- [ ] `ali/clients/anthropic_client.py`
-- [ ] `ali/clients/google_client.py`
-- [ ] `ali/clients/groq_client.py`
-- [ ] `ali/clients/mistral_client.py`
-- [ ] `ali/clients/bedrock_client.py`
+- [ ] `ali/clients/openai_client.py` — `OpenAISmallClient`, `OpenAILargeClient`, `OpenAIValidatorClient`
+- [ ] `ali/clients/anthropic_client.py` — `AnthropicSmallClient`, `AnthropicLargeClient`, `AnthropicValidatorClient`
+- [ ] `ali/clients/google_client.py` — `GoogleSmallClient`, `GoogleLargeClient`, `GoogleValidatorClient`
+- [ ] `ali/clients/groq_client.py` — `GroqSmallClient`, `GroqLargeClient`, `GroqValidatorClient`
+- [ ] `ali/clients/mistral_client.py` — `MistralSmallClient`, `MistralLargeClient`, `MistralValidatorClient`
+- [ ] `ali/clients/bedrock_client.py` — `BedrockSmallClient`, `BedrockLargeClient`, `BedrockValidatorClient`
 
 ### Routing Engine
 

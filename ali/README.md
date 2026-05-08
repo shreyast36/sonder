@@ -56,23 +56,25 @@ You own the seed script (`scripts/seed_pinecone.py`) and decide where the data c
 | **Curated CSV** | Fastest to ship — 20–30 destinations, 5–10 activities each. Use for demo. |
 
 ### LLM model selection
-No model names are hardcoded. Set these in `.env`:
+No model names are hardcoded. Every provider file implements three client classes — Small, Large, and Validator. Set which provider + model to use for each tier in `.env`:
 
 ```bash
-SMALL_MODEL_PROVIDER=       # chat_topics, icebreaker, persona_label, quick_edit
-SMALL_MODEL_NAME=
+SMALL_MODEL_PROVIDER=       # openai | anthropic | google | groq | mistral | bedrock
+SMALL_MODEL_NAME=           # e.g. gpt-4o-mini, claude-haiku-4-5, gemini-flash
 
-LARGE_MODEL_PROVIDER=       # itinerary_generation, rag_explanation, conflict_resolution
-LARGE_MODEL_NAME=
+LARGE_MODEL_PROVIDER=       # openai | anthropic | google | groq | mistral | bedrock
+LARGE_MODEL_NAME=           # e.g. gpt-4o, claude-opus-4-7, gemini-pro
 
-VALIDATOR_MODEL_PROVIDER=   # validate_itinerary, critic_check
-VALIDATOR_MODEL_NAME=
+VALIDATOR_MODEL_PROVIDER=   # openai | anthropic | google | groq | mistral | bedrock
+VALIDATOR_MODEL_NAME=       # e.g. gpt-4o, claude-sonnet-4-6 — needs structured output support
 
-# Only if using Bedrock:
+# Only needed if any provider above is set to "bedrock":
 BEDROCK_SMALL_MODEL_ID=
 BEDROCK_LARGE_MODEL_ID=
 BEDROCK_VALIDATOR_MODEL_ID=
 ```
+
+The routing engine reads these at runtime and instantiates `{Provider}{Tier}Client` accordingly — e.g. `SMALL_MODEL_PROVIDER=anthropic` → `AnthropicSmallClient`. You can mix providers across tiers (e.g. Groq for Small, Anthropic for Large, OpenAI for Validator).
 
 ---
 

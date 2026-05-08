@@ -143,13 +143,13 @@ POST /plan-trip
 
 ### Multi-Model Routing (Ali)
 
-Every LLM call is routed by task type — no model names are hardcoded anywhere:
+Every LLM call is routed by task type — no model names are hardcoded anywhere. Each provider file (`openai_client.py`, `anthropic_client.py`, etc.) implements three classes: `{Provider}SmallClient`, `{Provider}LargeClient`, and `{Provider}ValidatorClient`. You can mix providers across tiers.
 
 | Tier | Task types | Characteristics |
 |---|---|---|
 | **Small** | chat_topics, icebreaker, persona_label, quick_edit | Fast + cheap |
 | **Large** | itinerary_generation, rag_explanation, conflict_resolution | High quality, longer context |
-| **Validator** | validate_itinerary, critic_check | Structured output, scoring |
+| **Validator** | validate_itinerary, critic_check | Structured output, scoring — one per provider |
 
 ### Real-Time Layer
 
