@@ -55,17 +55,17 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Schemas (do first — everyone is blocked on these)
 
-- [ ] `jahnvi/schemas/enums.py` — Verify `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`, `ValidationStatus`, `VisaRequirement`, `ModelTier`, `ApprovalStatus` match Figma; delete `scaffold_review()`
-- [ ] `jahnvi/schemas/user.py` — Verify `TripConstraints` (note `budget_currency` field + `budget_usd` is always USD), `PersonaQuestionAnswers`, `UserProfile`; add `fcm_token` if using FCM; delete `scaffold_review()`
-- [ ] `jahnvi/schemas/trip.py` — Verify `Destination`, `Activity`, `ItineraryActivity` (has `why_this`), `ItineraryDay` (note: field is `trip_date` not `date`), `Itinerary`; decide image source + add `image_url`; delete `scaffold_review()`
-- [ ] `jahnvi/schemas/cotraveller.py` — Verify `CoTravellerProfile`, `CoTravellerMatch` match Screen 4 and Shreyas's matching needs; delete `scaffold_review()`
-- [ ] `jahnvi/schemas/chat.py` — Verify `ChatMessage`, `ChatSession`, `ChatStartResponse` (session + icebreaker + topics), `SharedItinerary`, `ItineraryUpdateEvent` match Screens 5–8 and WebSocket layer; delete `scaffold_review()`
+- [x] `jahnvi/schemas/enums.py` — Verify `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`, `ValidationStatus`, `VisaRequirement`, `ModelTier`, `ApprovalStatus` match Figma; delete `scaffold_review()`
+- [x] `jahnvi/schemas/user.py` — Verify `TripConstraints` (note `budget_currency` field + `budget_usd` is always USD), `PersonaQuestionAnswers`, `UserProfile`; add `fcm_token` if using FCM; delete `scaffold_review()`
+- [x] `jahnvi/schemas/trip.py` — Verify `Destination`, `Activity`, `ItineraryActivity` (has `why_this`), `ItineraryDay` (note: field is `trip_date` not `date`), `Itinerary`; decide image source + add `image_url`; delete `scaffold_review()`
+- [x] `jahnvi/schemas/cotraveller.py` — Verify `CoTravellerProfile`, `CoTravellerMatch` match Screen 4 and Shreyas's matching needs; delete `scaffold_review()`
+- [x] `jahnvi/schemas/chat.py` — Verify `ChatMessage`, `ChatSession`, `ChatStartResponse` (session + icebreaker + topics), `SharedItinerary`, `ItineraryUpdateEvent` match Screens 5–8 and WebSocket layer; delete `scaffold_review()`
 - [x] `jahnvi/schemas/api.py` — Verify `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest` (has `activity_feedback: list[ActivityFeedback]`), `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`
 - [ ] Copy finalised models into `shared/schemas.py` re-exports (already wired — just ensure all new models are exported)
 
 ### Persona Templates
 
-- [ ] `jahnvi/data/persona_templates.py` — Review `PERSONA_TEMPLATES` (5 archetypes: Cultural Explorer, Adventure Seeker, Relaxed Wanderer, Party Traveller, Foodie). Confirm archetype names, interests, embed_keywords, and labels match the product spec and Figma. Delete `scaffold_review()`
+- [x] `jahnvi/data/persona_templates.py` — Review `PERSONA_TEMPLATES` (5 archetypes: Cultural Explorer, Adventure Seeker, Relaxed Wanderer, Party Traveller, Foodie). Confirm archetype names, interests, embed_keywords, and labels match the product spec and Figma. Delete `scaffold_review()`
 
 ### User Pipeline
 
@@ -141,7 +141,7 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 Each provider file implements one client class. Ali configures two slots — Small and Large — via env vars. Mushahid separately configures two validator slots.
 
-- [ ] `ali/clients/base.py` — abstract interface (`complete()`, `stream()`, `model_name`, `tier`, `cost_per_1k_input_tokens`); delete `scaffold_review()`
+- [x] `ali/clients/base.py` — abstract interface (`complete()`, `stream()`, `model_name`, `tier`, `cost_per_1k_input_tokens`); delete `scaffold_review()`
 - [ ] `ali/clients/openai_client.py` — `OpenAIClient`
 - [ ] `ali/clients/anthropic_client.py` — `AnthropicClient`
 - [ ] `ali/clients/google_client.py` — `GoogleClient`
@@ -198,7 +198,7 @@ Each provider file implements one client class. Ali configures two slots — Sma
 
 ### Routes
 
-- [ ] `mushahid/routes/health.py` — `/health` pings Firestore + Pinecone, returns `{"status": "healthy"|"degraded", "services": {...}}`
+- [x] `mushahid/routes/health.py` — `/health` pings Firestore + Pinecone, returns `{"status": "healthy"|"degraded", "services": {...}}`
 - [ ] `mushahid/routes/visa.py` — `/visa-check` with static JSON dataset (top 20 nationality/destination combos) or Sherpa API
 - [ ] `mushahid/routes/plan_trip.py` — `POST /plan-trip` → SSE stream via orchestrator
 - [ ] `mushahid/routes/update_trip.py` — `POST /update-trip` → refinement loop (passes both `feedback` and `activity_feedback` to loop)
