@@ -6,32 +6,46 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ## Shreyas — Lead AI Systems & Real-time Engineer
 
-**Owns:** `shreyas/` · Co-traveller real-time layer · Embeddings · Search · Ranking
+**Owns:** `shreyas/` · Candidate selection (embeddings + search + ranking) · Co-traveller matching algorithms · Real-time layer (chat, presence, shared itinerary, approval)
 
-### Retrieval
+> **One-liner:** Shreyas finds and ranks the right destinations, activities, and people. He does not explain them — that is Ali's RAG.
 
-- [ ] `shreyas/retrieval/embeddings.py` — `embed_text()`, `embed_batch()`, `build_user_query()`, `build_refined_query()`
-- [ ] `shreyas/retrieval/search.py` — `search_destinations()`, `search_activities()`, `search_cotravellers()`, `upsert_cotraveller_profile()` (calls Ali's `get_pinecone_index()`)
+### Candidate Selection — Embeddings
 
-### Ranking & Filtering
+- [ ] `shreyas/retrieval/embeddings.py` — `embed_text()`, `embed_batch()`, `build_user_query()`, `build_refined_query()` — converts user profile into a Pinecone query vector (uses Ali's `EMBED_MODEL` from `shared/config.py`)
 
-- [ ] `shreyas/ranking/filters.py` — Hard constraint filters (budget, dates, avoid_list, must_haves)
-- [ ] `shreyas/ranking/destination_ranker.py` — `score_destination()`, `rank_destinations()`
+### Candidate Selection — Search
+
+- [ ] `shreyas/retrieval/search.py` — given a user profile, query Ali's Pinecone index and return the top-N candidate destinations, activities, or co-travellers
+  - `search_destinations(user_profile) → list[dict]` — top destination candidates for the trip plan
+  - `search_activities(user_profile, destination) → list[dict]` — top activity candidates
+  - `search_cotravellers(user_profile) → list[dict]` — top co-traveller profile candidates
+  - `upsert_cotraveller_profile(profile)` — writes a user's profile vector into Pinecone so others can find them
+
+> **Note:** This is pure SELECTION — finding the best candidates. Ali's RAG (`ali/rag/retriever.py`) separately fetches context about already-chosen activities to feed into the LLM. They call the same Pinecone index but for completely different purposes.
+
+### Candidate Selection — Ranking
+
+- [ ] `shreyas/ranking/filters.py` — hard constraint filters applied before scoring (budget, dates, avoid_list, must_haves)
+- [ ] `shreyas/ranking/destination_ranker.py` — `score_destination()`, `rank_destinations()` — multi-signal scoring (vector similarity 60%, budget fit 20%, persona tag match 20%)
 - [ ] `shreyas/ranking/activity_ranker.py` — `score_activity()`, `rank_activities()`
 
-### Co-Traveller Matching
+### Co-Traveller Matching Algorithms
 
-- [ ] `shreyas/cotraveller/matching.py` — `score_compatibility()`, `get_top_matches()`
-- [ ] `shreyas/cotraveller/chat.py` — `ConnectionManager` WebSocket engine (connect, disconnect, send, broadcast, ping/heartbeat)
+- [ ] `shreyas/cotraveller/matching.py` — `score_compatibility()`, `get_top_matches()` — scores pairs of user profiles on interests, pace, and budget; returns top 3 `CoTravellerMatch` objects
+
+### Real-time Layer
+
+- [ ] `shreyas/cotraveller/chat.py` — `ConnectionManager` WebSocket engine (connect, disconnect, send, broadcast, 30s ping/heartbeat)
 - [ ] `shreyas/cotraveller/presence.py` — `set_online()`, `set_offline()`, `is_online()`, `cleanup_stale_presence()`
 - [ ] `shreyas/cotraveller/shared_itinerary.py` — `create_shared_itinerary()`, `add_note()`, `add_activity()`, `sync_changes()` with optimistic locking (version field)
 - [ ] `shreyas/cotraveller/approval.py` — `approve_match()`, `deny_match()`, `get_approval_status()`
 
 ### Integration
 
+- [ ] Confirm with Ali: `get_pinecone_index()` from `ali/vector/client.py` is available and `EMBED_DIMENSIONS` is in `shared/config.py` before building `search.py` or `embeddings.py`
 - [ ] Confirm with Mushahid: `ConnectionManager` is importable from `mushahid/routes/chat.py`
-- [ ] Confirm with Ali: `generate_topics()` + `generate_icebreaker()` are called by Mushahid's `start_chat` route (not Shreyas directly)
-- [ ] Confirm with Ali: `get_pinecone_index()` is available before building `search.py`
+- [ ] Confirm with Ali: `generate_topics()` + `generate_icebreaker()` are called by Mushahid's `start_chat` route — you do not call them
 
 ---
 
@@ -113,17 +127,19 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ## Ali — Lead AI Intelligence & Multi-model Engineer
 
-**Owns:** `ali/` · Routing engine · All LLM clients · Itinerary generation · RAG · Chat topics · Pinecone vector database
+**Owns:** `ali/` · Pinecone vector database · All LLM clients + routing · Itinerary generation · RAG (context retrieval + "Why this?" explanations) · Chat topics
+
+> **One-liner:** Ali owns the database and everything that runs through an LLM. His RAG fetches factual context about already-chosen activities and uses an LLM to write the "Why this?" text. He does not decide which activities to show — that is Shreyas's search and ranking.
 
 ### Vector Database (do first — Shreyas is blocked on this)
 
-- [ ] `ali/vector/client.py` — Initialise Pinecone client, create index if missing, expose `get_pinecone_index()`
-- [ ] Seed Pinecone index: `python -m scripts.seed_pinecone --namespace all`
-- [ ] Decide `EMBED_MODEL` + `EMBED_DIMENSIONS` and add to `shared/config.py` — Shreyas needs this to configure embeddings
+- [ ] `ali/vector/client.py` — initialise Pinecone client, create index if missing, expose `get_pinecone_index()` for Shreyas's `search.py` to import
+- [ ] Decide data source (Amadeus / Foursquare / Tripadvisor / curated CSV) and seed the index: `python -m scripts.seed_pinecone --namespace all`
+- [ ] Decide `EMBED_MODEL` + `EMBED_DIMENSIONS`, write both into `shared/config.py` — Shreyas reads these in `embeddings.py`
 
 ### LLM Clients (do first — routing engine depends on these)
 
-- [ ] `ali/clients/base.py` — Review abstract interface (`complete()`, `stream()`, `model_name`, `tier`, `cost_per_1k_input_tokens`); add any additional methods needed (e.g. `count_tokens`); delete `scaffold_review()`
+- [ ] `ali/clients/base.py` — abstract interface (`complete()`, `stream()`, `model_name`, `tier`, `cost_per_1k_input_tokens`); delete `scaffold_review()`
 - [ ] `ali/clients/openai_client.py`
 - [ ] `ali/clients/anthropic_client.py`
 - [ ] `ali/clients/google_client.py`
@@ -135,9 +151,9 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 - [ ] `ali/routing/classifier.py` — `classify(task_type, context) → ModelTier`, `estimate_tokens(prompt) → int`
 - [ ] `ali/routing/engine.py` — `route_request(task_type, context) → LLMResponse`
-  - SMALL → fastest available small model (chat_topics, icebreaker, persona_label, quick_edit)
-  - LARGE → best large model for context length (itinerary_generation, rag_explanation, conflict_resolution)
-  - VALIDATOR → critic check (validate_itinerary, critic_check)
+  - SMALL → chat_topics, icebreaker, persona_label, quick_edit
+  - LARGE → itinerary_generation, rag_explanation, conflict_resolution
+  - VALIDATOR → validate_itinerary, critic_check
   - Fallback to next model in tier if one fails
 
 ### Itinerary Generation
@@ -146,20 +162,27 @@ Each section lists one person's title, their ownership boundaries, and every tas
 - [ ] `ali/generation/output_parser.py` — `parse_itinerary()`, `validate_structure()`, retry on malformed JSON
 - [ ] `ali/generation/itinerary_generator.py` — `generate_itinerary()` streaming to Mushahid's SSE layer
 
-### RAG
+### RAG — Context Retrieval + Explanation
 
-- [ ] `ali/rag/retriever.py` — `retrieve_activity_context()`, `retrieve_destination_context()` via Shreyas's search
-- [ ] `ali/rag/explainer.py` — `explain_activity()`, `explain_day()`, `explain_itinerary()` — populates `why_this` on each `ItineraryActivity`
+> **What this is NOT:** Shreyas's `search.py` selects candidates from Pinecone (e.g. "show me the top 20 destinations"). Ali's RAG is different — once a specific activity is already chosen, it fetches factual text about that activity from Pinecone, then passes those facts to the LLM to write the "Why this?" blurb shown on Screen 3.
+
+- [ ] `ali/rag/retriever.py` — given an already-chosen activity or destination, call `shreyas/retrieval/search.py` to fetch relevant text context chunks from Pinecone
+  - `retrieve_activity_context(activity, user_profile) → list[str]`
+  - `retrieve_destination_context(destination, user_profile) → list[str]`
+- [ ] `ali/rag/explainer.py` — take the context chunks from `retriever.py` and pass them to the LLM to generate the explanation
+  - `explain_activity(activity, context, user_profile) → str` — one-paragraph "Why this?" shown under each activity on Screen 3
+  - `explain_day(day, context, user_profile) → str`
+  - `explain_itinerary(itinerary, user_profile)` — populates `why_this` on every `ItineraryActivity`
 
 ### Chat Topics
 
-- [ ] `ali/generation/topics.py` — `generate_topics()` (5 topics, SMALL model), `generate_icebreaker()` (SMALL model); both called by Mushahid's `POST /chat/start` route, result returned in `ChatStartResponse`
+- [ ] `ali/generation/topics.py` — `generate_topics()` (5 topics, SMALL model), `generate_icebreaker()` (SMALL model); both called by Mushahid's `POST /chat/start` via `asyncio.gather`, returned in `ChatStartResponse`
 
 ### Integration
 
+- [ ] Share `get_pinecone_index()` + `EMBED_DIMENSIONS` with Shreyas before he starts `search.py` — he is blocked until both exist
 - [ ] Confirm streaming interface with Mushahid: `generate_itinerary()` must yield token chunks for SSE
-- [ ] Confirm RAG interface with Shreyas: `retrieve_activity_context()` calls `shreyas/retrieval/search.py`
-- [ ] Share `get_pinecone_index()` with Shreyas once index is live — he cannot build `search.py` without it
+- [ ] Confirm RAG call chain with Shreyas: `ali/rag/retriever.py` calls `shreyas/retrieval/search.py` — agree on function signatures
 
 ---
 
