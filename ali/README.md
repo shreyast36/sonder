@@ -16,7 +16,26 @@ You own the brain of the product. Every AI decision — which model runs, what i
 
 ---
 
-## Your First Decision — Model Selection
+## Your Decisions
+
+### Destination & activity data source
+You own the Pinecone index and the seeding script, so you decide where the data comes from. Coordinate with Shreyas on the data shape before seeding — his `search.py` expects specific metadata fields.
+
+| Option | Notes |
+|---|---|
+| **Amadeus Travel API** | Large coverage, free tier, destinations + activities + points of interest. Best all-round starting point. |
+| **Foursquare Places API** | Strong activity/POI data, free tier up to 1k calls/day. Good for activity-level granularity. |
+| **Tripadvisor Content API** | Rich reviews and photos, but paid. Worth it if you want review snippets in RAG context. |
+| **Curated CSV** | Fastest to ship — manually curate 20–30 destinations and 5–10 activities each. No API dependency. Use for demo launch. |
+
+Once you've chosen a source, replace `SAMPLE_DESTINATIONS` and `SAMPLE_ACTIVITIES` in the seed script and run:
+```bash
+python -m scripts.seed_pinecone --namespace all
+```
+
+---
+
+## Model Selection
 
 **No model names are hard-coded anywhere.** You choose which models to use by setting these in `.env`:
 

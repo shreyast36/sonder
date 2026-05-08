@@ -14,23 +14,6 @@ You own the intelligence layer that finds the right destinations, activities, an
 
 ---
 
-## Your Decisions
-
-### Destination & activity data source
-Ali owns the Pinecone index and the seeding script. You decide where the destination and activity data comes from — coordinate with Ali on the data shape before he seeds. Options:
-
-| Option | Notes |
-|---|---|
-| **Amadeus Travel API** | Large coverage, free tier, destinations + activities + points of interest. Best all-round starting point. |
-| **Foursquare Places API** | Strong activity/POI data, free tier up to 1k calls/day. Good for activity-level granularity. |
-| **Tripadvisor Content API** | Rich reviews and photos, but paid. Worth it if you want review snippets for RAG context. |
-| **Curated CSV** | Fastest to ship — manually curate 20–30 destinations and 5–10 activities each. No API dependency. Use for the demo launch. |
-
-The seeding script already has the expected data shape. Replace `SAMPLE_DESTINATIONS` and `SAMPLE_ACTIVITIES` with your chosen source and run:
-```bash
-python -m scripts.seed_pinecone --namespace all
-```
-
 ---
 
 ## Dependencies
