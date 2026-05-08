@@ -41,9 +41,8 @@ class VisaRequirement(str, Enum):
 
 
 class ModelTier(str, Enum):
-    small     = "small"
-    large     = "large"
-    validator = "validator"
+    small = "small"
+    large = "large"
 
 
 class ApprovalStatus(str, Enum):

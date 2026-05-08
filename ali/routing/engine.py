@@ -1,30 +1,21 @@
 from ali.routing.classifier import classify
 from ali.clients.base import BaseLLMClient
 from shared.schemas import ModelTier
-from shared.config import (
-    SMALL_MODEL_PROVIDER, LARGE_MODEL_PROVIDER, VALIDATOR_MODEL_PROVIDER
-)
+from shared.config import SMALL_MODEL_PROVIDER, LARGE_MODEL_PROVIDER
 
 
 def get_client(tier: ModelTier) -> BaseLLMClient:
     """
-    Return the appropriate LLM client for a given tier, based on provider config.
-
-    Ali: the provider is set via env vars (SMALL_MODEL_PROVIDER, LARGE_MODEL_PROVIDER,
-    VALIDATOR_MODEL_PROVIDER). Add fallback logic here if a provider is unavailable.
+    Return the appropriate LLM client for the given tier.
+    Provider is set via SMALL_MODEL_PROVIDER / LARGE_MODEL_PROVIDER in .env.
 
     Expected input:  ModelTier.large
-    Expected output: the correct BaseLLMClient subclass for the given tier and provider
+    Expected output: the correct BaseLLMClient subclass for the provider
     """
-    if tier == ModelTier.small:
-        provider = SMALL_MODEL_PROVIDER
-    elif tier == ModelTier.large:
-        provider = LARGE_MODEL_PROVIDER
-    else:
-        provider = VALIDATOR_MODEL_PROVIDER
+    provider = SMALL_MODEL_PROVIDER if tier == ModelTier.small else LARGE_MODEL_PROVIDER
 
-    # TODO: import and return the correct client class based on (provider, tier)
-    # Add a case for each provider you decide to support.
+    # TODO: import and return the correct client class based on provider
+    # e.g. provider="anthropic" → AnthropicClient()
     raise NotImplementedError
 
 
