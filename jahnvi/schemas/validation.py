@@ -30,7 +30,7 @@ class ConstraintSatisfaction(BaseModel):
 
 class ValidationResult(BaseModel):
     """
-    Output of mushahid/validation/critic.py validate_with_llm().
+    Output of mushahid/validation/critic.py validate_large_output().
     Returned in UpdateTripResponse and emitted in the "validated" SSE event.
 
     Example (approved):

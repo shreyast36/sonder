@@ -58,7 +58,8 @@ Ali's RAG retriever calls Shreyas's search functions — Shreyas provides the in
 | Vector DB | Pinecone — owned and managed by Ali |
 | AI — Small models | Ali's decision (`SMALL_MODEL_PROVIDER` + `SMALL_MODEL_NAME` in `.env`) |
 | AI — Large models | Ali's decision (`LARGE_MODEL_PROVIDER` + `LARGE_MODEL_NAME` in `.env`) |
-| AI — Validator | Ali's decision (`VALIDATOR_MODEL_PROVIDER` + `VALIDATOR_MODEL_NAME` in `.env`) |
+| AI — Small Validator | Mushahid's decision (`SMALL_VALIDATOR_PROVIDER` + `SMALL_VALIDATOR_MODEL_NAME` in `.env`) |
+| AI — Large Validator | Mushahid's decision (`LARGE_VALIDATOR_PROVIDER` + `LARGE_VALIDATOR_MODEL_NAME` in `.env`) |
 | Email | Resend / SendGrid / SES — set `EMAIL_PROVIDER` in `.env` |
 | Frontend hosting | Vercel |
 | Backend hosting | Render |
@@ -131,7 +132,7 @@ POST /plan-trip
 ├── [Ali]      explain_itinerary()                     RAG — fetch context per activity, write Why This
 │              retriever calls Shreyas's search.py     → SSE: explaining
 │
-├── [Mushahid] run_all_checks() + validate_with_llm()  rule checks + VALIDATOR model critic
+├── [Mushahid] run_all_checks() + validate_large_output()  rule checks + Large Validator critic
 │              → if REVISE: run_refinement_loop()      re-rank → re-generate → re-validate
 │                                                      → SSE: validating / revision / validated
 │

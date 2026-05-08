@@ -73,7 +73,7 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
         step = "validating"
         yield format_event("validating", {})
         # TODO: constraint_check = run_all_checks(itinerary, user_profile.constraints)
-        # TODO: validation = await validate_with_llm(itinerary, user_profile)
+        # TODO: validation = await validate_large_output(itinerary, user_profile)
         # TODO: if validation.status == ValidationStatus.revise:
         #           async for event in run_refinement_loop(itinerary, user_profile, "", validation):
         #               yield event

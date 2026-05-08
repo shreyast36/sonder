@@ -91,7 +91,7 @@ aws logs create-log-group --log-group-name /ecs/sonder-backend --region <AWS_REG
 aws secretsmanager create-secret --name sonder/firebase --secret-string '{"FIREBASE_PROJECT_ID":"...","FIREBASE_PRIVATE_KEY":"...","FIREBASE_CLIENT_EMAIL":"..."}'
 aws secretsmanager create-secret --name sonder/pinecone --secret-string '{"PINECONE_API_KEY":"...","PINECONE_INDEX_NAME":"sonder-index"}'
 aws secretsmanager create-secret --name sonder/llm     --secret-string '{"OPENAI_API_KEY":"...","ANTHROPIC_API_KEY":"...","GOOGLE_API_KEY":"...","GROQ_API_KEY":"...","MISTRAL_API_KEY":"..."}' # include only the keys for providers Ali selects
-aws secretsmanager create-secret --name sonder/models  --secret-string '{"SMALL_MODEL_PROVIDER":"...","SMALL_MODEL_NAME":"...","LARGE_MODEL_PROVIDER":"...","LARGE_MODEL_NAME":"...","VALIDATOR_MODEL_PROVIDER":"...","VALIDATOR_MODEL_NAME":"...","BEDROCK_SMALL_MODEL_ID":"...","BEDROCK_LARGE_MODEL_ID":"...","BEDROCK_VALIDATOR_MODEL_ID":"...","EMBED_MODEL_PROVIDER":"...","EMBED_MODEL":"...","EMBED_DIMENSIONS":"1536","BEDROCK_EMBED_MODEL_ID":"..."}'
+aws secretsmanager create-secret --name sonder/models  --secret-string '{"SMALL_MODEL_PROVIDER":"...","SMALL_MODEL_NAME":"...","LARGE_MODEL_PROVIDER":"...","LARGE_MODEL_NAME":"...","SMALL_VALIDATOR_PROVIDER":"...","SMALL_VALIDATOR_MODEL_NAME":"...","LARGE_VALIDATOR_PROVIDER":"...","LARGE_VALIDATOR_MODEL_NAME":"...","BEDROCK_SMALL_MODEL_ID":"...","BEDROCK_LARGE_MODEL_ID":"...","BEDROCK_SMALL_VALIDATOR_MODEL_ID":"...","BEDROCK_LARGE_VALIDATOR_MODEL_ID":"...","EMBED_MODEL_PROVIDER":"...","EMBED_MODEL":"...","EMBED_DIMENSIONS":"1536","BEDROCK_EMBED_MODEL_ID":"..."}'
 aws secretsmanager create-secret --name sonder/redis   --secret-string '{"REDIS_URL":"redis://..."}'
 
 # 4. Create IAM roles

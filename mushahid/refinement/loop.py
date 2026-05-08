@@ -91,7 +91,7 @@ async def run_refinement_loop(
     #   itinerary = await generate_itinerary(user_profile, destination, ranked_activities, feedback=feedback)
     #
     #   Re-validate
-    #   validation = await validate_with_llm(itinerary, user_profile)
+    #   validation = await validate_large_output(itinerary, user_profile)
     #   await write_itinerary(itinerary)        # live Firestore update
     #   yield format_event("revision", {"attempt": attempt + 1, "score": validation.score})
     #

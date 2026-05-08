@@ -22,7 +22,7 @@ class BaseLLMClient(ABC):
     @property
     @abstractmethod
     def tier(self) -> ModelTier:
-        """Which tier this client belongs to: small | large | validator."""
+        """Which tier this client belongs to: small | large."""
         ...
 
     @property

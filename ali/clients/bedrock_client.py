@@ -5,14 +5,13 @@ from shared.config import (
     AWS_REGION,
     BEDROCK_SMALL_MODEL_ID,
     BEDROCK_LARGE_MODEL_ID,
-    BEDROCK_VALIDATOR_MODEL_ID,
 )
 from shared.schemas import ModelTier
 
 # Ali: Bedrock's invoke format varies by model family — you must handle this yourself.
 #
 # The request body shape and response delta field differ depending on which model ID
-# you set in BEDROCK_SMALL_MODEL_ID / BEDROCK_LARGE_MODEL_ID / BEDROCK_VALIDATOR_MODEL_ID.
+# you set in BEDROCK_SMALL_MODEL_ID / BEDROCK_LARGE_MODEL_ID.
 # Check the AWS Bedrock docs for your chosen model IDs to get the exact body format.
 #
 # Streaming: invoke_model_with_response_stream returns an EventStream.
@@ -64,27 +63,6 @@ class BedrockLargeClient(BaseLLMClient):
 
     def __init__(self):
         self.model_id = BEDROCK_LARGE_MODEL_ID
-        self._client = boto3.client("bedrock-runtime", region_name=AWS_REGION)
-
-    async def complete(self, prompt: str, system: str = "") -> str:
-        # TODO: same pattern as BedrockSmallClient.complete
-        raise NotImplementedError
-
-    async def stream(self, prompt: str, system: str = ""):
-        # TODO: same pattern as BedrockSmallClient.stream
-        raise NotImplementedError
-
-
-class BedrockValidatorClient(BaseLLMClient):
-    """
-    Bedrock client for the VALIDATOR tier.
-    Model ID is set via BEDROCK_VALIDATOR_MODEL_ID in .env.
-    """
-
-    tier = ModelTier.validator
-
-    def __init__(self):
-        self.model_id = BEDROCK_VALIDATOR_MODEL_ID
         self._client = boto3.client("bedrock-runtime", region_name=AWS_REGION)
 
     async def complete(self, prompt: str, system: str = "") -> str:

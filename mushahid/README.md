@@ -168,7 +168,7 @@ POST /plan-trip
             ├── [Ali] explain_itinerary (populate why_this fields)
             │       → emit "explaining"
             │
-            ├── [Mushahid] run_all_checks + validate_with_llm
+            ├── [Mushahid] run_all_checks + validate_large_output
             │       → emit "validating"
             │       → if REVISE: run_refinement_loop → emit "revision" (may repeat)
             │       → emit "validated"
@@ -228,7 +228,7 @@ ValidationResult(
     improvement_suggestions = []
 )
 
-# validate_with_llm — output (revise)
+# validate_large_output — output (revise)
 ValidationResult(
     itinerary_id            = "itin_abc123",
     status                  = ValidationStatus.revise,
