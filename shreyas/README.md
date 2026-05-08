@@ -8,7 +8,7 @@ You own the intelligence layer that finds the right destinations, activities, an
 
 | Folder | Responsibility |
 |---|---|
-| `retrieval/` | Pinecone vector search — embed queries, search destinations, activities, co-travellers |
+| `retrieval/` | Embed queries and search destinations, activities, co-travellers via Pinecone (Ali owns the index) |
 | `ranking/` | Score and rank retrieval results using multi-signal scoring |
 | `cotraveller/` | Compatibility matching, WebSocket chat engine, presence, shared itinerary sync, approval |
 
@@ -17,7 +17,7 @@ You own the intelligence layer that finds the right destinations, activities, an
 ## Your Decisions
 
 ### Destination & activity data source
-You own the Pinecone index and the seeding script (`scripts/seed_pinecone.py`). You decide where the destination and activity data comes from. Options:
+Ali owns the Pinecone index and the seeding script. You decide where the destination and activity data comes from — coordinate with Ali on the data shape before he seeds. Options:
 
 | Option | Notes |
 |---|---|
@@ -42,6 +42,8 @@ python -m scripts.seed_pinecone --namespace all
 | **Jahnvi** | `shared/schemas.py` finalised | Every module imports schemas | **Right now — blocks everything** |
 | **Jahnvi** | `UserProfile` shape with `compatibility_signals` and `travel_style_embedding` fields | `cotraveller/matching.py` + `retrieval/search.py` | Before I build co-traveller search |
 | **Jahnvi** | `CoTravellerProfile` and `CoTravellerMatch` shapes | `cotraveller/matching.py` | Before I build matching |
+| **Ali** | `get_pinecone_index()` from `ali/vector/client.py` | `retrieval/search.py` — all Pinecone queries go through this | Before I can build search |
+| **Ali** | `EMBED_MODEL` + `EMBED_DIMENSIONS` decision in `shared/config.py` | `retrieval/embeddings.py` — model name + vector size | Before I can write embeddings |
 | **Mushahid** | `get_db()` in `realtime/firestore.py` working | `presence.py`, `shared_itinerary.py`, `approval.py` all call Firestore | Before I build real-time features |
 | **Mushahid** | `notify_co_traveller_approved()` in `realtime/notifications.py` working | `cotraveller/approval.py` calls this on mutual approval | Before I complete approval flow |
 
@@ -215,16 +217,15 @@ Fix before production:
 - `REDIS_URL` is already in `shared/config.py` — read it there
 - When `LOCAL_MODE=true` the in-memory fallback is fine
 
-### Embeddings — provider your choice
-Set `EMBED_MODEL_PROVIDER`, `EMBED_MODEL` (or `BEDROCK_EMBED_MODEL_ID` if using Bedrock), and `EMBED_DIMENSIONS` in `.env`. Vectors always go into Pinecone regardless of which provider generates them.
+### Embeddings — provider chosen by Ali
+Ali decides `EMBED_MODEL_PROVIDER`, `EMBED_MODEL`, and `EMBED_DIMENSIONS` — these go into `shared/config.py`. Your `embeddings.py` reads them from there. Vectors always go into Ali's Pinecone index regardless of which provider generates them.
 
 ---
 
 ## Build Order
 
-1. `retrieval/client.py` first — everything else needs a working Pinecone connection
-2. `retrieval/embeddings.py` + `retrieval/search.py`
-3. Seed Pinecone with destination, activity, and co-traveller data
-4. `ranking/filters.py` → `ranking/destination_ranker.py` → `ranking/activity_ranker.py`
-5. `cotraveller/matching.py`
-6. `cotraveller/chat.py` → `cotraveller/presence.py` → `cotraveller/approval.py` → `cotraveller/shared_itinerary.py`
+1. Wait for Ali's `ali/vector/client.py` + `EMBED_DIMENSIONS` in `shared/config.py` — you're blocked until both are ready
+2. `retrieval/embeddings.py` + `retrieval/search.py` (imports `get_pinecone_index` from Ali)
+3. `ranking/filters.py` → `ranking/destination_ranker.py` → `ranking/activity_ranker.py`
+4. `cotraveller/matching.py`
+5. `cotraveller/chat.py` → `cotraveller/presence.py` → `cotraveller/approval.py` → `cotraveller/shared_itinerary.py`

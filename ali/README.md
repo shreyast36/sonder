@@ -8,6 +8,7 @@ You own the brain of the product. Every AI decision — which model runs, what i
 
 | Folder | Responsibility |
 |---|---|
+| `vector/` | Pinecone index setup and `get_pinecone_index()` — Shreyas calls this for all queries |
 | `routing/` | Multi-model routing engine — classifies tasks, picks the right model tier |
 | `clients/` | LLM provider client wrappers — one file per provider |
 | `generation/` | Itinerary generation, output parsing, prompt templates, chat topic generation |
@@ -51,6 +52,13 @@ The routing engine (`routing/engine.py`) reads these at runtime and instantiates
 | **Jahnvi** | `shared/schemas.py` finalised | All generation and parsing code imports schemas | **Right now — blocks everything** |
 | **Jahnvi** | `UserProfile`, `Itinerary`, `ItineraryDay`, `ItineraryActivity`, `Activity`, `Destination` shapes | `generation/itinerary_generator.py`, `rag/explainer.py`, `generation/output_parser.py` | Before I write any generation code |
 | **Shreyas** | `retrieval/search.py` — `search_destinations()` and `search_activities()` | `rag/retriever.py` calls these to fetch context chunks | Before I can build the RAG explainer |
+
+### What I provide to others (blocking)
+
+| Who | What exactly | Where they use it |
+|---|---|---|
+| **Shreyas** | `get_pinecone_index()` from `ali/vector/client.py` | `shreyas/retrieval/search.py` — all Pinecone queries |
+| **Shreyas** | `EMBED_MODEL` + `EMBED_DIMENSIONS` written into `shared/config.py` | `shreyas/retrieval/embeddings.py` — vector size + model |
 
 ### What others need from me
 
@@ -203,9 +211,12 @@ Itinerary(days=[...], total_budget_usd=840.0, ...)
 
 ## Build Order
 
-1. `clients/base.py` — define the interface first
-2. All provider clients in `clients/` — implement whichever providers you choose to support
-3. `routing/classifier.py` → `routing/engine.py`
-4. `generation/prompts.py` → `generation/output_parser.py` → `generation/itinerary_generator.py`
-5. `rag/retriever.py` → `rag/explainer.py`
-6. `generation/topics.py`
+1. `vector/client.py` — Pinecone init + `get_pinecone_index()` first; Shreyas is blocked until this exists
+2. Decide + write `EMBED_MODEL` + `EMBED_DIMENSIONS` into `shared/config.py` — unblocks Shreyas's embeddings
+3. Seed Pinecone index: `python -m scripts.seed_pinecone --namespace all`
+4. `clients/base.py` — define the LLM interface
+5. All provider clients in `clients/`
+6. `routing/classifier.py` → `routing/engine.py`
+7. `generation/prompts.py` → `generation/output_parser.py` → `generation/itinerary_generator.py`
+8. `rag/retriever.py` → `rag/explainer.py`
+9. `generation/topics.py`

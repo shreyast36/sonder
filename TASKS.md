@@ -6,14 +6,12 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ## Shreyas — Lead AI Systems & Real-time Engineer
 
-**Owns:** `shreyas/` · Co-traveller real-time layer · Pinecone index management
+**Owns:** `shreyas/` · Co-traveller real-time layer · Embeddings · Search · Ranking
 
 ### Retrieval
 
-- [ ] `shreyas/retrieval/client.py` — Initialise Pinecone client, create index if missing
 - [ ] `shreyas/retrieval/embeddings.py` — `embed_text()`, `embed_batch()`, `build_user_query()`, `build_refined_query()`
-- [ ] `shreyas/retrieval/search.py` — `search_destinations()`, `search_activities()`, `search_cotravellers()`, `upsert_cotraveller_profile()`
-- [ ] Seed Pinecone index: `python -m scripts.seed_pinecone --namespace all`
+- [ ] `shreyas/retrieval/search.py` — `search_destinations()`, `search_activities()`, `search_cotravellers()`, `upsert_cotraveller_profile()` (calls Ali's `get_pinecone_index()`)
 
 ### Ranking & Filtering
 
@@ -33,7 +31,7 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 - [ ] Confirm with Mushahid: `ConnectionManager` is importable from `mushahid/routes/chat.py`
 - [ ] Confirm with Ali: `generate_topics()` + `generate_icebreaker()` are called by Mushahid's `start_chat` route (not Shreyas directly)
-- [ ] Announce `EMBED_MODEL` + `EMBED_DIMENSIONS` choice so Jahnvi can update `shared/config.py`
+- [ ] Confirm with Ali: `get_pinecone_index()` is available before building `search.py`
 
 ---
 
@@ -115,7 +113,13 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ## Ali — Lead AI Intelligence & Multi-model Engineer
 
-**Owns:** `ali/` · Routing engine · All LLM clients · Itinerary generation · RAG · Chat topics
+**Owns:** `ali/` · Routing engine · All LLM clients · Itinerary generation · RAG · Chat topics · Pinecone vector database
+
+### Vector Database (do first — Shreyas is blocked on this)
+
+- [ ] `ali/vector/client.py` — Initialise Pinecone client, create index if missing, expose `get_pinecone_index()`
+- [ ] Seed Pinecone index: `python -m scripts.seed_pinecone --namespace all`
+- [ ] Decide `EMBED_MODEL` + `EMBED_DIMENSIONS` and add to `shared/config.py` — Shreyas needs this to configure embeddings
 
 ### LLM Clients (do first — routing engine depends on these)
 
@@ -155,7 +159,7 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 - [ ] Confirm streaming interface with Mushahid: `generate_itinerary()` must yield token chunks for SSE
 - [ ] Confirm RAG interface with Shreyas: `retrieve_activity_context()` calls `shreyas/retrieval/search.py`
-- [ ] Announce model and embed dimension choices early — Shreyas is blocked on `EMBED_DIMENSIONS` for Pinecone
+- [ ] Share `get_pinecone_index()` with Shreyas once index is live — he cannot build `search.py` without it
 
 ---
 
@@ -216,10 +220,10 @@ Each section lists one person's title, their ownership boundaries, and every tas
 ```
 Phase 1 (parallel):
   Jahnvi   → schemas first — everyone is blocked until these are finalised
-  Ali      → LLM clients
+  Ali      → LLM clients + Pinecone vector DB setup + embed dimension decision
 
 Phase 2 (parallel):
-  Shreyas  → retrieval + ranking (needs schemas)
+  Shreyas  → embeddings + search + ranking (needs schemas + Ali's Pinecone client)
   Ali      → routing engine (needs clients)
   Mushahid → FastAPI app + auth + real-time layer (needs schemas)
   Jahnvi   → pipeline modules 1–2 (no external deps)
