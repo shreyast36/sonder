@@ -49,11 +49,3 @@ class ApprovalStatus(str, Enum):
     pending  = "pending"
     approved = "approved"
     denied   = "denied"
-
-
-def scaffold_review() -> None:
-    """
-    Jahnvi — these enums were pre-populated as scaffold. Verify every value
-    matches your Figma designs and product spec, then delete this function.
-    """
-    raise NotImplementedError

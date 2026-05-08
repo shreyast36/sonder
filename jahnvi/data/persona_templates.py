@@ -114,13 +114,3 @@ def build_embed_text(
         "travel",
     ]
     return " ".join(parts)
-
-
-def scaffold_review() -> None:
-    """
-    Jahnvi — review PERSONA_TEMPLATES before infer_persona() or seed_pinecone.py
-    consume them. Confirm: archetype names, interests, embed_keywords, and labels
-    match the product spec and Figma. Add or remove archetypes as needed. Delete
-    this function when the template list is finalised.
-    """
-    raise NotImplementedError

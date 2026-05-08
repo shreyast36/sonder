@@ -109,14 +109,3 @@ class Itinerary(BaseModel):
     total_budget_usd: float
     notes:            list[str] = []
     co_traveller_ids: list[str] = []
-
-
-def scaffold_review() -> None:
-    """
-    Jahnvi — Destination, Activity, ItineraryActivity, ItineraryDay, and Itinerary
-    were pre-populated as scaffold. Add image_url to Destination and Activity once
-    you've decided on an image source (see jahnvi/README.md). Note: ItineraryDay.date
-    was renamed to trip_date to avoid a Pydantic v2 name collision. Delete this
-    function when fields are finalised.
-    """
-    raise NotImplementedError
