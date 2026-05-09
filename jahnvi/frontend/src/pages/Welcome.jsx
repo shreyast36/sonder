@@ -537,7 +537,7 @@ export default function Welcome() {
       <footer style={{ position: 'relative', zIndex: 10, padding: '24px 64px', borderTop: `1px solid ${HAIRLINE}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(8,8,7,0.7)', backdropFilter: 'blur(16px)' }}>
         <SonderNav3D markSize={32}/>
         <span style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 10, letterSpacing: '0.18em', color: DIM }}>
-          © 2025 Sonder
+          © 2026 Sonder
         </span>
       </footer>
 
