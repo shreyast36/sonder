@@ -503,7 +503,7 @@ export default function Welcome() {
           </motion.h1>
 
           <motion.p variants={fade} style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 15, lineHeight: 1.88, color: MUTE, maxWidth: 340, margin: '0 auto 40px' }}>
-            The private intelligence layer for people who know exactly where they want to go.
+            Your next chapter is one destination away.
           </motion.p>
 
           <motion.div variants={fade}>
