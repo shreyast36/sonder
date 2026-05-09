@@ -1,13 +1,13 @@
 from pydantic import BaseModel
 from typing import Literal, Optional
 from jahnvi.schemas.user import TripConstraints, PersonaQuestionAnswers, UserProfile
-from jahnvi.schemas.trip import Itinerary
-from jahnvi.schemas.cotraveller import CoTravellerMatch
-from jahnvi.schemas.validation import ValidationResult
-from jahnvi.schemas.enums import VisaRequirement
+from ali.schemas.trip import Itinerary
+from shreyas.schemas.cotraveller import CoTravellerMatch
+from mushahid.schemas.validation import ValidationResult
+from mushahid.schemas.enums import VisaRequirement
 
 
-# ── Visa ─────────────────────────────────────────────────────────────────────────
+# ── Visa ──────────────────────────────────────────────────────────────────────
 
 class VisaInfo(BaseModel):
     """
@@ -27,7 +27,7 @@ class VisaInfo(BaseModel):
     notes:               str
 
 
-# ── Plan Trip ─────────────────────────────────────────────────────────────────────
+# ── Plan Trip ─────────────────────────────────────────────────────────────────
 
 class PlanTripRequest(BaseModel):
     """
@@ -62,7 +62,7 @@ class PlanTripResponse(BaseModel):
     validation: ValidationResult
 
 
-# ── Update Trip ───────────────────────────────────────────────────────────────────
+# ── Update Trip ───────────────────────────────────────────────────────────────
 
 class ActivityFeedback(BaseModel):
     """
@@ -113,26 +113,10 @@ class UpdateTripRequest(BaseModel):
             current_itinerary = Itinerary(...)
         )
     """
-    itinerary_id:       str
-    feedback:           str = ""
-    activity_feedback:  list[ActivityFeedback] = []
-    current_itinerary:  Itinerary
-
-
-class EmailItineraryRequest(BaseModel):
-    """
-    Request body for POST /export/email.
-
-    Example:
-        EmailItineraryRequest(
-            itinerary_id  = "itin_abc123",
-            recipients    = ["user@example.com", "cotraveller@example.com"],
-            include_notes = True
-        )
-    """
-    itinerary_id:  str
-    recipients:    list[str]
-    include_notes: bool = True
+    itinerary_id:      str
+    feedback:          str = ""
+    activity_feedback: list[ActivityFeedback] = []
+    current_itinerary: Itinerary
 
 
 class UpdateTripResponse(BaseModel):
@@ -156,3 +140,21 @@ class UpdateTripResponse(BaseModel):
     validation:           ValidationResult
     refinement_attempts:  int
     reached_max_attempts: bool = False
+
+
+# ── Export ────────────────────────────────────────────────────────────────────
+
+class EmailItineraryRequest(BaseModel):
+    """
+    Request body for POST /export/email.
+
+    Example:
+        EmailItineraryRequest(
+            itinerary_id  = "itin_abc123",
+            recipients    = ["user@example.com", "cotraveller@example.com"],
+            include_notes = True
+        )
+    """
+    itinerary_id:  str
+    recipients:    list[str]
+    include_notes: bool = True

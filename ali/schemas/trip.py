@@ -81,7 +81,7 @@ class ItineraryDay(BaseModel):
         )
     """
     day_number:     int
-    trip_date:      Optional[date] = None   # renamed from 'date' — field name shadowed the datetime.date type in Pydantic v2
+    trip_date:      Optional[date] = None   # field name shadowed datetime.date in Pydantic v2 — use trip_date
     activities:     list[ItineraryActivity]
     daily_cost_usd: float
     theme:          Optional[str] = None
@@ -89,16 +89,16 @@ class ItineraryDay(BaseModel):
 
 class Itinerary(BaseModel):
     """
-    Full trip plan. Output of Module 6 (Ali's itinerary generator).
+    Full trip plan. Output of Ali's itinerary generator.
 
     Example:
         Itinerary(
-            itinerary_id    = "itin_abc123",
-            user_id         = "firebase_uid_abc123",
-            destination     = Destination(city="Bali", ...),
-            days            = [ItineraryDay(day_number=1, ...), ...],
+            itinerary_id     = "itin_abc123",
+            user_id          = "firebase_uid_abc123",
+            destination      = Destination(city="Bali", ...),
+            days             = [ItineraryDay(day_number=1, ...), ...],
             total_budget_usd = 840.0,
-            notes           = [],
+            notes            = [],
             co_traveller_ids = []
         )
     """

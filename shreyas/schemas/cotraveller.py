@@ -57,7 +57,7 @@ class CoTravellerMatch(BaseModel):
             }
         )
     """
-    profile:                  CoTravellerProfile
-    match_score:              float = Field(ge=0.0, le=1.0)
-    match_reasons:            list[str]
-    compatibility_breakdown:  dict
+    profile:                 CoTravellerProfile
+    match_score:             float = Field(ge=0.0, le=1.0)
+    match_reasons:           list[str]
+    compatibility_breakdown: dict
