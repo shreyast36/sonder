@@ -103,11 +103,8 @@ def build_refinement_prompt(
     feedback: str,
     validation_result: ValidationResult,
 ) -> str:
-    issues = []
-    for check in validation_result.checks:
-        if not check.passed:
-            issues.append(f"- {check.rule}: {check.message}")
-    issues_str = "\n".join(issues) if issues else "None"
+    suggestions = "\n".join(f"- {s}" for s in validation_result.improvement_suggestions)
+    issues_str = f"{validation_result.feedback}\n{suggestions}".strip() if validation_result.improvement_suggestions else validation_result.feedback
 
     return f"""Here is the current itinerary:
 {itinerary.model_dump_json(indent=2)}
