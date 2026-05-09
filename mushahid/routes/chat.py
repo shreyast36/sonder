@@ -52,7 +52,7 @@ async def start_chat(user_id: str, profile_id: str, itinerary_id: str, uid: str 
         user_id=user_id,
         profile_id=profile_id,
         approval_status=ApprovalStatus.pending,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc).isoformat(),
     )
     _sessions[session_id] = {"session": session, "messages": []}
 

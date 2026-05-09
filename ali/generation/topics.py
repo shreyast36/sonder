@@ -58,6 +58,8 @@ async def generate_topics(
     cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", raw).strip()
     try:
         topics = json.loads(cleaned)
+        if isinstance(topics, str):
+            topics = json.loads(topics)
         if isinstance(topics, list):
             return [str(t) for t in topics[:5]]
     except (json.JSONDecodeError, ValueError):
