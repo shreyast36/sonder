@@ -52,8 +52,5 @@ def estimate_tokens(prompt: str) -> int:
 
     Expected input:  "Generate a 5-day itinerary for Bali..."
     Expected output: 312  (approximate token count)
-
-    Starter: use tiktoken or a simple word-count heuristic (words * 1.3).
     """
-    # TODO: use tiktoken for accurate counts, or fall back to len(prompt.split()) * 1.3
-    raise NotImplementedError
+    return int(len(prompt.split()) * 1.3)

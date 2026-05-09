@@ -1,3 +1,4 @@
+import logging
 from ali.routing.classifier import classify
 from ali.clients.base import BaseLLMClient
 from shared.schemas import ModelTier
@@ -5,16 +6,12 @@ from shared.config import (
     SMALL_MODEL_PROVIDER, LARGE_MODEL_PROVIDER, VALIDATOR_MODEL_PROVIDER
 )
 
+logger = logging.getLogger(__name__)
+
 
 def get_client(tier: ModelTier) -> BaseLLMClient:
     """
     Return the appropriate LLM client for a given tier, based on provider config.
-
-    Ali: the provider is set via env vars (SMALL_MODEL_PROVIDER, LARGE_MODEL_PROVIDER,
-    VALIDATOR_MODEL_PROVIDER). Add fallback logic here if a provider is unavailable.
-
-    Expected input:  ModelTier.large
-    Expected output: the correct BaseLLMClient subclass for the given tier and provider
     """
     if tier == ModelTier.small:
         provider = SMALL_MODEL_PROVIDER
@@ -23,47 +20,74 @@ def get_client(tier: ModelTier) -> BaseLLMClient:
     else:
         provider = VALIDATOR_MODEL_PROVIDER
 
-    # TODO: import and return the correct client class based on (provider, tier)
-    # Add a case for each provider you decide to support.
-    raise NotImplementedError
+    return _get_client_for_provider(tier, provider)
+
+
+# Fallback chain: if primary client fails, try these in order per tier.
+_FALLBACKS: dict[ModelTier, list] = {
+    ModelTier.small:     ["deepseek", "openai"],
+    ModelTier.large:     ["deepseek", "openai"],
+    ModelTier.validator: ["deepseek", "anthropic"],
+}
+
+
+def _get_client_for_provider(tier: ModelTier, provider: str) -> BaseLLMClient:
+    from ali.clients.deepseek_client import DeepSeekSmallClient, DeepSeekLargeClient, DeepSeekValidatorClient
+    from ali.clients.openai_client import OpenAISmallClient, OpenAILargeClient
+    from ali.clients.anthropic_client import AnthropicLargeClient, AnthropicValidatorClient
+
+    if provider == "deepseek":
+        if tier == ModelTier.small:
+            return DeepSeekSmallClient()
+        if tier == ModelTier.validator:
+            return DeepSeekValidatorClient()
+        return DeepSeekLargeClient()
+    if provider == "openai":
+        return OpenAISmallClient() if tier == ModelTier.small else OpenAILargeClient()
+    if provider == "anthropic":
+        return AnthropicValidatorClient() if tier == ModelTier.validator else AnthropicLargeClient()
+    raise ValueError(f"Unsupported provider '{provider}'")
 
 
 async def route_request(task_type: str, prompt: str, system: str = "", context: dict = {}) -> str:
     """
-    Route a task to the right model and return the response.
-    This is the single entry point Ali exposes to the rest of the system.
-
-    Expected input:
-        task_type = "itinerary_generation"
-        prompt    = "Generate a 5-day itinerary for Bali for a relaxed couple with $2000 budget..."
-        system    = "You are an expert travel planner. Output valid JSON."
-        context   = {"token_estimate": 3200}
-
-    Expected output:
-        '{"days": [{"day_number": 1, "theme": "Culture & Coastal Views", "activities": [...]}]}'
-
-    Flow:
-        1. classify(task_type) → ModelTier
-        2. get_client(tier) → BaseLLMClient
-        3. client.complete(prompt, system) → str
-        4. On failure: retry with next available model in the same tier
+    Route a task to the right model and return the full response string.
+    Falls back to the next provider in the tier if the primary fails.
     """
-    tier   = classify(task_type, context)
-    client = get_client(tier)
-    # TODO: await client.complete(prompt, system), add retry/fallback logic
-    raise NotImplementedError
+    tier = classify(task_type, context)
+    providers = _FALLBACKS.get(tier, [])
+
+    last_exc: Exception = RuntimeError("No providers configured")
+    for provider in providers:
+        try:
+            client = _get_client_for_provider(tier, provider)
+            return await client.complete(prompt, system)
+        except ValueError:
+            continue
+        except Exception as exc:
+            logger.warning("Provider %s failed for task %s: %s", provider, task_type, exc)
+            last_exc = exc
+
+    raise last_exc
 
 
 async def stream_request(task_type: str, prompt: str, system: str = "", context: dict = {}):
     """
-    Streaming version of route_request. Yields token chunks.
-    Used by itinerary_generator.py → Mushahid's SSE layer.
-
-    Expected usage:
-        async for chunk in stream_request("itinerary_generation", prompt, system):
-            yield format_event("generating", {"chunk": chunk})
+    Streaming version of route_request. Yields raw token strings.
+    Falls back to the next provider in the tier if the primary fails.
     """
-    tier   = classify(task_type, context)
-    client = get_client(tier)
-    # TODO: async for chunk in client.stream(prompt, system): yield chunk
-    raise NotImplementedError
+    tier = classify(task_type, context)
+    providers = _FALLBACKS.get(tier, [])
+
+    for provider in providers:
+        try:
+            client = _get_client_for_provider(tier, provider)
+            async for chunk in client.stream(prompt, system):
+                yield chunk
+            return
+        except ValueError:
+            continue
+        except Exception as exc:
+            logger.warning("Streaming provider %s failed for task %s: %s", provider, task_type, exc)
+
+    raise RuntimeError(f"All providers failed for task '{task_type}'")
