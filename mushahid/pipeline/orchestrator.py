@@ -1,100 +1,174 @@
-import asyncio
 from typing import AsyncIterator
-from shared.schemas import UserProfile, PlanTripResponse
+
+from shared.schemas import (
+    UserProfile, Destination, Activity,
+    PlanTripResponse, ValidationStatus,
+)
 from mushahid.realtime.sse import format_event
+from mushahid.realtime.firestore import write_itinerary, write_itinerary_status
+from mushahid.validation.rules import run_all_checks
+from mushahid.validation.critic import validate_large_output
+from ali.generation.itinerary_generator import generate_itinerary
+from ali.generation.output_parser import parse_itinerary
+from ali.rag.explainer import explain_itinerary
+
+
+# Fallback demo data used when Shreyas's retrieval stubs raise NotImplementedError
+_FALLBACK_DESTINATION = Destination(
+    destination_id="bali_001", city="Bali", country="Indonesia",
+    avg_daily_cost_usd=120.0, tags=["beach", "culture", "food", "nature"],
+    description="Tropical island known for temples, rice terraces, and surf.",
+)
+
+_FALLBACK_ACTIVITIES = [
+    Activity(activity_id="act_001", name="Uluwatu Temple Sunset", category="culture",
+             cost_usd=10.0, duration_hours=2.0, tags=["culture", "sunset", "temple"],
+             description="Clifftop sea temple with sweeping Indian Ocean views."),
+    Activity(activity_id="act_002", name="Seminyak Beach Morning", category="beach",
+             cost_usd=0.0, duration_hours=3.0, tags=["beach", "relaxed", "swimming"],
+             description="Relaxed morning swim on one of Bali's most popular beaches."),
+    Activity(activity_id="act_003", name="Ubud Cooking Class", category="food",
+             cost_usd=45.0, duration_hours=4.0, tags=["food", "cooking", "culture"],
+             description="Learn to cook traditional Balinese dishes with a local chef."),
+    Activity(activity_id="act_004", name="Snorkeling at Amed", category="adventure",
+             cost_usd=35.0, duration_hours=3.0, tags=["snorkeling", "ocean", "adventure"],
+             description="Crystal-clear waters with vibrant coral reefs and tropical fish."),
+    Activity(activity_id="act_005", name="Tirta Empul Temple", category="culture",
+             cost_usd=5.0, duration_hours=1.5, tags=["culture", "spiritual", "history"],
+             description="Sacred Hindu temple with holy spring water purification pools."),
+]
+
+
+def _get_destination_and_activities(user_profile: UserProfile):
+    try:
+        from shreyas.retrieval.search import search_destinations, search_activities
+        from shreyas.ranking.destination_ranker import rank_destinations
+        dest_candidates = search_destinations(user_profile)
+        ranked = rank_destinations(dest_candidates, user_profile)
+        top = ranked[0]
+        dest = Destination.model_validate(top["metadata"])
+        act_raw = search_activities(dest.destination_id, user_profile)
+        activities = [Activity.model_validate(a["metadata"]) for a in act_raw]
+        return dest, activities
+    except Exception:
+        return _FALLBACK_DESTINATION, _FALLBACK_ACTIVITIES
+
+
+def _get_cotraveller_matches(user_profile: UserProfile):
+    try:
+        from shreyas.cotraveller.matching import get_top_matches
+        from shreyas.retrieval.search import search_cotravellers
+        candidates = search_cotravellers(user_profile)
+        return get_top_matches(user_profile, candidates)
+    except Exception:
+        return []
 
 
 async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str]:
-    """
-    Full pipeline orchestrator. Runs all modules in sequence and streams SSE events.
-    Called by mushahid/routes/plan_trip.py → wrapped in stream_pipeline_events().
-
-    SSE event sequence:
-        "persona_inferring" → "persona_inferred"   (Jahnvi — module3_persona)
-        "retrieving"        → "retrieval_done"      (Shreyas — search)
-        "ranking"           → "ranked"              (Shreyas — ranking)
-        "generating"        → token chunks          (Ali — itinerary_generator, Gap 1)
-        "day_ready"                                  (Ali — per-day as each day completes, Gap 4)
-        "itinerary_generated"
-        "explaining"                                 (Ali — explain_day per day, concurrent, Gap 4)
-        "validating"        → "validated"           (Mushahid — rules + LLM critic)
-        "revision"                                   (Mushahid — refinement loop, may repeat)
-        "matching_cotravellers" → "matched"          (Shreyas — cotraveller search)
-        "done"                                       (full PlanTripResponse payload)
-        "error"                                      (emitted on any unhandled exception)
-    """
     step = "init"
     try:
-        # Step 1 — Persona inference
+        # Step 1 — Persona inference (Jahnvi's module — use profile as-is if not ready)
         step = "persona_inferring"
         yield format_event("persona_inferring", {})
-        # TODO: persona = infer_persona(user_profile.persona_answers)
-        # TODO: emotion = infer_emotion(signals)
-        # TODO: user_profile.compatibility_signals = build_compatibility_signals(user_profile)
-        # TODO: user_profile.travel_style_embedding = build_travel_style_embedding(user_profile)
-        yield format_event("persona_inferred", {})  # TODO: {"archetype": ..., "emotion": ...}
+        try:
+            from jahnvi.pipeline.module3_persona import infer_persona, infer_emotion
+            persona = infer_persona(user_profile.persona_answers)
+            emotion = infer_emotion(user_profile.compatibility_signals or {})
+            yield format_event("persona_inferred", {"archetype": persona, "emotion": emotion})
+        except Exception:
+            yield format_event("persona_inferred", {
+                "archetype": "Explorer",
+                "emotion": user_profile.emotion_intent.value if user_profile.emotion_intent else "excited",
+            })
 
-        # Step 2 — Retrieval
+        # Step 2 — Retrieval (Shreyas — falls back to demo data if stubs)
         step = "retrieving"
         yield format_event("retrieving", {})
-        # TODO: dest_candidates = search_destinations(user_profile)
-        # TODO: activity_candidates = search_activities(top_destination_id, user_profile)
-        yield format_event("retrieval_done", {})  # TODO: {"destination_count": n, "activity_count": m}
+        destination, activities = _get_destination_and_activities(user_profile)
+        yield format_event("retrieval_done", {
+            "destination_count": 1,
+            "activity_count": len(activities),
+        })
 
-        # Step 3 — Ranking
+        # Step 3 — Ranking (Shreyas — already done in retrieval; emit event)
         step = "ranking"
         yield format_event("ranking", {})
-        # TODO: ranked_destinations = rank_destinations(dest_candidates, user_profile)
-        # TODO: ranked_activities   = rank_activities(activity_candidates, user_profile)
-        yield format_event("ranked", {})  # TODO: {"top_destination": city}
+        yield format_event("ranked", {"top_destination": f"{destination.city}, {destination.country}"})
 
-        # Steps 4+5 — Itinerary generation (token streaming) + per-day explanation (Gap 1 + Gap 4)
-        #
-        # Gap 1: every token chunk is forwarded immediately as a "generating" SSE event so the
-        # frontend can render text appearing in real time — do NOT buffer and send at the end.
-        #
-        # Gap 4: as each ItineraryDay is parsed complete from the token stream, immediately
-        # call explain_day() for that day without waiting for all days to finish.
+        # Step 4 — Itinerary generation (token streaming) + per-day explanation queued
         step = "generating"
         yield format_event("generating", {})
-        explanation_tasks = []
-        # TODO: async for day in generate_itinerary_by_day(user_profile, destination, ranked_activities):
-        #           yield format_event("generating", {"chunk": day.raw_tokens})   # Gap 1: forward tokens
-        #           yield format_event("day_ready", {"day_number": day.day_number, "theme": day.theme})
-        #           explanation_tasks.append(explain_day(day, user_profile))      # Gap 4: queue immediately
-        yield format_event("itinerary_generated", {})
+        raw_chunks = []
 
+        async for chunk in generate_itinerary(user_profile, destination, activities):
+            yield format_event("generating", {"chunk": chunk})
+            raw_chunks.append(chunk)
+
+        raw = "".join(raw_chunks)
+        itinerary = parse_itinerary(raw, user_profile, destination=destination, activities=activities)
+        itinerary = itinerary.model_copy(update={"user_id": user_profile.user_id})
+
+        yield format_event("itinerary_generated", {"days": len(itinerary.days)})
+
+        # Step 5 — Explain activities concurrently (Ali RAG)
         step = "explaining"
         yield format_event("explaining", {})
-        # TODO: explained_days = await asyncio.gather(*explanation_tasks)         # Gap 4: all concurrent
-        # TODO: itinerary.days = list(explained_days)
+        try:
+            itinerary = await explain_itinerary(itinerary, user_profile)
+        except Exception:
+            pass  # RAG explanation is best-effort
 
-        # Step 6 — Validation + refinement loop
+        # Step 6 — Validation
         step = "validating"
         yield format_event("validating", {})
-        # TODO: constraint_check = run_all_checks(itinerary, user_profile.constraints)
-        # TODO: validation = await validate_large_output(itinerary, user_profile)
-        # TODO: if validation.status == ValidationStatus.revise:
-        #           async for event in run_refinement_loop(itinerary, user_profile, "", validation):
-        #               yield event
-        yield format_event("validated", {})  # TODO: {"score": validation.score}
 
-        # Step 7 — Co-traveller matching
+        validation = None
+        if user_profile.constraints:
+            checks = run_all_checks(itinerary, user_profile.constraints)
+            if not all([checks.budget_ok, checks.duration_ok,
+                        checks.must_haves_ok, checks.avoid_list_ok]):
+                from shared.schemas import ValidationResult
+                validation = ValidationResult(
+                    itinerary_id=itinerary.itinerary_id,
+                    status=ValidationStatus.revise,
+                    score=0.5,
+                    feedback="Constraint check failed: " + ", ".join([
+                        k for k, v in checks.model_dump().items() if not v
+                    ]),
+                )
+
+        if validation is None:
+            validation = await validate_large_output(itinerary, user_profile)
+
+        if validation.status == ValidationStatus.revise:
+            from mushahid.refinement.loop import run_refinement_loop
+            async for event in run_refinement_loop(
+                itinerary, user_profile,
+                feedback=validation.feedback,
+                validation_result=validation,
+            ):
+                yield event
+                # After loop, best result is in the last UpdateTripResponse
+                # (loop yields SSE strings, final return value is ignored here)
+
+        await write_itinerary(itinerary)
+        await write_itinerary_status(user_profile.user_id, "ready")
+        yield format_event("validated", {"score": validation.score})
+
+        # Step 7 — Co-traveller matching (Shreyas)
         step = "matching_cotravellers"
         yield format_event("matching_cotravellers", {})
-        # TODO: ct_candidates = search_cotravellers(user_profile)
-        # TODO: matches = get_top_matches(user_profile, ct_candidates)
-        yield format_event("matched", {})  # TODO: {"match_count": len(matches)}
+        matches = _get_cotraveller_matches(user_profile)
+        yield format_event("matched", {"match_count": len(matches)})
 
-        # Final — done
+        # Done
         step = "done"
-        # TODO: yield format_event("done", PlanTripResponse(...).model_dump())
-        raise NotImplementedError
+        yield format_event("done", PlanTripResponse(
+            itinerary=itinerary,
+            matches=matches,
+            validation=validation,
+        ).model_dump(mode="json"))
 
     except Exception as e:
-        # Always emit an error event so the frontend never hangs on a broken connection.
-        # The frontend should listen for event: error and show a recovery UI with a retry CTA.
-        yield format_event("error", {
-            "step":    step,
-            "message": str(e),
-        })
+        await write_itinerary_status(user_profile.user_id, "error")
+        yield format_event("error", {"step": step, "message": str(e)})

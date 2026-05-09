@@ -1,79 +1,57 @@
-from shared.schemas import Itinerary, TripConstraints, ConstraintSatisfaction
+from shared.schemas import Itinerary, TripConstraints, ConstraintSatisfaction, PacePreference
+
+_PACE_MAX = {
+    PacePreference.relaxed: 3,
+    PacePreference.moderate: 5,
+    PacePreference.packed: 999,
+}
 
 
 def check_budget(itinerary: Itinerary, constraints: TripConstraints) -> bool:
-    """
-    Pass if itinerary.total_budget_usd <= constraints.budget_usd.
-
-    Expected:
-        itinerary.total_budget_usd = 1950, constraints.budget_usd = 2000 → True
-        itinerary.total_budget_usd = 2150, constraints.budget_usd = 2000 → False
-    """
-    # TODO: return itinerary.total_budget_usd <= constraints.budget_usd
-    raise NotImplementedError
+    return itinerary.total_budget_usd <= constraints.budget_usd
 
 
 def check_duration(itinerary: Itinerary, constraints: TripConstraints) -> bool:
-    """
-    Pass if number of itinerary days == trip duration from constraints.
-
-    Expected:
-        len(itinerary.days) = 7, trip_days = 7 → True
-    """
-    # TODO: trip_days = (constraints.end_date - constraints.start_date).days
-    raise NotImplementedError
+    trip_days = (constraints.end_date - constraints.start_date).days
+    return len(itinerary.days) == trip_days
 
 
 def check_pace(itinerary: Itinerary, constraints: TripConstraints) -> bool:
-    """
-    Pass if average activities per day matches pace preference.
-    Suggested thresholds (your decision):
-        relaxed  → avg <= 3 activities/day
-        moderate → avg <= 5 activities/day
-        packed   → any number is fine
-
-    Expected:
-        pace=relaxed, avg=4.2 activities/day → False
-    """
-    # TODO: compute avg activities per day, compare to pace threshold
-    raise NotImplementedError
+    if not itinerary.days:
+        return True
+    avg = sum(len(d.activities) for d in itinerary.days) / len(itinerary.days)
+    return avg <= _PACE_MAX.get(constraints.pace_preference, 999)
 
 
 def check_must_haves(itinerary: Itinerary, constraints: TripConstraints) -> bool:
-    """
-    Pass if all must_haves appear in activity tags across the itinerary.
-
-    Expected:
-        must_haves=["snorkeling"], activity tags include "snorkeling" somewhere → True
-        must_haves=["snorkeling"], no activity has tag "snorkeling" → False
-    """
-    # TODO: flatten all activity tags, check each must_have is present
-    raise NotImplementedError
+    if not constraints.must_haves:
+        return True
+    all_tags = {
+        tag
+        for day in itinerary.days
+        for ia in day.activities
+        for tag in (ia.activity.tags or [])
+    }
+    return all(mh.lower() in {t.lower() for t in all_tags} for mh in constraints.must_haves)
 
 
 def check_avoid_list(itinerary: Itinerary, constraints: TripConstraints) -> bool:
-    """
-    Pass if no activity tag appears in the avoid_list.
-
-    Expected:
-        avoid_list=["nightlife"], activity "Kuta Beach Club" has tag "nightlife" → False
-    """
-    # TODO: check no activity tag intersects with avoid_list
-    raise NotImplementedError
+    if not constraints.avoid_list:
+        return True
+    avoid = {a.lower() for a in constraints.avoid_list}
+    for day in itinerary.days:
+        for ia in day.activities:
+            for tag in (ia.activity.tags or []):
+                if tag.lower() in avoid:
+                    return False
+    return True
 
 
 def run_all_checks(itinerary: Itinerary, constraints: TripConstraints) -> ConstraintSatisfaction:
-    """
-    Run all 5 checks and return a ConstraintSatisfaction summary.
-
-    Expected output:
-        ConstraintSatisfaction(
-            budget_ok    = True,
-            duration_ok  = True,
-            pace_ok      = False,  ← too many activities for relaxed pace
-            must_haves_ok = True,
-            avoid_list_ok = True
-        )
-    """
-    # TODO: call all checks, return ConstraintSatisfaction(...)
-    raise NotImplementedError
+    return ConstraintSatisfaction(
+        budget_ok=check_budget(itinerary, constraints),
+        duration_ok=check_duration(itinerary, constraints),
+        pace_ok=check_pace(itinerary, constraints),
+        must_haves_ok=check_must_haves(itinerary, constraints),
+        avoid_list_ok=check_avoid_list(itinerary, constraints),
+    )
