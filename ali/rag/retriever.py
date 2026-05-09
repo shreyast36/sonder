@@ -1,5 +1,5 @@
 from shared.schemas import Activity, Destination
-from shreyas.retrieval.embeddings import embed_text
+from ali.vector.embeddings import embed_text
 from ali.vector.client import get_pinecone_index
 
 
