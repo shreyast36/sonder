@@ -57,10 +57,10 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 - [x] `jahnvi/schemas/enums.py` — Verify `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`, `ValidationStatus`, `VisaRequirement`, `ModelTier`, `ApprovalStatus` match Figma
 - [x] `jahnvi/schemas/user.py` — Verify `TripConstraints` (note `budget_currency` field + `budget_usd` is always USD), `PersonaQuestionAnswers`, `UserProfile`; add `fcm_token` if using FCM
-- [x] `jahnvi/schemas/trip.py` — Verify `Destination`, `Activity`, `ItineraryActivity` (has `why_this`), `ItineraryDay` (note: field is `trip_date` not `date`), `Itinerary`; decide image source + add `image_url`
-- [x] `jahnvi/schemas/cotraveller.py` — Verify `CoTravellerProfile`, `CoTravellerMatch` match Screen 4 and Shreyas's matching needs
-- [x] `jahnvi/schemas/chat.py` — Verify `ChatMessage`, `ChatSession`, `ChatStartResponse` (session + icebreaker + topics), `SharedItinerary`, `ItineraryUpdateEvent` match Screens 5–8 and WebSocket layer
-- [x] `jahnvi/schemas/api.py` — Verify `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest` (has `activity_feedback: list[ActivityFeedback]`), `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`
+- [ ] `jahnvi/schemas/trip.py` — Verify `Destination`, `Activity`, `ItineraryActivity` (has `why_this`), `ItineraryDay` (note: field is `trip_date` not `date`), `Itinerary`; decide image source + add `image_url`
+- [ ] `jahnvi/schemas/cotraveller.py` — Verify `CoTravellerProfile`, `CoTravellerMatch` match Screen 4 and Shreyas's matching needs
+- [ ] `jahnvi/schemas/chat.py` — Verify `ChatMessage`, `ChatSession`, `ChatStartResponse` (session + icebreaker + topics), `SharedItinerary`, `ItineraryUpdateEvent` match Screens 5–8 and WebSocket layer
+- [ ] `jahnvi/schemas/api.py` — Verify `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest` (has `activity_feedback: list[ActivityFeedback]`), `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`
 - [ ] Copy finalised models into `shared/schemas.py` re-exports (already wired — just ensure all new models are exported)
 
 ### Persona Templates
