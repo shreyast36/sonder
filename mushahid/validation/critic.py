@@ -1,37 +1,64 @@
 from shared.schemas import Itinerary, UserProfile, ValidationResult, ValidationStatus
-from ali.routing.engine import route_request
+from shared.config import SMALL_VALIDATOR_PROVIDER, SMALL_VALIDATOR_MODEL_NAME, \
+                          LARGE_VALIDATOR_PROVIDER, LARGE_VALIDATOR_MODEL_NAME
 
 
-async def validate_with_llm(itinerary: Itinerary, user_profile: UserProfile) -> ValidationResult:
+def _get_validator_client(provider: str, model_name: str):
+    """Instantiate the correct LLM client for the given provider."""
+    # TODO: instantiate the right client for the given provider.
+    # Ali's concrete client files don't exist yet — create one in ali/clients/ when Ali
+    # picks a provider, or write a thin validator-specific client here.
+    # e.g. provider="anthropic" → your AnthropicClient subclass with model_name set
+    raise NotImplementedError
+
+
+async def validate_small_output(output: str, context: dict) -> ValidationResult:
     """
-    LLM-based quality validation via the VALIDATOR model tier.
-    Run this after run_all_checks() passes — the LLM catches qualitative issues
-    that rules can't (e.g. unrealistic travel times, poor activity sequencing).
+    Validates outputs from the Small LLM (persona labels, chat topics, icebreakers).
+    Uses the Small Validator configured via SMALL_VALIDATOR_PROVIDER in .env.
 
-    Expected input:
-        itinerary    = Itinerary(days=[...], total_budget_usd=1950)
-        user_profile = UserProfile(constraints=TripConstraints(budget_usd=2000, pace="relaxed"))
+    Expected output (approved):
+        ValidationResult(status=ValidationStatus.approved, score=0.95, feedback="...")
+
+    Expected output (revise):
+        ValidationResult(status=ValidationStatus.revise, score=0.55,
+                         feedback="Persona label doesn't match answers.",
+                         improvement_suggestions=["Try 'Relaxed Wanderer' instead"])
+    """
+    # TODO: instantiate _get_validator_client(SMALL_VALIDATOR_PROVIDER, SMALL_VALIDATOR_MODEL_NAME)
+    # TODO: build prompt from output + context
+    # TODO: call client.complete(prompt, system) → raw response
+    # TODO: parse response into ValidationResult
+    raise NotImplementedError
+
+
+async def validate_large_output(itinerary: Itinerary, user_profile: UserProfile) -> ValidationResult:
+    """
+    Validates outputs from the Large LLM (full itineraries).
+    Uses the Large Validator configured via LARGE_VALIDATOR_PROVIDER in .env.
+    Run after run_all_checks() passes — catches qualitative issues rules can't
+    (e.g. unrealistic travel times, poor activity sequencing).
 
     Expected output (approved):
         ValidationResult(
-            itinerary_id           = "itin_abc123",
-            status                 = ValidationStatus.approved,
-            constraint_satisfaction = ConstraintSatisfaction(budget_ok=True, ...),
-            score                  = 0.94,
-            feedback               = "Well-paced itinerary with great cultural balance.",
+            itinerary_id            = "itin_abc123",
+            status                  = ValidationStatus.approved,
+            score                   = 0.94,
+            feedback                = "Well-paced itinerary with great cultural balance.",
             improvement_suggestions = []
         )
 
     Expected output (revise):
         ValidationResult(
-            itinerary_id           = "itin_abc123",
-            status                 = ValidationStatus.revise,
-            score                  = 0.61,
-            feedback               = "Day 3 has 6 activities which is too many for a relaxed pace.",
+            itinerary_id            = "itin_abc123",
+            status                  = ValidationStatus.revise,
+            score                   = 0.61,
+            feedback                = "Day 3 has 6 activities which is too many for a relaxed pace.",
             improvement_suggestions = ["Reduce Day 3 to 3 activities", "Move Tanah Lot to Day 4"]
         )
     """
-    # TODO: build critic prompt (include itinerary JSON + user constraints + persona)
-    # TODO: route_request("validate_itinerary", prompt, system) → raw response
+    # TODO: instantiate _get_validator_client(LARGE_VALIDATOR_PROVIDER, LARGE_VALIDATOR_MODEL_NAME)
+    # TODO: build critic prompt (itinerary JSON + user constraints + persona)
+    # TODO: call client.complete(prompt, system) → raw response
     # TODO: parse response into ValidationResult
     raise NotImplementedError

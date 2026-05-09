@@ -1,6 +1,12 @@
 # Shreyas — Lead AI Systems & Real-time Engineer
 
-You own the intelligence layer that finds the right destinations, activities, and people — and keeps everything in sync once users connect.
+You find the right things and keep everything in sync.
+
+**Selection:** Your code answers "which destinations, activities, and people should we show this user?" — embeddings turn the user profile into a query vector, search queries Pinecone for candidates, and ranking scores and orders them.
+
+**Real-time:** Once two users match, you own everything that keeps them in sync — WebSocket chat, presence, shared itinerary, approval flow.
+
+**You do not explain things.** The "Why this?" text on Screen 3 is Ali's RAG pipeline. Your search hands off candidates; Ali's explainer writes the reasoning.
 
 ---
 
@@ -8,28 +14,30 @@ You own the intelligence layer that finds the right destinations, activities, an
 
 | Folder | Responsibility |
 |---|---|
-| `retrieval/` | Pinecone vector search — embed queries, search destinations, activities, co-travellers |
-| `ranking/` | Score and rank retrieval results using multi-signal scoring |
-| `cotraveller/` | Compatibility matching, WebSocket chat engine, presence, shared itinerary sync, approval |
+| `schemas/` | `ApprovalStatus` enum · `CoTravellerProfile`, `CoTravellerMatch` · `ChatMessage`, `ChatSession`, `SharedItinerary`, `ChatStartResponse`, `ItineraryUpdateEvent` |
+| `retrieval/embeddings.py` | Convert user profile into a Pinecone query vector |
+| `retrieval/search.py` | Query Pinecone and return top-N candidate destinations, activities, co-travellers |
+| `ranking/` | Filter hard constraints, then score and rank candidates |
+| `cotraveller/matching.py` | Score compatibility between two user profiles |
+| `cotraveller/chat.py` | WebSocket engine for real-time chat |
+| `cotraveller/presence.py` | Online/offline tracking via Firestore |
+| `cotraveller/shared_itinerary.py` | Collaborative itinerary sync with optimistic locking |
+| `cotraveller/approval.py` | Approve/deny co-traveller matches |
 
 ---
 
-## Your Decisions
+## The Selection vs. RAG Distinction
 
-### Destination & activity data source
-You own the Pinecone index and the seeding script (`scripts/seed_pinecone.py`). You decide where the destination and activity data comes from. Options:
+Both you and Ali query Pinecone, but for completely different things:
 
-| Option | Notes |
-|---|---|
-| **Amadeus Travel API** | Large coverage, free tier, destinations + activities + points of interest. Best all-round starting point. |
-| **Foursquare Places API** | Strong activity/POI data, free tier up to 1k calls/day. Good for activity-level granularity. |
-| **Tripadvisor Content API** | Rich reviews and photos, but paid. Worth it if you want review snippets for RAG context. |
-| **Curated CSV** | Fastest to ship — manually curate 20–30 destinations and 5–10 activities each. No API dependency. Use for the demo launch. |
+| | Shreyas (`retrieval/search.py`) | Ali (`rag/retriever.py`) |
+|---|---|---|
+| **When** | Pipeline steps 2, 3, 7 — before the itinerary exists | After the itinerary is generated — one activity at a time |
+| **Input** | Full user profile + constraints | A single already-chosen activity or destination |
+| **Output** | Top-N candidate list for ranking | Text chunks (facts) to feed into the LLM prompt |
+| **Purpose** | Decide WHAT to show the user | Explain WHY something was chosen |
 
-The seeding script already has the expected data shape. Replace `SAMPLE_DESTINATIONS` and `SAMPLE_ACTIVITIES` with your chosen source and run:
-```bash
-python -m scripts.seed_pinecone --namespace all
-```
+Ali's `retriever.py` calls your `search.py` under the hood. You provide the interface; he uses it for a different purpose.
 
 ---
 
@@ -37,194 +45,129 @@ python -m scripts.seed_pinecone --namespace all
 
 ### What I need from others
 
-| From | What exactly | Where I use it | Status needed by |
+| From | What exactly | Where I use it | Needed by |
 |---|---|---|---|
-| **Jahnvi** | `shared/schemas.py` finalised | Every module imports schemas | **Right now — blocks everything** |
-| **Jahnvi** | `UserProfile` shape with `compatibility_signals` and `travel_style_embedding` fields | `cotraveller/matching.py` + `retrieval/search.py` | Before I build co-traveller search |
-| **Jahnvi** | `CoTravellerProfile` and `CoTravellerMatch` shapes | `cotraveller/matching.py` | Before I build matching |
-| **Mushahid** | `get_db()` in `realtime/firestore.py` working | `presence.py`, `shared_itinerary.py`, `approval.py` all call Firestore | Before I build real-time features |
-| **Mushahid** | `notify_co_traveller_approved()` in `realtime/notifications.py` working | `cotraveller/approval.py` calls this on mutual approval | Before I complete approval flow |
+| **Jahnvi** | `UserProfile` with `compatibility_signals` + `travel_style_embedding` finalised | `matching.py` + `search.py` | Before co-traveller search |
+| **Ali** | `get_pinecone_index()` from `ali/vector/client.py` | `search.py` — all Pinecone queries go through this | Before I can build search |
+| **Ali** | `EMBED_DIMENSIONS` written into `shared/config.py` | `embeddings.py` — vector length must match index | Before I can write embeddings |
+| **Mushahid** | `get_db()` in `realtime/firestore.py` | `presence.py`, `shared_itinerary.py`, `approval.py` | Before real-time features |
+| **Mushahid** | `notify_co_traveller_approved()` in `realtime/notifications.py` | `approval.py` on mutual approval | Before approval flow |
 
 ### What others need from me
 
 | Who | What exactly | Which file | When they're blocked |
 |---|---|---|---|
-| **Jahnvi** | `embed_text(text) → list[float]` working | `jahnvi/pipeline/module3_persona.py` calls this for `build_travel_style_embedding()` | Before she can finish Module 3 |
-| **Ali** | `retrieval/search.py` — `search_destinations()` and `search_activities()` | `ali/rag/retriever.py` fetches RAG context via these | Before Ali can build the RAG explainer |
-| **Mushahid** | `search_destinations()` + `search_activities()` returning ranked candidates | `orchestrator.py` steps 2 | Before orchestrator runs end-to-end |
-| **Mushahid** | `rank_destinations()` + `rank_activities()` | `orchestrator.py` step 3 | Before orchestrator runs end-to-end |
-| **Mushahid** | `search_cotravellers()` + `get_top_matches()` | `orchestrator.py` step 7 + `/cotraveller` route | Before co-traveller feature works |
-| **Mushahid** | `ConnectionManager` from `cotraveller/chat.py` | `routes/chat.py` WebSocket proxy | Before `/ws/chat/{session_id}` works |
-| **Mushahid** | `approve_match()` + `deny_match()` from `cotraveller/approval.py` | `routes/chat.py` approve/deny endpoints | Before Screen 6 works end-to-end |
+| **Jahnvi** | `embed_text(text) → list[float]` | `module3_persona.py` — `build_travel_style_embedding()` | Before Module 3 |
+| **Ali** | `search_destinations()`, `search_activities()` | `ali/rag/retriever.py` calls these for RAG context chunks | Before Ali builds the explainer |
+| **Mushahid** | `search_destinations()` + `search_activities()` | `orchestrator.py` steps 2–3 | Before orchestrator runs |
+| **Mushahid** | `rank_destinations()` + `rank_activities()` | `orchestrator.py` step 3 | Before orchestrator runs |
+| **Mushahid** | `search_cotravellers()` + `get_top_matches()` | `orchestrator.py` step 7 + `/cotraveller` route | Before co-traveller feature |
+| **Mushahid** | `ConnectionManager` from `cotraveller/chat.py` | `routes/chat.py` WebSocket proxy | Before `/ws/chat/{id}` |
+| **Mushahid** | `approve_match()` + `deny_match()` | `routes/chat.py` | Before Screen 6 |
 
 ---
 
 ## Module Contracts
 
-### `retrieval/` — inputs & outputs
+### `retrieval/embeddings.py`
 
-**`embeddings.py`**
 ```python
-# Input
 embed_text("beach trip, relaxed pace, budget $2000, food lover, excited mood")
-
-# Output
-[0.023, -0.187, 0.094, ...]  # list of floats, length == EMBED_DIMENSIONS (from .env)
+# → [0.023, -0.187, 0.094, ...]  length == EMBED_DIMENSIONS (from shared/config.py)
 ```
 
-**`search.py`**
+### `retrieval/search.py`
+
 ```python
-# search_destinations — input
-user_profile = UserProfile(
-    constraints=TripConstraints(destination_type="beach", budget_usd=2000, pace_preference="relaxed"),
-    persona_answers=PersonaQuestionAnswers(food_interest=5, culture_interest=4),
-    emotion_intent=EmotionIntent.excited
-)
+# search_destinations — input: user profile, output: top-N Pinecone hits
+search_destinations(user_profile)
+# → [{"id": "dest_bali", "score": 0.91, "metadata": {...}}, ...]
 
-# search_destinations — output
-[
-    {"id": "dest_bali",   "score": 0.91, "metadata": {"city": "Bali",   "country": "Indonesia"}},
-    {"id": "dest_lisbon", "score": 0.87, "metadata": {"city": "Lisbon", "country": "Portugal"}},
-    ...  # top_k results
-]
-
-# search_cotravellers — output
-[
-    {"id": "ct_maya_001", "score": 0.94, "metadata": {"profile_id": "maya_001", "archetype": "Cultural Explorer"}},
-    ...
-]
+# search_cotravellers — output: top co-traveller profile hits
+search_cotravellers(user_profile)
+# → [{"id": "ct_maya_001", "score": 0.94, "metadata": {"profile_id": "maya_001"}}, ...]
 ```
 
----
+### `ranking/destination_ranker.py`
 
-### `ranking/` — inputs & outputs
-
-**`destination_ranker.py`**
 ```python
-# rank_destinations — input
-candidates = [
-    (Destination(city="Bali",   avg_daily_cost_usd=120, tags=["beach","culture","food"]), 0.91),
-    (Destination(city="Lisbon", avg_daily_cost_usd=160, tags=["culture","food","history"]), 0.87),
-]
-
-# rank_destinations — output (top 5, sorted by final score)
-[
-    Destination(city="Bali", ...),    # score 0.83 after weighting
-    Destination(city="Lisbon", ...),  # score 0.79
-]
+# rank_destinations — scoring weights (your decision):
+# 60% vector similarity · 20% budget fit · 20% persona tag match
+rank_destinations(candidates=[(Destination(...), 0.91), ...])
+# → [Destination(city="Bali", ...), ...]  sorted by final score
 ```
 
-**Scoring weights (your decision — suggested starting point):**
-- 60% vector similarity (Pinecone score)
-- 20% budget fit
-- 20% tag-interest bonus (persona alignment)
+### `cotraveller/matching.py`
 
----
-
-### `cotraveller/` — inputs & outputs
-
-**`matching.py`**
 ```python
-# get_top_matches — input
-user_profile = UserProfile(persona_answers=PersonaQuestionAnswers(food_interest=5, pace_preference="relaxed"))
-candidates   = [CoTravellerProfile(...), ...]  # 20 profiles from Pinecone
-
-# get_top_matches — output (top 3)
-[
-    CoTravellerMatch(
-        profile         = CoTravellerProfile(display_name="Maya Sharma", location="Delhi, India"),
-        match_score     = 0.92,
-        match_reasons   = ["Similar interests in food and culture", "Same travel pace", "Similar budget range"],
-        compatibility_breakdown = {"interests": 0.95, "pace": 1.0, "budget": 0.85}
-    ),
-    CoTravellerMatch(...),  # 0.88
-    CoTravellerMatch(...),  # 0.81
-]
+get_top_matches(user_profile, candidates=[CoTravellerProfile(...), ...])
+# → [
+#     CoTravellerMatch(profile=..., match_score=0.92,
+#                      match_reasons=["Similar food interest", "Same pace"],
+#                      compatibility_breakdown={"interests": 0.95, "pace": 1.0, "budget": 0.85}),
+#     ...  # top 3
+# ]
 ```
 
-**`chat.py` — WebSocket message shapes**
+### `cotraveller/chat.py` — WebSocket message shapes
+
 ```python
 # Client → Server
-{"type": "message", "content": "Hey! Excited to connect!"}
+{"type": "message", "content": "Hey!"}
 {"type": "typing"}
 {"type": "seen",    "message_id": "msg_001"}
-{"type": "ping"}    # presence heartbeat — sent every 30s by frontend; resets 90s TTL in Firestore
+{"type": "ping"}    # heartbeat every 30s — resets 90s TTL in Firestore presence
 
-# Server → Client (broadcast)
-{"type": "message",  "sender_id": "user_abc", "content": "Hey!",   "timestamp": "2025-06-01T09:30:00Z"}
-{"type": "typing",   "user_id":   "user_abc"}
-{"type": "seen",     "message_id": "msg_001", "user_id": "user_abc"}
+# Server → Client
+{"type": "message", "sender_id": "uid_abc", "content": "Hey!", "timestamp": "..."}
+{"type": "typing",  "user_id": "uid_abc"}
+{"type": "seen",    "message_id": "msg_001", "user_id": "uid_abc"}
 ```
 
-**Note:** `generate_topics()` and `generate_icebreaker()` from `ali/generation/topics.py` are called by Mushahid's `POST /chat/start` route — you do not call them directly. The results are returned to the frontend in `ChatStartResponse`.
+### `cotraveller/shared_itinerary.py`
 
-**`approval.py`**
 ```python
-# approve_match — output
-ApprovalStatus.approved  # if both users have now approved
-ApprovalStatus.pending   # if waiting on the other user
-
-# deny_match — output
-ApprovalStatus.denied
+# Optimistic locking — every write checks client_version == current Firestore version.
+# Mismatch → return HTTP 409. Client must re-fetch and re-apply change.
+create_shared_itinerary(itinerary_id, user_ids)
+# → SharedItinerary(version=0, notes=[], ...)
 ```
 
-**`shared_itinerary.py`**
+### `cotraveller/approval.py`
+
 ```python
-# create_shared_itinerary — output
-SharedItinerary(
-    itinerary_id    = "itin_abc123",
-    user_ids        = ["firebase_uid_abc", "maya_001"],
-    itinerary       = Itinerary(...),
-    notes           = [],
-    last_updated_by = None,
-    version         = 0   # increment on every write; clients send current version for optimistic locking
-)
+approve_match(session_id, approver_uid)
+# → ApprovalStatus.approved   (both users approved)
+# → ApprovalStatus.pending    (waiting on the other user)
+
+deny_match(session_id, denier_uid)
+# → ApprovalStatus.denied
 ```
-
-**Optimistic locking:** every write must check `client_version == current_version` in Firestore. If they don't match, return HTTP 409 — the client must re-fetch and re-apply their change. This prevents silent overwrites when both users edit simultaneously.
-
----
-
-## How Your Code Connects to Others
-
-| You call | From | Purpose |
-|---|---|---|
-| `mushahid/realtime/firestore.py` | `presence.py`, `shared_itinerary.py`, `approval.py` | Read/write Firestore |
-| `mushahid/realtime/notifications.py` | `approval.py` | Push notifications on approval/denial |
-| `shared/schemas.py` | Everywhere | All data models |
-| `shared/config.py` | `retrieval/client.py`, `retrieval/embeddings.py` | API keys |
-
-| Others call you | From | Purpose |
-|---|---|---|
-| `mushahid/pipeline/orchestrator.py` | `search.py`, `ranking/`, `cotraveller/matching.py` | Pipeline steps 2, 3, 7 |
-| `mushahid/routes/chat.py` | `cotraveller/chat.py` | WebSocket proxy |
-| `mushahid/routes/cotraveller.py` | `cotraveller/matching.py` | HTTP co-traveller endpoint |
-| `ali/rag/retriever.py` | `retrieval/search.py` | RAG context retrieval |
 
 ---
 
 ## Production Notes
 
 ### ConnectionManager — Redis required in production
-Your `ConnectionManager` in `cotraveller/chat.py` currently holds WebSocket sessions in a Python dict. This is fine locally, but **breaks on ECS** — multiple container instances each have their own memory, so a message sent to one container won't reach sessions on another.
+`ConnectionManager` in `chat.py` holds WebSocket sessions in a Python dict. Fine locally, **breaks on ECS** — multiple containers each have their own memory.
 
 Fix before production:
-- Replace the in-memory dict with Redis pub/sub using `aioredis`
-- Each container subscribes to a `session:{session_id}` channel
-- `broadcast_to_session()` publishes to Redis; all containers receive and forward to their local sockets
-- `REDIS_URL` is already in `shared/config.py` — read it there
-- When `LOCAL_MODE=true` the in-memory fallback is fine
+- Replace in-memory dict with Redis pub/sub using `aioredis`
+- Each container subscribes to `session:{session_id}` channel
+- `broadcast_to_session()` publishes to Redis; all containers receive + forward
+- `REDIS_URL` is in `shared/config.py` — read from there
+- When `LOCAL_MODE=true` in-memory fallback is fine
 
-### Embeddings — provider your choice
-Set `EMBED_MODEL_PROVIDER`, `EMBED_MODEL` (or `BEDROCK_EMBED_MODEL_ID` if using Bedrock), and `EMBED_DIMENSIONS` in `.env`. Vectors always go into Pinecone regardless of which provider generates them.
+### Embeddings — model chosen by Ali
+Ali sets `EMBED_MODEL_PROVIDER`, `EMBED_MODEL`, and `EMBED_DIMENSIONS` in `shared/config.py`. Read them from there — do not hardcode any values.
 
 ---
 
 ## Build Order
 
-1. `retrieval/client.py` first — everything else needs a working Pinecone connection
-2. `retrieval/embeddings.py` + `retrieval/search.py`
-3. Seed Pinecone with destination, activity, and co-traveller data
+1. Wait for Ali: `ali/vector/client.py` live + `EMBED_DIMENSIONS` in `shared/config.py`
+2. `retrieval/embeddings.py` (reads config, does not need Pinecone)
+3. `retrieval/search.py` (imports `get_pinecone_index` from Ali)
 4. `ranking/filters.py` → `ranking/destination_ranker.py` → `ranking/activity_ranker.py`
 5. `cotraveller/matching.py`
 6. `cotraveller/chat.py` → `cotraveller/presence.py` → `cotraveller/approval.py` → `cotraveller/shared_itinerary.py`

@@ -26,35 +26,3 @@ class EmotionIntent(str, Enum):
     relaxed     = "relaxed"
     curious     = "curious"
     adventurous = "adventurous"
-
-
-class ValidationStatus(str, Enum):
-    approved = "approved"
-    revise   = "revise"
-
-
-class VisaRequirement(str, Enum):
-    visa_free       = "visa_free"
-    visa_on_arrival = "visa_on_arrival"
-    visa_required   = "visa_required"
-    unknown         = "unknown"
-
-
-class ModelTier(str, Enum):
-    small     = "small"
-    large     = "large"
-    validator = "validator"
-
-
-class ApprovalStatus(str, Enum):
-    pending  = "pending"
-    approved = "approved"
-    denied   = "denied"
-
-
-def scaffold_review() -> None:
-    """
-    Jahnvi — these enums were pre-populated as scaffold. Verify every value
-    matches your Figma designs and product spec, then delete this function.
-    """
-    raise NotImplementedError

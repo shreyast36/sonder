@@ -8,6 +8,7 @@ You own the API, the pipeline that ties all modules together, the validation loo
 
 | Folder | Responsibility |
 |---|---|
+| `schemas/` | `ValidationStatus`, `VisaRequirement` enums · `ConstraintSatisfaction`, `ValidationResult` · all API request/response models |
 | `main.py` | FastAPI app entry point — CORS, lifespan, router registration |
 | `routes/` | All HTTP + WebSocket endpoints |
 | `pipeline/orchestrator.py` | Runs all 6 modules in sequence, streams SSE events |
@@ -23,8 +24,7 @@ You own the API, the pipeline that ties all modules together, the validation loo
 
 | From | What exactly | Where I use it | Status needed by |
 |---|---|---|---|
-| **Jahnvi** | `shared/schemas.py` finalised | Every route handler and model imports from here | **Right now — blocks everything** |
-| **Jahnvi** | `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest`, `UpdateTripResponse` shapes | Route handler type annotations | Before I can define route handlers |
+| **Jahnvi** | `UserProfile` finalised | Route handlers and orchestrator import it | Before orchestrator runs |
 | **Jahnvi** | `module1_constraints.capture_constraints(raw)` working | `pipeline/orchestrator.py` step 1a | Before orchestrator runs |
 | **Jahnvi** | `module2_preferences.parse_answers(raw)` working | `pipeline/orchestrator.py` step 1b | Before orchestrator runs |
 | **Jahnvi** | `module3_persona.infer_persona()` + `infer_emotion()` working | `pipeline/orchestrator.py` step 1c | Before orchestrator runs |
@@ -33,7 +33,7 @@ You own the API, the pipeline that ties all modules together, the validation loo
 | **Shreyas** | `search_cotravellers()` + `get_top_matches()` | `pipeline/orchestrator.py` step 7 + `routes/cotraveller.py` | Before co-traveller step runs |
 | **Shreyas** | `ConnectionManager` from `cotraveller/chat.py` | `routes/chat.py` WebSocket handler | Before `/ws/chat/{session_id}` works |
 | **Shreyas** | `approve_match()` + `deny_match()` from `cotraveller/approval.py` | `routes/chat.py` approve/deny routes | Before Screen 6 works end-to-end |
-| **Ali** | `route_request()` + `stream_request()` from `routing/engine.py` | `validation/critic.py` + `refinement/loop.py` | Before validation works |
+| **Ali** | `generate_itinerary()` + `stream_request()` from `routing/engine.py` | `refinement/loop.py` (re-generation on each loop iteration) | Before refinement loop works |
 | **Ali** | `generate_itinerary()` streaming generator | `pipeline/orchestrator.py` step 4 | Before itinerary generation runs |
 | **Ali** | `explain_itinerary()` — populates `why_this` fields | `pipeline/orchestrator.py` step 5 | Before explainer step runs |
 
@@ -168,7 +168,7 @@ POST /plan-trip
             ├── [Ali] explain_itinerary (populate why_this fields)
             │       → emit "explaining"
             │
-            ├── [Mushahid] run_all_checks + validate_with_llm
+            ├── [Mushahid] run_all_checks + validate_large_output
             │       → emit "validating"
             │       → if REVISE: run_refinement_loop → emit "revision" (may repeat)
             │       → emit "validated"
@@ -206,8 +206,20 @@ ConstraintSatisfaction(
 
 ### LLM Critic — `validation/critic.py`
 
+You own two validator LLMs — one that checks Small model outputs (e.g. persona labels, chat topics), one that checks Large model outputs (e.g. full itineraries). Configure them independently in `.env`:
+
+```bash
+SMALL_VALIDATOR_PROVIDER=   # openai | anthropic | google | groq | mistral | bedrock
+SMALL_VALIDATOR_MODEL_NAME= # model that validates small-task outputs
+
+LARGE_VALIDATOR_PROVIDER=   # openai | anthropic | google | groq | mistral | bedrock
+LARGE_VALIDATOR_MODEL_NAME= # model that validates itinerary + large-task outputs
+```
+
+Both validators use Ali's `BaseLLMClient` interface but are instantiated and called directly from `critic.py` — they do not go through Ali's routing engine.
+
 ```python
-# validate_with_llm — output (approved)
+# validate_large_output — approved
 ValidationResult(
     itinerary_id            = "itin_abc123",
     status                  = ValidationStatus.approved,
@@ -216,7 +228,7 @@ ValidationResult(
     improvement_suggestions = []
 )
 
-# validate_with_llm — output (revise)
+# validate_large_output — output (revise)
 ValidationResult(
     itinerary_id            = "itin_abc123",
     status                  = ValidationStatus.revise,
@@ -283,7 +295,7 @@ presence/{user_id}                  ← { "online": true, "last_seen": "..." }
 | `shreyas/ranking/` | `orchestrator.py` | Step 3 |
 | `ali/generation/itinerary_generator.py` | `orchestrator.py` | Step 4 |
 | `ali/rag/explainer.py` | `orchestrator.py` | Step 5 |
-| `ali/routing/engine.py` | `validation/critic.py` | Validator LLM calls |
+| `ali/routing/engine.py` | `refinement/loop.py` | Re-generation during refinement (via `generate_itinerary()`) |
 | `shreyas/cotraveller/chat.py` | `routes/chat.py` | WebSocket proxy |
 | `shreyas/cotraveller/approval.py` | `routes/chat.py` | Approve/deny |
 | `shreyas/cotraveller/matching.py` | `routes/cotraveller.py` | Match scoring |

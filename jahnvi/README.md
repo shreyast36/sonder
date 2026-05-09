@@ -1,6 +1,6 @@
 # Jahnvi — Lead Product, UX & Frontend Engineer
 
-You own the user-facing layer end to end: schemas that every teammate imports, the pipeline modules that turn raw user input into a persona, and the entire React frontend.
+You own the user-facing layer: the user input schemas that every teammate imports, the pipeline modules that turn raw user input into a persona, and the entire React frontend.
 
 ---
 
@@ -8,7 +8,7 @@ You own the user-facing layer end to end: schemas that every teammate imports, t
 
 | Area | Folder / File | Status |
 |---|---|---|
-| **Schemas** | `jahnvi/schemas/` + `shared/schemas.py` re-exports | Pending |
+| **User schemas** | `jahnvi/schemas/enums.py` + `jahnvi/schemas/user.py` | Pending |
 | **Persona templates** | `jahnvi/data/persona_templates.py` | Pending |
 | **Pipeline module 1** | `jahnvi/pipeline/module1_constraints.py` | Pending |
 | **Pipeline module 2** | `jahnvi/pipeline/module2_preferences.py` | Pending |
@@ -53,9 +53,13 @@ Design tokens in `src/lib/tokens.js`.
 
 ---
 
-## Schema Rule
+## Schema Ownership
 
-Define all models in `jahnvi/schemas/<file>.py`. Never define them in `shared/schemas.py` — that file only re-exports. When you change a field on `UserProfile`, `Itinerary`, or `CoTravellerProfile`, announce it to Shreyas and Ali — they import from `shared/schemas.py`.
+Jahnvi owns only the user input schemas:
+- `jahnvi/schemas/enums.py` — `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`
+- `jahnvi/schemas/user.py` — `TripConstraints`, `PersonaQuestionAnswers`, `UserProfile`
+
+Each other team member owns their own schema files in their folder. `shared/schemas.py` re-exports everything — never define models there, and always import from `shared/schemas.py` rather than from a specific subfolder. When you change a field on `UserProfile` or `TripConstraints`, announce it to the team — everyone depends on these.
 
 ---
 

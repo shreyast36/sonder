@@ -1,59 +1,74 @@
 # Sonder — Task Board
 
-Each section lists one person's title, their ownership boundaries, and every task they need to complete. Work in your own folder. Never define schemas outside `shared/` or `jahnvi/schemas/`.
+Each section lists one person's title, their ownership boundaries, and every task they need to complete. Work in your own folder. Each person defines their own schemas in their subfolder (`jahnvi/schemas/`, `ali/schemas/`, `shreyas/schemas/`, `mushahid/schemas/`). `shared/schemas.py` re-exports everything — always import from there.
 
 ---
 
 ## Shreyas — Lead AI Systems & Real-time Engineer
 
-**Owns:** `shreyas/` · Co-traveller real-time layer · Pinecone index management
+**Owns:** `shreyas/` · Candidate selection (embeddings + search + ranking) · Co-traveller matching algorithms · Real-time layer (chat, presence, shared itinerary, approval)
 
-### Retrieval
+> **One-liner:** Shreyas finds and ranks the right destinations, activities, and people. He does not explain them — that is Ali's RAG.
 
-- [ ] `shreyas/retrieval/client.py` — Initialise Pinecone client, create index if missing
-- [ ] `shreyas/retrieval/embeddings.py` — `embed_text()`, `embed_batch()`, `build_user_query()`, `build_refined_query()`
-- [ ] `shreyas/retrieval/search.py` — `search_destinations()`, `search_activities()`, `search_cotravellers()`, `upsert_cotraveller_profile()`
-- [ ] Seed Pinecone index: `python -m scripts.seed_pinecone --namespace all`
+### Schemas
 
-### Ranking & Filtering
+- [ ] `shreyas/schemas/enums.py` — `ApprovalStatus` — verify values match approval flow
+- [ ] `shreyas/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch` — verify fields match Screen 4 and your matching algorithm output
+- [ ] `shreyas/schemas/chat.py` — `ChatMessage`, `ChatSession`, `ChatStartResponse`, `SharedItinerary`, `ItineraryUpdateEvent` — verify match Screens 5–8 and WebSocket layer
 
-- [ ] `shreyas/ranking/filters.py` — Hard constraint filters (budget, dates, avoid_list, must_haves)
-- [ ] `shreyas/ranking/destination_ranker.py` — `score_destination()`, `rank_destinations()`
+### Candidate Selection — Embeddings
+
+- [ ] `shreyas/retrieval/embeddings.py` — `embed_text()`, `embed_batch()`, `build_user_query()`, `build_refined_query()` — converts user profile into a Pinecone query vector (uses Ali's `EMBED_MODEL` from `shared/config.py`)
+
+### Candidate Selection — Search
+
+- [ ] `shreyas/retrieval/search.py` — given a user profile, query Ali's Pinecone index and return the top-N candidate destinations, activities, or co-travellers
+  - `search_destinations(user_profile) → list[dict]` — top destination candidates for the trip plan
+  - `search_activities(user_profile, destination) → list[dict]` — top activity candidates
+  - `search_cotravellers(user_profile) → list[dict]` — top co-traveller profile candidates
+  - `upsert_cotraveller_profile(profile)` — writes a user's profile vector into Pinecone so others can find them
+
+> **Note:** This is pure SELECTION — finding the best candidates. Ali's RAG (`ali/rag/retriever.py`) separately fetches context about already-chosen activities to feed into the LLM. They call the same Pinecone index but for completely different purposes.
+
+### Candidate Selection — Ranking
+
+- [ ] `shreyas/ranking/filters.py` — hard constraint filters applied before scoring (budget, dates, avoid_list, must_haves)
+- [ ] `shreyas/ranking/destination_ranker.py` — `score_destination()`, `rank_destinations()` — multi-signal scoring (vector similarity 60%, budget fit 20%, persona tag match 20%)
 - [ ] `shreyas/ranking/activity_ranker.py` — `score_activity()`, `rank_activities()`
 
-### Co-Traveller Matching
+### Co-Traveller Matching Algorithms
 
-- [ ] `shreyas/cotraveller/matching.py` — `score_compatibility()`, `get_top_matches()`
-- [ ] `shreyas/cotraveller/chat.py` — `ConnectionManager` WebSocket engine (connect, disconnect, send, broadcast, ping/heartbeat)
+- [ ] `shreyas/cotraveller/matching.py` — `score_compatibility()`, `get_top_matches()` — scores pairs of user profiles on interests, pace, and budget; returns top 3 `CoTravellerMatch` objects
+
+### Real-time Layer
+
+- [ ] `shreyas/cotraveller/chat.py` — `ConnectionManager` WebSocket engine (connect, disconnect, send, broadcast, 30s ping/heartbeat)
 - [ ] `shreyas/cotraveller/presence.py` — `set_online()`, `set_offline()`, `is_online()`, `cleanup_stale_presence()`
 - [ ] `shreyas/cotraveller/shared_itinerary.py` — `create_shared_itinerary()`, `add_note()`, `add_activity()`, `sync_changes()` with optimistic locking (version field)
 - [ ] `shreyas/cotraveller/approval.py` — `approve_match()`, `deny_match()`, `get_approval_status()`
 
 ### Integration
 
+- [ ] Confirm with Ali: `get_pinecone_index()` from `ali/vector/client.py` is available and `EMBED_DIMENSIONS` is in `shared/config.py` before building `search.py` or `embeddings.py`
 - [ ] Confirm with Mushahid: `ConnectionManager` is importable from `mushahid/routes/chat.py`
-- [ ] Confirm with Ali: `generate_topics()` + `generate_icebreaker()` are called by Mushahid's `start_chat` route (not Shreyas directly)
-- [ ] Announce `EMBED_MODEL` + `EMBED_DIMENSIONS` choice so Jahnvi can update `shared/config.py`
+- [ ] Confirm with Ali: `generate_topics()` + `generate_icebreaker()` are called by Mushahid's `start_chat` route — you do not call them
 
 ---
 
 ## Jahnvi — Lead Product, UX & Frontend Engineer
 
-**Owns:** `jahnvi/` · `shared/schemas.py` · `shared/config.py` · `shared/currency.py` · Figma designs
+**Owns:** `jahnvi/` · `shared/config.py` · `shared/currency.py` · Figma designs
 
-### Schemas (do first — everyone is blocked on these)
+### Schemas (do first — Shreyas and Mushahid are blocked on UserProfile)
 
-- [ ] `jahnvi/schemas/enums.py` — Verify `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`, `ValidationStatus`, `VisaRequirement`, `ModelTier`, `ApprovalStatus` match Figma; delete `scaffold_review()`
-- [ ] `jahnvi/schemas/user.py` — Verify `TripConstraints` (note `budget_currency` field + `budget_usd` is always USD), `PersonaQuestionAnswers`, `UserProfile`; add `fcm_token` if using FCM; delete `scaffold_review()`
-- [ ] `jahnvi/schemas/trip.py` — Verify `Destination`, `Activity`, `ItineraryActivity` (has `why_this`), `ItineraryDay` (note: field is `trip_date` not `date`), `Itinerary`; decide image source + add `image_url`; delete `scaffold_review()`
-- [ ] `jahnvi/schemas/cotraveller.py` — Verify `CoTravellerProfile`, `CoTravellerMatch` match Screen 4 and Shreyas's matching needs; delete `scaffold_review()`
-- [ ] `jahnvi/schemas/chat.py` — Verify `ChatMessage`, `ChatSession`, `ChatStartResponse` (session + icebreaker + topics), `SharedItinerary`, `ItineraryUpdateEvent` match Screens 5–8 and WebSocket layer; delete `scaffold_review()`
-- [x] `jahnvi/schemas/api.py` — Verify `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest` (has `activity_feedback: list[ActivityFeedback]`), `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`
-- [ ] Copy finalised models into `shared/schemas.py` re-exports (already wired — just ensure all new models are exported)
+Jahnvi owns only the user-facing input schemas. Each other team member owns their own schema files.
+
+- [x] `jahnvi/schemas/enums.py` — `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`
+- [x] `jahnvi/schemas/user.py` — `TripConstraints` (`budget_usd` is always USD, `budget_currency` for display), `PersonaQuestionAnswers`, `UserProfile`; add `fcm_token` if using FCM
 
 ### Persona Templates
 
-- [ ] `jahnvi/data/persona_templates.py` — Review `PERSONA_TEMPLATES` (5 archetypes: Cultural Explorer, Adventure Seeker, Relaxed Wanderer, Party Traveller, Foodie). Confirm archetype names, interests, embed_keywords, and labels match the product spec and Figma. Delete `scaffold_review()`
+- [x] `jahnvi/data/persona_templates.py` — Review `PERSONA_TEMPLATES` (5 archetypes: Cultural Explorer, Adventure Seeker, Relaxed Wanderer, Party Traveller, Foodie). Confirm archetype names, interests, embed_keywords, and labels match the product spec and Figma
 
 ### User Pipeline
 
@@ -63,7 +78,7 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Multi-currency
 
-- [ ] `shared/currency.py` — Implement `convert_to_usd(amount, currency_code)` and `format_budget_display(budget_usd, currency_code)`. Set `EXCHANGE_RATE_API_KEY` in `.env` for live rates; static `FALLBACK_RATES` used in LOCAL_MODE
+- [x] `shared/currency.py` — Implement `convert_to_usd(amount, currency_code)` and `format_budget_display(budget_usd, currency_code)`. Set `EXCHANGE_RATE_API_KEY` in `.env` for live rates; static `FALLBACK_RATES` used in LOCAL_MODE
 
 ### Design (before any frontend code)
 
@@ -115,26 +130,35 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ## Ali — Lead AI Intelligence & Multi-model Engineer
 
-**Owns:** `ali/` · Routing engine · All LLM clients · Itinerary generation · RAG · Chat topics
+**Owns:** `ali/` · Pinecone vector database · All LLM clients + routing · Itinerary generation · RAG (context retrieval + "Why this?" explanations) · Chat topics
+
+> **One-liner:** Ali owns the database and everything that runs through an LLM. His RAG fetches factual context about already-chosen activities and uses an LLM to write the "Why this?" text. He does not decide which activities to show — that is Shreyas's search and ranking.
+
+### Schemas
+
+- [ ] `ali/schemas/enums.py` — `ModelTier` — done (verify)
+- [ ] `ali/schemas/trip.py` — `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary` — verify fields match generation output and Figma Screen 3
+
+### Vector Database (do first — Shreyas is blocked on this)
+
+- [ ] `ali/vector/client.py` — initialise Pinecone client, create index if missing, expose `get_pinecone_index()` for Shreyas's `search.py` to import
+- [ ] Decide data source (Amadeus / Foursquare / Tripadvisor / curated CSV) and seed the index: `python -m scripts.seed_pinecone --namespace all`
+- [ ] Decide `EMBED_MODEL` + `EMBED_DIMENSIONS`, write both into `shared/config.py` — Shreyas reads these in `embeddings.py`
 
 ### LLM Clients (do first — routing engine depends on these)
 
-- [ ] `ali/clients/base.py` — Review abstract interface (`complete()`, `stream()`, `model_name`, `tier`, `cost_per_1k_input_tokens`); add any additional methods needed (e.g. `count_tokens`); delete `scaffold_review()`
-- [ ] `ali/clients/openai_client.py`
-- [ ] `ali/clients/anthropic_client.py`
-- [ ] `ali/clients/google_client.py`
-- [ ] `ali/clients/groq_client.py`
-- [ ] `ali/clients/mistral_client.py`
-- [ ] `ali/clients/bedrock_client.py`
+Ali configures two slots — Small and Large — via env vars. Mushahid separately configures two validator slots.
+
+- [x] `ali/clients/base.py` — abstract interface (`complete()`, `stream()`, `model_name`, `tier`, `cost_per_1k_input_tokens`) — done
+- [ ] Create one provider client file per provider you use (e.g. `ali/clients/openai_client.py`) — subclass `BaseLLMClient`, implement `complete()` and `stream()`
 
 ### Routing Engine
 
-- [ ] `ali/routing/classifier.py` — `classify(task_type, context) → ModelTier`, `estimate_tokens(prompt) → int`
-- [ ] `ali/routing/engine.py` — `route_request(task_type, context) → LLMResponse`
-  - SMALL → fastest available small model (chat_topics, icebreaker, persona_label, quick_edit)
-  - LARGE → best large model for context length (itinerary_generation, rag_explanation, conflict_resolution)
-  - VALIDATOR → critic check (validate_itinerary, critic_check)
-  - Fallback to next model in tier if one fails
+- [ ] `ali/routing/classifier.py` — `classify(task_type) → "small" | "large"`, `estimate_tokens(prompt) → int`
+- [ ] `ali/routing/engine.py` — `route_request(task_type, prompt, system) → LLMResponse`, `stream_request(task_type, prompt, system) → AsyncGenerator`
+  - SMALL → chat_topics, icebreaker, persona_label, quick_edit, short_explanation
+  - LARGE → itinerary_generation, rag_explanation, conflict_resolution, complex_refinement
+  - Reads `SMALL_MODEL_PROVIDER` + `LARGE_MODEL_PROVIDER` from `shared/config.py` to pick client
 
 ### Itinerary Generation
 
@@ -142,26 +166,39 @@ Each section lists one person's title, their ownership boundaries, and every tas
 - [ ] `ali/generation/output_parser.py` — `parse_itinerary()`, `validate_structure()`, retry on malformed JSON
 - [ ] `ali/generation/itinerary_generator.py` — `generate_itinerary()` streaming to Mushahid's SSE layer
 
-### RAG
+### RAG — Context Retrieval + Explanation
 
-- [ ] `ali/rag/retriever.py` — `retrieve_activity_context()`, `retrieve_destination_context()` via Shreyas's search
-- [ ] `ali/rag/explainer.py` — `explain_activity()`, `explain_day()`, `explain_itinerary()` — populates `why_this` on each `ItineraryActivity`
+> **What this is NOT:** Shreyas's `search.py` selects candidates from Pinecone (e.g. "show me the top 20 destinations"). Ali's RAG is different — once a specific activity is already chosen, it fetches factual text about that activity from Pinecone, then passes those facts to the LLM to write the "Why this?" blurb shown on Screen 3.
+
+- [ ] `ali/rag/retriever.py` — given an already-chosen activity or destination, call `shreyas/retrieval/search.py` to fetch relevant text context chunks from Pinecone
+  - `retrieve_activity_context(activity, user_profile) → list[str]`
+  - `retrieve_destination_context(destination, user_profile) → list[str]`
+- [ ] `ali/rag/explainer.py` — take the context chunks from `retriever.py` and pass them to the LLM to generate the explanation
+  - `explain_activity(activity, context, user_profile) → str` — one-paragraph "Why this?" shown under each activity on Screen 3
+  - `explain_day(day, context, user_profile) → str`
+  - `explain_itinerary(itinerary, user_profile)` — populates `why_this` on every `ItineraryActivity`
 
 ### Chat Topics
 
-- [ ] `ali/generation/topics.py` — `generate_topics()` (5 topics, SMALL model), `generate_icebreaker()` (SMALL model); both called by Mushahid's `POST /chat/start` route, result returned in `ChatStartResponse`
+- [ ] `ali/generation/topics.py` — `generate_topics()` (5 topics, SMALL model), `generate_icebreaker()` (SMALL model); both called by Mushahid's `POST /chat/start` via `asyncio.gather`, returned in `ChatStartResponse`
 
 ### Integration
 
+- [ ] Share `get_pinecone_index()` + `EMBED_DIMENSIONS` with Shreyas before he starts `search.py` — he is blocked until both exist
 - [ ] Confirm streaming interface with Mushahid: `generate_itinerary()` must yield token chunks for SSE
-- [ ] Confirm RAG interface with Shreyas: `retrieve_activity_context()` calls `shreyas/retrieval/search.py`
-- [ ] Announce model and embed dimension choices early — Shreyas is blocked on `EMBED_DIMENSIONS` for Pinecone
+- [ ] Confirm RAG call chain with Shreyas: `ali/rag/retriever.py` calls `shreyas/retrieval/search.py` — agree on function signatures
 
 ---
 
 ## Mushahid — Lead Backend, Validation & Infrastructure Engineer
 
 **Owns:** `mushahid/` · FastAPI app · Pipeline orchestration · Validator + refinement loop · Real-time layer · Email/PDF export · Monitoring · Render deployment
+
+### Schemas
+
+- [ ] `mushahid/schemas/enums.py` — `ValidationStatus`, `VisaRequirement` — verify values
+- [ ] `mushahid/schemas/validation.py` — `ConstraintSatisfaction`, `ValidationResult` — verify fields match your rule checks and LLM critic output
+- [ ] `mushahid/schemas/api.py` — `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest`, `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`, `VisaInfo` — verify all API contracts match your route handlers
 
 ### FastAPI App (do first)
 
@@ -170,7 +207,7 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Routes
 
-- [ ] `mushahid/routes/health.py` — `/health` pings Firestore + Pinecone, returns `{"status": "healthy"|"degraded", "services": {...}}`
+- [x] `mushahid/routes/health.py` — `/health` pings Firestore + Pinecone, returns `{"status": "healthy"|"degraded", "services": {...}}`
 - [ ] `mushahid/routes/visa.py` — `/visa-check` with static JSON dataset (top 20 nationality/destination combos) or Sherpa API
 - [ ] `mushahid/routes/plan_trip.py` — `POST /plan-trip` → SSE stream via orchestrator
 - [ ] `mushahid/routes/update_trip.py` — `POST /update-trip` → refinement loop (passes both `feedback` and `activity_feedback` to loop)
@@ -180,7 +217,7 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Real-time Layer
 
-- [ ] `mushahid/realtime/firestore.py` — Firebase Admin init, `write_itinerary_status()`, `write_itinerary()`, `get_itinerary()`, `get_shared_itinerary()`
+- [ ] `mushahid/realtime/firestore.py` — Firebase Admin init, `write_itinerary_status()`, `write_itinerary()`, `get_itinerary()`, `create_user_profile()`, `update_user_profile()`
 - [x] `mushahid/realtime/sse.py` — `format_event()`, `stream_pipeline_events()`
 - [ ] `mushahid/realtime/notifications.py` — `push_notification()`, `notify_match_found()`, `notify_itinerary_ready()`, `notify_co_traveller_approved()`
 
@@ -190,8 +227,10 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Validation
 
+Mushahid owns two validator LLMs — one that checks Small model outputs, one that checks Large model outputs. Both are configured via env vars and called directly from `critic.py` (not through Ali's routing engine).
+
 - [ ] `mushahid/validation/rules.py` — `check_budget()`, `check_duration()`, `check_pace()`, `check_must_haves()`, `check_avoid_list()`, `run_all_checks()`
-- [ ] `mushahid/validation/critic.py` — `validate_with_llm()` via Ali's VALIDATOR tier
+- [ ] `mushahid/validation/critic.py` — `validate_small_output(output) → ValidationResult`, `validate_large_output(output) → ValidationResult`; each calls its own validator LLM configured via `SMALL_VALIDATOR_PROVIDER` + `LARGE_VALIDATOR_PROVIDER` in `.env`
 
 ### Refinement Loop
 
@@ -216,10 +255,10 @@ Each section lists one person's title, their ownership boundaries, and every tas
 ```
 Phase 1 (parallel):
   Jahnvi   → schemas first — everyone is blocked until these are finalised
-  Ali      → LLM clients
+  Ali      → LLM clients + Pinecone vector DB setup + embed dimension decision
 
 Phase 2 (parallel):
-  Shreyas  → retrieval + ranking (needs schemas)
+  Shreyas  → embeddings + search + ranking (needs schemas + Ali's Pinecone client)
   Ali      → routing engine (needs clients)
   Mushahid → FastAPI app + auth + real-time layer (needs schemas)
   Jahnvi   → pipeline modules 1–2 (no external deps)

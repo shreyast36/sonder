@@ -1,6 +1,14 @@
 # Ali — Lead AI Intelligence & Multi-model Engineer
 
-You own the brain of the product. Every AI decision — which model runs, what it generates, how it explains itself — flows through your code.
+You own the database and everything that runs through an LLM.
+
+**Database:** You set up and seed the Pinecone index. You decide the embedding model, the vector dimensions, and where the destination/activity data comes from. Shreyas queries your index but does not manage it.
+
+**LLM layer:** Every AI call in the product routes through your engine — itinerary generation, validation, explanations, chat topics, icebreakers.
+
+**RAG:** Once Shreyas's search has already selected and ranked the best activities, your RAG pipeline fetches factual context about those chosen activities from Pinecone and passes it to the LLM to write the "Why this?" explanations shown on Screen 3.
+
+**You do not select candidates.** Deciding which destinations or activities to show the user is Shreyas's job (his search + ranking). You explain the already-chosen ones.
 
 ---
 
@@ -8,37 +16,62 @@ You own the brain of the product. Every AI decision — which model runs, what i
 
 | Folder | Responsibility |
 |---|---|
-| `routing/` | Multi-model routing engine — classifies tasks, picks the right model tier |
-| `clients/` | LLM provider client wrappers — one file per provider |
-| `generation/` | Itinerary generation, output parsing, prompt templates, chat topic generation |
-| `rag/` | RAG retrieval + "Why this?" activity explanations |
+| `schemas/` | `ModelTier` enum · `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary` models |
+| `vector/client.py` | Pinecone index setup — `get_pinecone_index()` used by Shreyas's `search.py` |
+| `clients/` | One LLM provider wrapper per file — the only place API calls are made |
+| `routing/` | Classify tasks by model tier (SMALL / LARGE), route to correct client |
+| `generation/` | Itinerary generation (streaming), prompt templates, output parsing, chat topics |
+| `rag/retriever.py` | Fetch text context about an already-chosen activity from Pinecone (calls Shreyas's search) |
+| `rag/explainer.py` | Pass that context to the LLM and write the "Why this?" explanation |
 
 ---
 
-## Your First Decision — Model Selection
+## The Selection vs. RAG Distinction
 
-**No model names are hard-coded anywhere.** You choose which models to use by setting these in `.env`:
+Both you and Shreyas query Pinecone, but for completely different things:
+
+| | Shreyas (`retrieval/search.py`) | Ali (`rag/retriever.py`) |
+|---|---|---|
+| **When** | Pipeline steps 2, 3, 7 — before the itinerary exists | After the itinerary is generated — one activity at a time |
+| **Input** | Full user profile + constraints | A single already-chosen activity or destination |
+| **Output** | Top-N candidate list for ranking | Text chunks (facts) to feed into the LLM prompt |
+| **Purpose** | Decide WHAT to show the user | Explain WHY something was chosen |
+
+Your `retriever.py` calls Shreyas's `search.py` under the hood — you reuse his search interface to pull context chunks, then hand them to `explainer.py` which calls the LLM.
+
+---
+
+## Your Decisions
+
+### Embedding model + dimensions
+You decide `EMBED_MODEL_PROVIDER`, `EMBED_MODEL`, and `EMBED_DIMENSIONS`. Write them into `shared/config.py`. Shreyas reads them in `embeddings.py` — he is blocked until these are set.
+
+### Destination & activity data source
+You own the seed script (`scripts/seed_pinecone.py`) and decide where the data comes from. Coordinate with Shreyas on the metadata field names — his `search.py` filters on specific fields.
+
+| Option | Notes |
+|---|---|
+| **Amadeus Travel API** | Large coverage, free tier, destinations + activities + POIs. Best starting point. |
+| **Foursquare Places API** | Strong POI/activity data, free tier up to 1k calls/day. |
+| **Tripadvisor Content API** | Rich reviews and photos — useful for RAG context snippets. Paid. |
+| **Curated CSV** | Fastest to ship — 20–30 destinations, 5–10 activities each. Use for demo. |
+
+### LLM model selection
+You own two LLM slots — Small and Large. Each provider file is one class (`OpenAIClient`, `AnthropicClient`, etc.). The routing engine picks which instance to use based on task type. Mushahid separately owns the two validator LLMs.
 
 ```bash
-# Small tier (fast + cheap — chat topics, persona labels, quick edits)
-SMALL_MODEL_PROVIDER=           # your choice of provider
-SMALL_MODEL_NAME=               # your choice of model
+SMALL_MODEL_PROVIDER=       # openai | anthropic | google | groq | mistral | bedrock
+SMALL_MODEL_NAME=           # e.g. gpt-4o-mini, claude-haiku-4-5, gemini-flash
 
-# Large tier (complex — itinerary generation, RAG explanations)
-LARGE_MODEL_PROVIDER=           # your choice of provider
-LARGE_MODEL_NAME=               # your choice of model
+LARGE_MODEL_PROVIDER=       # openai | anthropic | google | groq | mistral | bedrock
+LARGE_MODEL_NAME=           # e.g. gpt-4o, claude-opus-4-7, gemini-pro
 
-# Validator tier (critic mode — feasibility + quality checks)
-VALIDATOR_MODEL_PROVIDER=       # your choice of provider
-VALIDATOR_MODEL_NAME=           # your choice of model
-
-# Bedrock model IDs (only needed if you set any provider above to "bedrock")
-BEDROCK_SMALL_MODEL_ID=         # your choice
-BEDROCK_LARGE_MODEL_ID=         # your choice
-BEDROCK_VALIDATOR_MODEL_ID=     # your choice
+# Only needed if using Bedrock:
+BEDROCK_SMALL_MODEL_ID=
+BEDROCK_LARGE_MODEL_ID=
 ```
 
-The routing engine (`routing/engine.py`) reads these at runtime and instantiates the right client.
+You can mix providers (e.g. Groq for Small, Anthropic for Large). Validator model config lives in Mushahid's `.env` section — not your concern.
 
 ---
 
@@ -46,140 +79,81 @@ The routing engine (`routing/engine.py`) reads these at runtime and instantiates
 
 ### What I need from others
 
-| From | What exactly | Where I use it | Status needed by |
+| From | What exactly | Where I use it | Needed by |
 |---|---|---|---|
-| **Jahnvi** | `shared/schemas.py` finalised | All generation and parsing code imports schemas | **Right now — blocks everything** |
-| **Jahnvi** | `UserProfile`, `Itinerary`, `ItineraryDay`, `ItineraryActivity`, `Activity`, `Destination` shapes | `generation/itinerary_generator.py`, `rag/explainer.py`, `generation/output_parser.py` | Before I write any generation code |
-| **Shreyas** | `retrieval/search.py` — `search_destinations()` and `search_activities()` | `rag/retriever.py` calls these to fetch context chunks | Before I can build the RAG explainer |
+| **Jahnvi** | `UserProfile` finalised | All generation and parsing imports it | Before any generation code |
+| **Shreyas** | `search_destinations()`, `search_activities()` from `retrieval/search.py` | `rag/retriever.py` calls these to get context chunks | Before I build the explainer |
 
 ### What others need from me
 
 | Who | What exactly | Which file | When they're blocked |
 |---|---|---|---|
-| **Mushahid** | `route_request()` + `stream_request()` from `routing/engine.py` | `validation/critic.py` + `pipeline/orchestrator.py` | Before validation and orchestrator run |
-| **Mushahid** | `generate_itinerary()` streaming generator | `pipeline/orchestrator.py` step 4 | Before the itinerary pipeline runs |
-| **Mushahid** | `explain_itinerary()` — populates all `why_this` fields | `pipeline/orchestrator.py` step 5 | Before the explainer step runs |
-| **Mushahid** | `generate_itinerary()` again for re-generation | `refinement/loop.py` | Before the refinement loop works |
-| **Mushahid** | `generate_topics()` + `generate_icebreaker()` from `generation/topics.py` | `mushahid/routes/chat.py` calls both concurrently in `start_chat`, returns in `ChatStartResponse` | Before chat feature is complete |
-| **Everyone** | Decision on `EMBED_MODEL` + `EMBED_DIMENSIONS` | Goes into `shared/config.py`; Shreyas needs this to configure Pinecone | **Announce this early — Shreyas is blocked on it** |
-
----
-
-## Architecture
-
-```
-route_request(task_type, prompt, system)
-    │
-    ├── classifier.py → classify(task_type) → ModelTier (small | large | validator)
-    │
-    └── engine.py → get_client(tier)
-            │
-            └── reads *_MODEL_PROVIDER from env → returns the matching client class
-```
+| **Shreyas** | `get_pinecone_index()` from `ali/vector/client.py` | `shreyas/retrieval/search.py` | Before Shreyas can build search |
+| **Shreyas** | `EMBED_DIMENSIONS` in `shared/config.py` | `shreyas/retrieval/embeddings.py` | Before Shreyas can write embeddings |
+| **Mushahid** | `route_request()` + `stream_request()` from `routing/engine.py` | `validation/critic.py` + `orchestrator.py` | Before validation + orchestrator |
+| **Mushahid** | `generate_itinerary()` streaming generator | `orchestrator.py` step 4 | Before itinerary pipeline |
+| **Mushahid** | `explain_itinerary()` | `orchestrator.py` step 5 | Before explainer step |
+| **Mushahid** | `generate_topics()` + `generate_icebreaker()` | `routes/chat.py` `start_chat` via `asyncio.gather` | Before chat feature |
 
 ---
 
 ## Module Contracts
 
-### `routing/` — task type → model tier
+### `routing/engine.py`
 
 ```python
-# Task types you must handle:
-SMALL  → "chat_topics", "icebreaker", "persona_label", "preference_parse",
-          "quick_edit", "notification_message", "short_explanation"
-
-LARGE  → "itinerary_generation", "complex_refinement", "conflict_resolution",
-          "rag_explanation", "what_if"
-
-VALIDATOR → "validate_itinerary", "critic_check"
-```
-
-```python
-# route_request — input
 route_request(
     task_type = "itinerary_generation",
     prompt    = "Generate a 7-day beach trip for Bali...",
     system    = "You are an expert travel planner. Output valid JSON.",
     context   = {"token_estimate": 3200}
 )
-
-# route_request — output
-'{"days": [{"day_number": 1, "theme": "Culture & Coastal Views", "activities": [...]}]}'
+# → '{"days": [{"day_number": 1, "theme": "Culture & Coastal Views", ...}]}'
 ```
 
-### `generation/itinerary_generator.py` — streaming output
+### `generation/itinerary_generator.py`
 
 ```python
-# Input
 generate_itinerary(user_profile, destination, activities)
+# Streams token chunks → assembled into Itinerary after streaming completes
+# Note: why_this fields are None here — explainer.py fills them in next
+```
 
-# Streaming output (token chunks, assembled into full Itinerary after streaming)
-'{"days"' → ': [{"day' → '_number": 1' → ', "theme": ...' → ...
+### `rag/retriever.py`
 
-# Final assembled Itinerary structure:
-Itinerary(
-    itinerary_id     = "itin_abc123",
-    destination      = Destination(city="Bali", country="Indonesia"),
-    days             = [
-        ItineraryDay(
-            day_number     = 1,
-            theme          = "Culture & Coastal Views",
-            daily_cost_usd = 140.0,
-            activities     = [
-                ItineraryActivity(time="9:00 AM",  activity=Activity(name="Uluwatu Temple"),    why_this=None),
-                ItineraryActivity(time="1:00 PM",  activity=Activity(name="Padang Padang Beach"), why_this=None),
-                ItineraryActivity(time="6:00 PM",  activity=Activity(name="Jimbaran Bay Dinner"), why_this=None),
-            ]
-        ),
-        # ... days 2–7
-    ],
-    total_budget_usd = 840.0
+```python
+# Given an already-chosen activity, fetch text facts about it from Pinecone
+retrieve_activity_context(
+    activity     = Activity(name="Uluwatu Temple", category="culture"),
+    user_profile = UserProfile(...)
 )
-# Note: why_this fields are None here — explainer.py fills them in next.
+# → ["Uluwatu sits on a 70m cliff...", "Perfect for slow travellers...", ...]
+# These strings go directly into the LLM prompt in explainer.py
 ```
 
-### `rag/explainer.py` — "Why this?" explanations
+### `rag/explainer.py`
 
 ```python
-# explain_activity — input
-activity     = Activity(name="Uluwatu Temple", category="culture", duration_hours=2.0)
-context      = ["Uluwatu sits on a 70m cliff...", "Perfect for slow travellers..."]
-user_profile = UserProfile(persona_answers=PersonaQuestionAnswers(culture_interest=5, pace="relaxed"))
-
-# explain_activity — output (this text is shown on Screen 3 under the activity)
-"This matches your relaxed pace and love for culture.
- Uluwatu Temple offers a serene 2-hour experience on dramatic ocean cliffs —
- the sunset Kecak dance here is one of Bali's most memorable cultural moments."
+explain_activity(
+    activity     = Activity(name="Uluwatu Temple", ...),
+    context      = ["Uluwatu sits on a 70m cliff...", ...],  # from retriever.py
+    user_profile = UserProfile(persona_answers=PersonaQuestionAnswers(culture_interest=5))
+)
+# → "This matches your relaxed pace and love for culture. Uluwatu Temple offers a
+#    serene 2-hour experience on dramatic ocean cliffs — the sunset Kecak dance here
+#    is one of Bali's most memorable cultural moments."
+# This string is written into ItineraryActivity.why_this and shown on Screen 3.
 ```
 
-### `generation/topics.py` — chat topics
-
-Both functions are called by Mushahid's `POST /chat/start` route via `asyncio.gather` and returned in `ChatStartResponse`. You do not expose these as separate endpoints.
+### `generation/topics.py`
 
 ```python
-# generate_topics — output (5 chips shown at bottom of Screen 5)
-[
-    "Must-try local food in Bali",
-    "Beach vs adventure balance",
-    "Cultural experiences to explore",
-    "Budget-friendly activities",
-    "Best time to travel & weather"
-]
+# Both called by Mushahid's POST /chat/start via asyncio.gather
+generate_topics(user_profile, match, itinerary)
+# → ["Must-try local food in Bali", "Beach vs adventure balance", ...]  # 5 chips on Screen 5
 
-# generate_icebreaker — output (pre-filled tap-to-send suggestion at top of Screen 5)
-"Hey Maya! I noticed you're also a foodie — what's the one dish you're most excited to try in Bali?"
-```
-
-Inputs: `user_profile: UserProfile`, `match: CoTravellerMatch`, and (for `generate_topics`) `itinerary: Itinerary` so topics are grounded in the actual trip plan.
-
-### `generation/output_parser.py` — JSON parsing
-
-```python
-# Input: raw LLM response (may have markdown, extra text, etc.)
-raw = '```json\n{"days": [...]}\n```'
-
-# Output: clean Itinerary object, or retried if malformed
-Itinerary(days=[...], total_budget_usd=840.0, ...)
+generate_icebreaker(user_profile, match)
+# → "Hey Maya! I noticed you're also a foodie — what dish are you most excited to try?"
 ```
 
 ---
@@ -188,24 +162,26 @@ Itinerary(days=[...], total_budget_usd=840.0, ...)
 
 | You call | From | Purpose |
 |---|---|---|
-| `shreyas/retrieval/search.py` | `rag/retriever.py` | Fetch RAG context from Pinecone |
+| `shreyas/retrieval/search.py` | `rag/retriever.py` | Fetch RAG context chunks from Pinecone |
 | `shared/config.py` | All clients | Read API keys + model names |
 | `shared/schemas.py` | Everywhere | Data models |
 
 | Others call you | From | Purpose |
 |---|---|---|
-| `mushahid/pipeline/orchestrator.py` | `generation/itinerary_generator.py`, `rag/explainer.py` | Pipeline steps 4 + 5 |
+| `mushahid/pipeline/orchestrator.py` | `itinerary_generator.py`, `explainer.py` | Pipeline steps 4 + 5 |
 | `mushahid/validation/critic.py` | `routing/engine.py` | Validator LLM calls |
-| `mushahid/refinement/loop.py` | `generation/itinerary_generator.py` | Regeneration |
-| `shreyas/cotraveller/chat.py` | `generation/topics.py` | AI chat topics |
+| `mushahid/refinement/loop.py` | `itinerary_generator.py` | Regeneration |
+| `mushahid/routes/chat.py` | `generation/topics.py` | Chat topics + icebreaker |
 
 ---
 
 ## Build Order
 
-1. `clients/base.py` — define the interface first
-2. All provider clients in `clients/` — implement whichever providers you choose to support
-3. `routing/classifier.py` → `routing/engine.py`
-4. `generation/prompts.py` → `generation/output_parser.py` → `generation/itinerary_generator.py`
-5. `rag/retriever.py` → `rag/explainer.py`
-6. `generation/topics.py`
+1. `vector/client.py` — Pinecone init first; Shreyas is blocked until `get_pinecone_index()` exists
+2. Write `EMBED_MODEL` + `EMBED_DIMENSIONS` into `shared/config.py` — unblocks Shreyas's embeddings
+3. Seed Pinecone: `python -m scripts.seed_pinecone --namespace all`
+4. Create provider client file(s) for your chosen provider(s) in `clients/` — subclass `BaseLLMClient` from `clients/base.py`
+5. `routing/classifier.py` → `routing/engine.py`
+6. `generation/prompts.py` → `generation/output_parser.py` → `generation/itinerary_generator.py`
+7. `rag/retriever.py` → `rag/explainer.py` (needs Shreyas's `search.py` to be working)
+8. `generation/topics.py`

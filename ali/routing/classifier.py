@@ -2,27 +2,24 @@ from shared.schemas import ModelTier
 
 # Task type → tier mapping. Ali decides the final assignments.
 # These are suggestions — override as you benchmark latency and cost.
+# Validator tasks (validate_itinerary, critic_check) are Mushahid's — not routed here.
 
 TASK_TIER_MAP: dict[str, ModelTier] = {
     # Small tier — fast, cheap
-    "chat_topics":         ModelTier.small,
-    "icebreaker":          ModelTier.small,
-    "persona_label":       ModelTier.small,
-    "preference_parse":    ModelTier.small,
-    "quick_edit":          ModelTier.small,
+    "chat_topics":          ModelTier.small,
+    "icebreaker":           ModelTier.small,
+    "persona_label":        ModelTier.small,
+    "preference_parse":     ModelTier.small,
+    "quick_edit":           ModelTier.small,
     "notification_message": ModelTier.small,
-    "short_explanation":   ModelTier.small,
+    "short_explanation":    ModelTier.small,
 
     # Large tier — complex, high-context
-    "itinerary_generation":   ModelTier.large,
-    "complex_refinement":     ModelTier.large,
-    "conflict_resolution":    ModelTier.large,
-    "rag_explanation":        ModelTier.large,
-    "what_if":                ModelTier.large,
-
-    # Validator tier — critic checks
-    "validate_itinerary": ModelTier.validator,
-    "critic_check":       ModelTier.validator,
+    "itinerary_generation": ModelTier.large,
+    "complex_refinement":   ModelTier.large,
+    "conflict_resolution":  ModelTier.large,
+    "rag_explanation":      ModelTier.large,
+    "what_if":              ModelTier.large,
 }
 
 

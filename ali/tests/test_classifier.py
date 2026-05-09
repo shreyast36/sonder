@@ -17,10 +17,6 @@ def test_large_tasks_route_to_large_tier():
         assert classify(task) == ModelTier.large, f"{task} should be large tier"
 
 
-def test_validator_tasks_route_to_validator_tier():
-    for task in ["validate_itinerary", "critic_check"]:
-        assert classify(task) == ModelTier.validator, f"{task} should be validator tier"
-
 
 def test_unknown_task_falls_back_to_large():
     assert classify("some_unknown_task_type") == ModelTier.large

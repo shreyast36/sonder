@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional
-from jahnvi.schemas.enums import ApprovalStatus
-from jahnvi.schemas.trip import Itinerary
+from shreyas.schemas.enums import ApprovalStatus
+from ali.schemas.trip import Itinerary
 
 
 class ChatMessage(BaseModel):
@@ -57,10 +57,10 @@ class SharedItinerary(BaseModel):
 
     Example:
         SharedItinerary(
-            itinerary_id   = "itin_abc123",
-            user_ids       = ["firebase_uid_abc123", "maya_001"],
-            itinerary      = Itinerary(...),
-            notes          = [
+            itinerary_id    = "itin_abc123",
+            user_ids        = ["firebase_uid_abc123", "maya_001"],
+            itinerary       = Itinerary(...),
+            notes           = [
                 {"user_id": "maya_001",  "note": "Let's wake up early on Day 2!", "timestamp": "..."},
                 {"user_id": "user_abc",  "note": "Great idea!", "timestamp": "..."}
             ],
@@ -120,13 +120,3 @@ class ItineraryUpdateEvent(BaseModel):
     user_id:      str
     payload:      dict
     timestamp:    str
-
-
-def scaffold_review() -> None:
-    """
-    Jahnvi — ChatMessage, ChatSession, SharedItinerary, and ItineraryUpdateEvent
-    were pre-populated as scaffold. Verify these match what Shreyas needs for the
-    WebSocket layer and what the frontend needs for Screens 5–8. Delete this
-    function when finalised.
-    """
-    raise NotImplementedError

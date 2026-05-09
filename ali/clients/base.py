@@ -6,10 +6,11 @@ from shared.schemas import ModelTier
 class BaseLLMClient(ABC):
     """
     Abstract base class all LLM provider clients must implement.
-    Ali decides which concrete class maps to which tier in the routing engine.
+    Ali: create one file per provider you use (e.g. ali/clients/openai_client.py)
+    and subclass this. Register the concrete class in routing/engine.py.
 
     Example usage (from routing/engine.py):
-        client = OpenAIClient()
+        client = MyProviderClient()
         response = await client.complete(prompt="Generate a 5-day itinerary...", system="You are a travel planner.")
     """
 
@@ -22,7 +23,7 @@ class BaseLLMClient(ABC):
     @property
     @abstractmethod
     def tier(self) -> ModelTier:
-        """Which tier this client belongs to: small | large | validator."""
+        """Which tier this client belongs to: small | large."""
         ...
 
     @property

@@ -1,21 +1,27 @@
-# Jahnvi — copy all finalised models here from jahnvi/schemas/ so every module
-# can import from a single location. Never redefine models — re-export only.
+# Re-exports all models from their owner folders — import from here, never from the source files.
 #
 # Schemas are defined in:
-#   jahnvi/schemas/enums.py       → PacePreference, BudgetStyle, TravelStyle, EmotionIntent,
-#                                    ValidationStatus, VisaRequirement, ModelTier, ApprovalStatus
-#   jahnvi/schemas/user.py        → TripConstraints, PersonaQuestionAnswers, UserProfile
-#   jahnvi/schemas/trip.py        → Destination, Activity, ItineraryActivity, ItineraryDay, Itinerary
-#   jahnvi/schemas/validation.py  → ConstraintSatisfaction, ValidationResult
-#   jahnvi/schemas/cotraveller.py → CoTravellerProfile, CoTravellerMatch
-#   jahnvi/schemas/chat.py        → ChatMessage, ChatSession, SharedItinerary, ItineraryUpdateEvent
-#   jahnvi/schemas/api.py         → VisaInfo, PlanTripRequest, PlanTripResponse,
-#                                    UpdateTripRequest, UpdateTripResponse
+#   jahnvi/schemas/enums.py        → PacePreference, BudgetStyle, TravelStyle, EmotionIntent
+#   jahnvi/schemas/user.py         → TripConstraints, PersonaQuestionAnswers, UserProfile
+#   ali/schemas/enums.py           → ModelTier
+#   ali/schemas/trip.py            → Destination, Activity, ItineraryActivity, ItineraryDay, Itinerary
+#   mushahid/schemas/enums.py      → ValidationStatus, VisaRequirement
+#   mushahid/schemas/validation.py → ConstraintSatisfaction, ValidationResult
+#   mushahid/schemas/api.py        → VisaInfo, PlanTripRequest, PlanTripResponse,
+#                                     UpdateTripRequest, UpdateTripResponse,
+#                                     ActivityFeedback, EmailItineraryRequest
+#   shreyas/schemas/enums.py       → ApprovalStatus
+#   shreyas/schemas/cotraveller.py → CoTravellerProfile, CoTravellerMatch
+#   shreyas/schemas/chat.py        → ChatMessage, ChatSession, SharedItinerary,
+#                                     ChatStartResponse, ItineraryUpdateEvent
 #
-from jahnvi.schemas.enums       import *
-from jahnvi.schemas.user        import *
-from jahnvi.schemas.trip        import *
-from jahnvi.schemas.validation  import *
-from jahnvi.schemas.cotraveller import *
-from jahnvi.schemas.chat        import *
-from jahnvi.schemas.api         import *
+from jahnvi.schemas.enums        import *
+from jahnvi.schemas.user         import *
+from ali.schemas.enums           import *
+from ali.schemas.trip            import *
+from mushahid.schemas.enums      import *
+from mushahid.schemas.validation import *
+from mushahid.schemas.api        import *
+from shreyas.schemas.enums       import *
+from shreyas.schemas.cotraveller import *
+from shreyas.schemas.chat        import *

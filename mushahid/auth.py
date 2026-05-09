@@ -45,5 +45,7 @@ async def verify_ws_token(token: str = Query(..., description="Firebase ID token
     On invalid token: close the WebSocket with code 1008 (Policy Violation) before accepting.
     """
     # TODO: same verification logic as verify_token
-    # TODO: on failure: await websocket.close(code=1008) instead of raising HTTPException
+    # Note: cannot close the WebSocket here — the websocket object is only available in
+    # the route handler. On failure, raise HTTPException(1008); FastAPI maps it to a
+    # WebSocket close. Handle the close in the route if you need custom close logic.
     raise NotImplementedError
