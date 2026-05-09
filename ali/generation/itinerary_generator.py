@@ -1,9 +1,8 @@
 import json
 from typing import AsyncIterator
-from shared.schemas import UserProfile, Destination, Activity, Itinerary, ItineraryDay
+from shared.schemas import UserProfile, Destination, Activity, ItineraryDay
 from ali.routing.engine import stream_request
 from ali.generation.prompts import ITINERARY_SYSTEM_PROMPT, build_itinerary_prompt
-from ali.generation.output_parser import parse_itinerary, validate_structure
 
 
 async def generate_itinerary(

@@ -38,17 +38,17 @@ class DeepSeekSmallClient(BaseLLMClient):
 
     async def stream(self, prompt: str, system: str = ""):
         client = openai.AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
-        async with client.chat.completions.stream(
+        response = await client.chat.completions.create(
             model=self.model_name,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-        ) as stream:
-            async for chunk in stream:
-                content = chunk.choices[0].delta.content
-                if content:
-                    yield content
+            stream=True,
+        )
+        async for chunk in response:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
 
 
 class DeepSeekLargeClient(BaseLLMClient):
@@ -83,14 +83,14 @@ class DeepSeekLargeClient(BaseLLMClient):
 
     async def stream(self, prompt: str, system: str = ""):
         client = openai.AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
-        async with client.chat.completions.stream(
+        response = await client.chat.completions.create(
             model=self.model_name,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-        ) as stream:
-            async for chunk in stream:
-                content = chunk.choices[0].delta.content
-                if content:
-                    yield content
+            stream=True,
+        )
+        async for chunk in response:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content

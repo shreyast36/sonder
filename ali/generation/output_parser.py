@@ -1,7 +1,8 @@
 import re
 import json
 import uuid
-from shared.schemas import Itinerary, UserProfile
+from shared.schemas import Itinerary, UserProfile, Destination, Activity
+from typing import Optional
 
 
 def _strip_fences(raw: str) -> str:
@@ -43,25 +44,77 @@ def _extract_json_object(raw: str) -> str:
     raise ValueError("Unterminated JSON object in LLM output")
 
 
-def parse_itinerary(raw: str, user_profile: UserProfile) -> Itinerary:
+def _patch_activity(act_data: dict, known: dict[str, Activity]) -> dict:
+    """Fill in required Activity fields the LLM may omit, matching by name."""
+    name = act_data.get("name", "")
+    source = known.get(name)
+    if source:
+        act_data.setdefault("activity_id", source.activity_id)
+        act_data.setdefault("description", source.description)
+        act_data.setdefault("category", source.category)
+        act_data.setdefault("cost_usd", source.cost_usd)
+        act_data.setdefault("duration_hours", source.duration_hours)
+        act_data.setdefault("tags", source.tags)
+    else:
+        act_data.setdefault("activity_id", f"act_{uuid.uuid4().hex[:6]}")
+        act_data.setdefault("description", "")
+    return act_data
+
+
+def _patch_destination(dest_data: dict, known: Optional[Destination]) -> dict:
+    """Fill in required Destination fields using the known destination object."""
+    if known:
+        dest_data.setdefault("destination_id", known.destination_id)
+        dest_data.setdefault("city", known.city)
+        dest_data.setdefault("country", known.country)
+        dest_data.setdefault("avg_daily_cost_usd", known.avg_daily_cost_usd)
+        dest_data.setdefault("tags", known.tags)
+        dest_data.setdefault("description", known.description)
+    else:
+        dest_data.setdefault("destination_id", f"dest_{uuid.uuid4().hex[:6]}")
+        dest_data.setdefault("city", dest_data.get("name", "Unknown"))
+        dest_data.setdefault("country", "")
+        dest_data.setdefault("avg_daily_cost_usd", 0.0)
+        dest_data.setdefault("tags", [])
+        dest_data.setdefault("description", "")
+    return dest_data
+
+
+def parse_itinerary(
+    raw: str,
+    user_profile: UserProfile,
+    destination: Optional[Destination] = None,
+    activities: Optional[list[Activity]] = None,
+) -> Itinerary:
     """
     Parse raw LLM output into a structured Itinerary object.
-    Handles markdown fences, preamble text, and missing itinerary_id / user_id.
-    Raises ValueError with a clear message if the structure is invalid.
+    Pass destination and activities to fill in any fields the LLM omitted.
     """
     cleaned = _strip_fences(raw)
     try:
         data = json.loads(cleaned)
     except json.JSONDecodeError:
-        # Second attempt: extract just the outermost JSON object
         try:
             data = json.loads(_extract_json_object(cleaned))
         except (json.JSONDecodeError, ValueError) as exc:
             raise ValueError(f"LLM returned malformed JSON: {exc}\n\nRaw output:\n{raw[:500]}") from exc
 
-    # Inject fields the LLM may not know
+    # Inject top-level fields
     data.setdefault("itinerary_id", f"itin_{uuid.uuid4().hex[:8]}")
     data["user_id"] = user_profile.user_id
+
+    # Patch destination
+    if "destination" in data and isinstance(data["destination"], dict):
+        data["destination"] = _patch_destination(data["destination"], destination)
+    elif destination:
+        data["destination"] = destination.model_dump()
+
+    # Patch activities inside days
+    known_by_name = {a.name: a for a in (activities or [])}
+    for day in data.get("days", []):
+        for ia in day.get("activities", []):
+            if "activity" in ia and isinstance(ia["activity"], dict):
+                ia["activity"] = _patch_activity(ia["activity"], known_by_name)
 
     try:
         return Itinerary.model_validate(data)

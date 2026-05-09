@@ -1,5 +1,5 @@
 """
-Smoke test — run manually to verify Ali's live API integrations.
+Smoke test -run manually to verify Ali's live API integrations.
 
     python -m ali.tests.smoke_test
 
@@ -9,7 +9,7 @@ Requires .env with at minimum:
     LARGE_MODEL_PROVIDER=deepseek  LARGE_MODEL_NAME=deepseek-chat
     EMBED_MODEL_PROVIDER=openai    EMBED_MODEL=text-embedding-3-small
 
-For Pinecone tests (optional — skip if index not seeded):
+For Pinecone tests (optional -skip if index not seeded):
     PINECONE_API_KEY, PINECONE_INDEX_NAME, EMBED_DIMENSIONS=1536
 """
 
@@ -88,25 +88,30 @@ MATCH = CoTravellerMatch(
 
 # ── Test helpers ──────────────────────────────────────────────────────────────
 
-def ok(label):   print(f"  ✓ {label}")
-def fail(label, err): print(f"  ✗ {label}: {err}")
+def ok(label):   print("  [PASS] " + str(label))
+def fail(label, err): print(f"  [FAIL] {label}: {err}")
 
 
 async def test_embeddings():
     print("\n[1] Embeddings (OpenAI text-embedding-3-small)")
+    if not os.getenv("OPENAI_API_KEY"):
+        print("  [SKIP] OPENAI_API_KEY not set -skipping.")
+        print("     Embeddings are only needed for RAG ('Why this?' explanations).")
+        print("     Core generation + routing works without it.")
+        return
     try:
         from ali.vector.embeddings import embed_text, embed_batch, build_user_query
         vec = embed_text("Bali beach culture food")
         assert len(vec) == 1536
-        ok(f"embed_text() → {len(vec)}-dim vector")
+        ok(f"embed_text() -> {len(vec)}-dim vector")
 
         vecs = embed_batch(["Bali", "Kyoto", "Lisbon"])
         assert len(vecs) == 3
-        ok(f"embed_batch() → {len(vecs)} vectors")
+        ok(f"embed_batch() -> {len(vecs)} vectors")
 
         query = build_user_query(USER)
         assert "beach" in query and "relaxed" in query
-        ok(f"build_user_query() → '{query[:60]}...'")
+        ok(f"build_user_query() -> '{query[:60]}...'")
     except Exception as e:
         fail("embeddings", e)
 
@@ -121,7 +126,7 @@ async def test_routing():
             "You are a test assistant. Follow instructions exactly."
         )
         assert response and len(response) > 0
-        ok(f"route_request(small) → '{response.strip()[:60]}'")
+        ok(f"route_request(small) -> '{response.strip()[:60]}'")
     except Exception as e:
         fail("routing", e)
 
@@ -138,8 +143,8 @@ async def test_itinerary_generation():
         raw = "".join(chunks)
         ok(f"generate_itinerary() streamed {len(chunks)} chunks ({len(raw)} chars)")
 
-        itinerary = parse_itinerary(raw, USER)
-        ok(f"parse_itinerary() → {len(itinerary.days)} days, ${itinerary.total_budget_usd:.0f} total")
+        itinerary = parse_itinerary(raw, USER, destination=DESTINATION, activities=ACTIVITIES)
+        ok("parse_itinerary() -> " + str(len(itinerary.days)) + " days, $" + str(int(itinerary.total_budget_usd)) + " total")
 
         assert validate_structure(itinerary)
         ok("validate_structure() passed")
@@ -159,11 +164,11 @@ async def test_chat_topics():
             destination=DESTINATION, days=[], total_budget_usd=1200.0,
         ))
         assert len(topics) > 0
-        ok(f"generate_topics() → {topics}")
+        ok(f"generate_topics() -> {topics}")
 
         icebreaker = await generate_icebreaker(USER, MATCH)
         assert len(icebreaker) > 0
-        ok(f"generate_icebreaker() → '{icebreaker}'")
+        ok(f"generate_icebreaker() -> '{icebreaker}'")
     except Exception as e:
         fail("chat topics", e)
 
@@ -171,7 +176,7 @@ async def test_chat_topics():
 async def test_pinecone(skip=False):
     print("\n[5] Pinecone connection + retriever")
     if skip or not os.getenv("PINECONE_API_KEY"):
-        print("  ⚠  PINECONE_API_KEY not set — skipping. Seed first with:")
+        print("  [SKIP] PINECONE_API_KEY not set -skipping. Seed first with:")
         print("     python -m scripts.seed_pinecone --namespace all")
         return
     try:
@@ -179,22 +184,22 @@ async def test_pinecone(skip=False):
         index = get_pinecone_index()
         stats = index.describe_index_stats()
         total = stats.get("total_vector_count", 0)
-        ok(f"Pinecone connected — {total} vectors in index")
+        ok(f"Pinecone connected -{total} vectors in index")
 
         if total == 0:
-            print("  ⚠  Index is empty — run: python -m scripts.seed_pinecone --namespace all")
+            print("  [SKIP] Index is empty -run: python -m scripts.seed_pinecone --namespace all")
             return
 
         from ali.rag.retriever import retrieve_activity_context
         context = await retrieve_activity_context(ACTIVITIES[0])
-        ok(f"retrieve_activity_context() → {len(context)} snippets")
+        ok(f"retrieve_activity_context() -> {len(context)} snippets")
     except Exception as e:
         fail("pinecone", e)
 
 
 async def main():
     print("=" * 55)
-    print("  Sonder — Ali module smoke test")
+    print("  Sonder - Ali module smoke test")
     print("=" * 55)
     await test_embeddings()
     await test_routing()

@@ -76,7 +76,8 @@ def build_itinerary_prompt(
         interests = [f"{k} ({v}/5)" for k, v in sorted(scored, key=lambda x: -x[1])]
 
     activity_list = "\n".join(
-        f"- {a.name} | {a.category} | ${a.cost_usd:.0f} | {a.duration_hours}h | tags: {', '.join(a.tags)}"
+        f"- id:{a.activity_id} | {a.name} | {a.category} | ${a.cost_usd:.0f} | {a.duration_hours}h"
+        f" | tags: {', '.join(a.tags)} | desc: {a.description}"
         for a in activities
     )
 
