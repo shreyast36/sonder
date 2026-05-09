@@ -55,17 +55,17 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Schemas (do first — everyone is blocked on these)
 
-- [x] `jahnvi/schemas/enums.py` — Verify `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`, `ValidationStatus`, `VisaRequirement`, `ModelTier`, `ApprovalStatus` match Figma; delete `scaffold_review()`
-- [x] `jahnvi/schemas/user.py` — Verify `TripConstraints` (note `budget_currency` field + `budget_usd` is always USD), `PersonaQuestionAnswers`, `UserProfile`; add `fcm_token` if using FCM; delete `scaffold_review()`
-- [x] `jahnvi/schemas/trip.py` — Verify `Destination`, `Activity`, `ItineraryActivity` (has `why_this`), `ItineraryDay` (note: field is `trip_date` not `date`), `Itinerary`; decide image source + add `image_url`; delete `scaffold_review()`
-- [x] `jahnvi/schemas/cotraveller.py` — Verify `CoTravellerProfile`, `CoTravellerMatch` match Screen 4 and Shreyas's matching needs; delete `scaffold_review()`
-- [x] `jahnvi/schemas/chat.py` — Verify `ChatMessage`, `ChatSession`, `ChatStartResponse` (session + icebreaker + topics), `SharedItinerary`, `ItineraryUpdateEvent` match Screens 5–8 and WebSocket layer; delete `scaffold_review()`
+- [x] `jahnvi/schemas/enums.py` — Verify `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`, `ValidationStatus`, `VisaRequirement`, `ModelTier`, `ApprovalStatus` match Figma
+- [x] `jahnvi/schemas/user.py` — Verify `TripConstraints` (note `budget_currency` field + `budget_usd` is always USD), `PersonaQuestionAnswers`, `UserProfile`; add `fcm_token` if using FCM
+- [x] `jahnvi/schemas/trip.py` — Verify `Destination`, `Activity`, `ItineraryActivity` (has `why_this`), `ItineraryDay` (note: field is `trip_date` not `date`), `Itinerary`; decide image source + add `image_url`
+- [x] `jahnvi/schemas/cotraveller.py` — Verify `CoTravellerProfile`, `CoTravellerMatch` match Screen 4 and Shreyas's matching needs
+- [x] `jahnvi/schemas/chat.py` — Verify `ChatMessage`, `ChatSession`, `ChatStartResponse` (session + icebreaker + topics), `SharedItinerary`, `ItineraryUpdateEvent` match Screens 5–8 and WebSocket layer
 - [x] `jahnvi/schemas/api.py` — Verify `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest` (has `activity_feedback: list[ActivityFeedback]`), `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`
 - [ ] Copy finalised models into `shared/schemas.py` re-exports (already wired — just ensure all new models are exported)
 
 ### Persona Templates
 
-- [x] `jahnvi/data/persona_templates.py` — Review `PERSONA_TEMPLATES` (5 archetypes: Cultural Explorer, Adventure Seeker, Relaxed Wanderer, Party Traveller, Foodie). Confirm archetype names, interests, embed_keywords, and labels match the product spec and Figma. Delete `scaffold_review()`
+- [x] `jahnvi/data/persona_templates.py` — Review `PERSONA_TEMPLATES` (5 archetypes: Cultural Explorer, Adventure Seeker, Relaxed Wanderer, Party Traveller, Foodie). Confirm archetype names, interests, embed_keywords, and labels match the product spec and Figma
 
 ### User Pipeline
 
@@ -139,8 +139,9 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### LLM Clients (do first — routing engine depends on these)
 
-Each provider file implements one client class. Ali configures two slots — Small and Large — via env vars. Mushahid separately configures two validator slots.
+Ali configures two slots — Small and Large — via env vars. Mushahid separately configures two validator slots.
 
+<<<<<<< HEAD
 - [x] `ali/clients/base.py` — abstract interface (`complete()`, `stream()`, `model_name`, `tier`, `cost_per_1k_input_tokens`); delete `scaffold_review()`
 - [ ] `ali/clients/openai_client.py` — `OpenAIClient`
 - [ ] `ali/clients/anthropic_client.py` — `AnthropicClient`
@@ -148,6 +149,10 @@ Each provider file implements one client class. Ali configures two slots — Sma
 - [ ] `ali/clients/groq_client.py` — `GroqClient`
 - [ ] `ali/clients/mistral_client.py` — `MistralClient`
 - [ ] `ali/clients/bedrock_client.py` — `BedrockClient`
+=======
+- [x] `ali/clients/base.py` — abstract interface (`complete()`, `stream()`, `model_name`, `tier`, `cost_per_1k_input_tokens`) — done
+- [ ] Create one provider client file per provider you use (e.g. `ali/clients/openai_client.py`) — subclass `BaseLLMClient`, implement `complete()` and `stream()`
+>>>>>>> 1498ca6 (docs: fix inaccuracies in TASKS.md and READMEs)
 
 ### Routing Engine
 
@@ -208,7 +213,7 @@ Each provider file implements one client class. Ali configures two slots — Sma
 
 ### Real-time Layer
 
-- [ ] `mushahid/realtime/firestore.py` — Firebase Admin init, `write_itinerary_status()`, `write_itinerary()`, `get_itinerary()`, `get_shared_itinerary()`
+- [ ] `mushahid/realtime/firestore.py` — Firebase Admin init, `write_itinerary_status()`, `write_itinerary()`, `get_itinerary()`, `create_user_profile()`, `update_user_profile()`
 - [x] `mushahid/realtime/sse.py` — `format_event()`, `stream_pipeline_events()`
 - [ ] `mushahid/realtime/notifications.py` — `push_notification()`, `notify_match_found()`, `notify_itinerary_ready()`, `notify_co_traveller_approved()`
 

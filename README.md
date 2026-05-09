@@ -153,7 +153,7 @@ Four LLM slots total — Ali owns two, Mushahid owns two:
 | **Small Validator** | Mushahid | Verifies Small model outputs (persona labels, topics) | `SMALL_VALIDATOR_PROVIDER` + `SMALL_VALIDATOR_MODEL_NAME` |
 | **Large Validator** | Mushahid | Verifies Large model outputs (full itineraries) | `LARGE_VALIDATOR_PROVIDER` + `LARGE_VALIDATOR_MODEL_NAME` |
 
-Each provider file is one class (`OpenAIClient`, `AnthropicClient`, etc.). The routing engine (Ali) and critic (Mushahid) each instantiate the client they need from `shared/config.py`. Providers can be mixed across slots.
+Ali creates one file per provider he uses (e.g. `ali/clients/openai_client.py`), each subclassing `BaseLLMClient`. The routing engine picks which instance to use based on task type. Mushahid's critic instantiates its validator clients directly — not through Ali's routing engine. Providers can be mixed across slots.
 
 ### Real-Time Layer
 

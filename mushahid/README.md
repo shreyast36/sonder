@@ -33,7 +33,7 @@ You own the API, the pipeline that ties all modules together, the validation loo
 | **Shreyas** | `search_cotravellers()` + `get_top_matches()` | `pipeline/orchestrator.py` step 7 + `routes/cotraveller.py` | Before co-traveller step runs |
 | **Shreyas** | `ConnectionManager` from `cotraveller/chat.py` | `routes/chat.py` WebSocket handler | Before `/ws/chat/{session_id}` works |
 | **Shreyas** | `approve_match()` + `deny_match()` from `cotraveller/approval.py` | `routes/chat.py` approve/deny routes | Before Screen 6 works end-to-end |
-| **Ali** | `route_request()` + `stream_request()` from `routing/engine.py` | `validation/critic.py` + `refinement/loop.py` | Before validation works |
+| **Ali** | `generate_itinerary()` + `stream_request()` from `routing/engine.py` | `refinement/loop.py` (re-generation on each loop iteration) | Before refinement loop works |
 | **Ali** | `generate_itinerary()` streaming generator | `pipeline/orchestrator.py` step 4 | Before itinerary generation runs |
 | **Ali** | `explain_itinerary()` — populates `why_this` fields | `pipeline/orchestrator.py` step 5 | Before explainer step runs |
 
@@ -295,7 +295,7 @@ presence/{user_id}                  ← { "online": true, "last_seen": "..." }
 | `shreyas/ranking/` | `orchestrator.py` | Step 3 |
 | `ali/generation/itinerary_generator.py` | `orchestrator.py` | Step 4 |
 | `ali/rag/explainer.py` | `orchestrator.py` | Step 5 |
-| `ali/routing/engine.py` | `validation/critic.py` | Validator LLM calls |
+| `ali/routing/engine.py` | `refinement/loop.py` | Re-generation during refinement (via `generate_itinerary()`) |
 | `shreyas/cotraveller/chat.py` | `routes/chat.py` | WebSocket proxy |
 | `shreyas/cotraveller/approval.py` | `routes/chat.py` | Approve/deny |
 | `shreyas/cotraveller/matching.py` | `routes/cotraveller.py` | Match scoring |

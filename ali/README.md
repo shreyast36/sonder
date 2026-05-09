@@ -18,7 +18,7 @@ You own the database and everything that runs through an LLM.
 |---|---|
 | `vector/client.py` | Pinecone index setup — `get_pinecone_index()` used by Shreyas's `search.py` |
 | `clients/` | One LLM provider wrapper per file — the only place API calls are made |
-| `routing/` | Classify tasks by model tier (SMALL / LARGE / VALIDATOR), route to correct client |
+| `routing/` | Classify tasks by model tier (SMALL / LARGE), route to correct client |
 | `generation/` | Itinerary generation (streaming), prompt templates, output parsing, chat topics |
 | `rag/retriever.py` | Fetch text context about an already-chosen activity from Pinecone (calls Shreyas's search) |
 | `rag/explainer.py` | Pass that context to the LLM and write the "Why this?" explanation |
@@ -180,7 +180,7 @@ generate_icebreaker(user_profile, match)
 1. `vector/client.py` — Pinecone init first; Shreyas is blocked until `get_pinecone_index()` exists
 2. Write `EMBED_MODEL` + `EMBED_DIMENSIONS` into `shared/config.py` — unblocks Shreyas's embeddings
 3. Seed Pinecone: `python -m scripts.seed_pinecone --namespace all`
-4. `clients/base.py` → all provider clients in `clients/`
+4. Create provider client file(s) for your chosen provider(s) in `clients/` — subclass `BaseLLMClient` from `clients/base.py`
 5. `routing/classifier.py` → `routing/engine.py`
 6. `generation/prompts.py` → `generation/output_parser.py` → `generation/itinerary_generator.py`
 7. `rag/retriever.py` → `rag/explainer.py` (needs Shreyas's `search.py` to be working)
