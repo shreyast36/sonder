@@ -432,9 +432,6 @@ function CTA() {
           </button>
         </div>
 
-        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: DIM, marginTop: 16 }}>
-          By invitation only &nbsp;·&nbsp; No spam, ever
-        </p>
       </motion.div>
     </section>
   )
