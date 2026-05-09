@@ -14,6 +14,7 @@ You find the right things and keep everything in sync.
 
 | Folder | Responsibility |
 |---|---|
+| `schemas/` | `ApprovalStatus` enum · `CoTravellerProfile`, `CoTravellerMatch` · `ChatMessage`, `ChatSession`, `SharedItinerary`, `ChatStartResponse`, `ItineraryUpdateEvent` |
 | `retrieval/embeddings.py` | Convert user profile into a Pinecone query vector |
 | `retrieval/search.py` | Query Pinecone and return top-N candidate destinations, activities, co-travellers |
 | `ranking/` | Filter hard constraints, then score and rank candidates |
@@ -46,9 +47,7 @@ Ali's `retriever.py` calls your `search.py` under the hood. You provide the inte
 
 | From | What exactly | Where I use it | Needed by |
 |---|---|---|---|
-| **Jahnvi** | `shared/schemas.py` finalised | Every module imports schemas | Right now — blocks everything |
-| **Jahnvi** | `UserProfile` with `compatibility_signals` + `travel_style_embedding` | `matching.py` + `search.py` | Before co-traveller search |
-| **Jahnvi** | `CoTravellerProfile`, `CoTravellerMatch` shapes | `matching.py` | Before matching |
+| **Jahnvi** | `UserProfile` with `compatibility_signals` + `travel_style_embedding` finalised | `matching.py` + `search.py` | Before co-traveller search |
 | **Ali** | `get_pinecone_index()` from `ali/vector/client.py` | `search.py` — all Pinecone queries go through this | Before I can build search |
 | **Ali** | `EMBED_DIMENSIONS` written into `shared/config.py` | `embeddings.py` — vector length must match index | Before I can write embeddings |
 | **Mushahid** | `get_db()` in `realtime/firestore.py` | `presence.py`, `shared_itinerary.py`, `approval.py` | Before real-time features |

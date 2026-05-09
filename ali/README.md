@@ -16,6 +16,7 @@ You own the database and everything that runs through an LLM.
 
 | Folder | Responsibility |
 |---|---|
+| `schemas/` | `ModelTier` enum · `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary` models |
 | `vector/client.py` | Pinecone index setup — `get_pinecone_index()` used by Shreyas's `search.py` |
 | `clients/` | One LLM provider wrapper per file — the only place API calls are made |
 | `routing/` | Classify tasks by model tier (SMALL / LARGE), route to correct client |
@@ -80,8 +81,7 @@ You can mix providers (e.g. Groq for Small, Anthropic for Large). Validator mode
 
 | From | What exactly | Where I use it | Needed by |
 |---|---|---|---|
-| **Jahnvi** | `shared/schemas.py` finalised | All generation and parsing imports schemas | Right now — blocks everything |
-| **Jahnvi** | `UserProfile`, `Itinerary`, `ItineraryDay`, `ItineraryActivity` shapes | `itinerary_generator.py`, `explainer.py`, `output_parser.py` | Before any generation code |
+| **Jahnvi** | `UserProfile` finalised | All generation and parsing imports it | Before any generation code |
 | **Shreyas** | `search_destinations()`, `search_activities()` from `retrieval/search.py` | `rag/retriever.py` calls these to get context chunks | Before I build the explainer |
 
 ### What others need from me

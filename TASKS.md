@@ -1,6 +1,6 @@
 # Sonder — Task Board
 
-Each section lists one person's title, their ownership boundaries, and every task they need to complete. Work in your own folder. Never define schemas outside `shared/` or `jahnvi/schemas/`.
+Each section lists one person's title, their ownership boundaries, and every task they need to complete. Work in your own folder. Each person defines their own schemas in their subfolder (`jahnvi/schemas/`, `ali/schemas/`, `shreyas/schemas/`, `mushahid/schemas/`). `shared/schemas.py` re-exports everything — always import from there.
 
 ---
 
@@ -9,6 +9,12 @@ Each section lists one person's title, their ownership boundaries, and every tas
 **Owns:** `shreyas/` · Candidate selection (embeddings + search + ranking) · Co-traveller matching algorithms · Real-time layer (chat, presence, shared itinerary, approval)
 
 > **One-liner:** Shreyas finds and ranks the right destinations, activities, and people. He does not explain them — that is Ali's RAG.
+
+### Schemas
+
+- [ ] `shreyas/schemas/enums.py` — `ApprovalStatus` — verify values match approval flow
+- [ ] `shreyas/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch` — verify fields match Screen 4 and your matching algorithm output
+- [ ] `shreyas/schemas/chat.py` — `ChatMessage`, `ChatSession`, `ChatStartResponse`, `SharedItinerary`, `ItineraryUpdateEvent` — verify match Screens 5–8 and WebSocket layer
 
 ### Candidate Selection — Embeddings
 
@@ -51,17 +57,14 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ## Jahnvi — Lead Product, UX & Frontend Engineer
 
-**Owns:** `jahnvi/` · `shared/schemas.py` · `shared/config.py` · `shared/currency.py` · Figma designs
+**Owns:** `jahnvi/` · `shared/config.py` · `shared/currency.py` · Figma designs
 
-### Schemas (do first — everyone is blocked on these)
+### Schemas (do first — Shreyas and Mushahid are blocked on UserProfile)
 
-- [x] `jahnvi/schemas/enums.py` — Verify `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`, `ValidationStatus`, `VisaRequirement`, `ModelTier`, `ApprovalStatus` match Figma
-- [x] `jahnvi/schemas/user.py` — Verify `TripConstraints` (note `budget_currency` field + `budget_usd` is always USD), `PersonaQuestionAnswers`, `UserProfile`; add `fcm_token` if using FCM
-- [ ] `jahnvi/schemas/trip.py` — Verify `Destination`, `Activity`, `ItineraryActivity` (has `why_this`), `ItineraryDay` (note: field is `trip_date` not `date`), `Itinerary`; decide image source + add `image_url`
-- [ ] `jahnvi/schemas/cotraveller.py` — Verify `CoTravellerProfile`, `CoTravellerMatch` match Screen 4 and Shreyas's matching needs
-- [ ] `jahnvi/schemas/chat.py` — Verify `ChatMessage`, `ChatSession`, `ChatStartResponse` (session + icebreaker + topics), `SharedItinerary`, `ItineraryUpdateEvent` match Screens 5–8 and WebSocket layer
-- [ ] `jahnvi/schemas/api.py` — Verify `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest` (has `activity_feedback: list[ActivityFeedback]`), `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`
-- [ ] Copy finalised models into `shared/schemas.py` re-exports (already wired — just ensure all new models are exported)
+Jahnvi owns only the user-facing input schemas. Each other team member owns their own schema files.
+
+- [x] `jahnvi/schemas/enums.py` — `PacePreference`, `BudgetStyle`, `TravelStyle`, `EmotionIntent`
+- [x] `jahnvi/schemas/user.py` — `TripConstraints` (`budget_usd` is always USD, `budget_currency` for display), `PersonaQuestionAnswers`, `UserProfile`; add `fcm_token` if using FCM
 
 ### Persona Templates
 
@@ -131,6 +134,11 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 > **One-liner:** Ali owns the database and everything that runs through an LLM. His RAG fetches factual context about already-chosen activities and uses an LLM to write the "Why this?" text. He does not decide which activities to show — that is Shreyas's search and ranking.
 
+### Schemas
+
+- [ ] `ali/schemas/enums.py` — `ModelTier` — done (verify)
+- [ ] `ali/schemas/trip.py` — `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary` — verify fields match generation output and Figma Screen 3
+
 ### Vector Database (do first — Shreyas is blocked on this)
 
 - [ ] `ali/vector/client.py` — initialise Pinecone client, create index if missing, expose `get_pinecone_index()` for Shreyas's `search.py` to import
@@ -141,18 +149,8 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 Ali configures two slots — Small and Large — via env vars. Mushahid separately configures two validator slots.
 
-<<<<<<< HEAD
-- [x] `ali/clients/base.py` — abstract interface (`complete()`, `stream()`, `model_name`, `tier`, `cost_per_1k_input_tokens`); delete `scaffold_review()`
-- [ ] `ali/clients/openai_client.py` — `OpenAIClient`
-- [ ] `ali/clients/anthropic_client.py` — `AnthropicClient`
-- [ ] `ali/clients/google_client.py` — `GoogleClient`
-- [ ] `ali/clients/groq_client.py` — `GroqClient`
-- [ ] `ali/clients/mistral_client.py` — `MistralClient`
-- [ ] `ali/clients/bedrock_client.py` — `BedrockClient`
-=======
 - [x] `ali/clients/base.py` — abstract interface (`complete()`, `stream()`, `model_name`, `tier`, `cost_per_1k_input_tokens`) — done
 - [ ] Create one provider client file per provider you use (e.g. `ali/clients/openai_client.py`) — subclass `BaseLLMClient`, implement `complete()` and `stream()`
->>>>>>> 1498ca6 (docs: fix inaccuracies in TASKS.md and READMEs)
 
 ### Routing Engine
 
@@ -195,6 +193,12 @@ Ali configures two slots — Small and Large — via env vars. Mushahid separate
 ## Mushahid — Lead Backend, Validation & Infrastructure Engineer
 
 **Owns:** `mushahid/` · FastAPI app · Pipeline orchestration · Validator + refinement loop · Real-time layer · Email/PDF export · Monitoring · Render deployment
+
+### Schemas
+
+- [ ] `mushahid/schemas/enums.py` — `ValidationStatus`, `VisaRequirement` — verify values
+- [ ] `mushahid/schemas/validation.py` — `ConstraintSatisfaction`, `ValidationResult` — verify fields match your rule checks and LLM critic output
+- [ ] `mushahid/schemas/api.py` — `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest`, `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`, `VisaInfo` — verify all API contracts match your route handlers
 
 ### FastAPI App (do first)
 

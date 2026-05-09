@@ -25,10 +25,10 @@ Sonder takes a user from zero to a fully personalised, day-by-day itinerary and 
 
 | Person | Role | Owns |
 |---|---|---|
-| **Jahnvi** | Lead Product, UX & Frontend | All schemas · User input pipeline (constraints → preferences → persona) · 10-screen React frontend |
-| **Shreyas** | Lead AI Systems & Real-time | Candidate **selection** (embeddings + search + ranking) · Co-traveller matching algorithms · Real-time layer (chat, presence, shared itinerary, approval) |
-| **Ali** | Lead AI Intelligence | Pinecone vector database · All LLM clients + routing · Itinerary generation · RAG **explanation** ("Why this?") · Chat topics |
-| **Mushahid** | Lead Backend & Infrastructure | FastAPI app · Pipeline orchestrator · Validation + refinement loop · Firebase real-time layer · Deployment |
+| **Jahnvi** | Lead Product, UX & Frontend | User input schemas (`UserProfile`, `TripConstraints`, `PersonaQuestionAnswers`) · User input pipeline (constraints → preferences → persona) · 10-screen React frontend |
+| **Shreyas** | Lead AI Systems & Real-time | Co-traveller + chat schemas · Candidate **selection** (embeddings + search + ranking) · Co-traveller matching algorithms · Real-time layer (chat, presence, shared itinerary, approval) |
+| **Ali** | Lead AI Intelligence | Trip/itinerary schemas · Pinecone vector database · All LLM clients + routing · Itinerary generation · RAG **explanation** ("Why this?") · Chat topics |
+| **Mushahid** | Lead Backend & Infrastructure | API + validation schemas · FastAPI app · Pipeline orchestrator · Validation + refinement loop · Firebase real-time layer · Deployment |
 
 ### Shreyas vs. Ali — the key distinction
 
@@ -69,25 +69,27 @@ Ali's RAG retriever calls Shreyas's search functions — Shreyas provides the in
 
 ```
 sonder/
-├── shared/                  # Schemas, config, utilities — owned by Jahnvi
-│   ├── schemas.py           # Re-exports all models from jahnvi/schemas/
+├── shared/                  # Config, utilities, schema aggregator
+│   ├── schemas.py           # Re-exports all models from all four schema folders — import from here
 │   ├── config.py            # All env var reads — never call os.getenv() outside here
 │   ├── currency.py          # Multi-currency conversion (live rates + fallback)
 │   └── email.py             # Transactional email (Resend / SendGrid / SES)
 │
-├── jahnvi/                  # User Pipeline + Schemas + Frontend
-│   ├── schemas/             # All Pydantic models (source of truth)
+├── jahnvi/                  # User Pipeline + User Schemas + Frontend
+│   ├── schemas/             # User input models only: TripConstraints, PersonaQuestionAnswers, UserProfile, user-input enums
 │   ├── pipeline/            # Modules 1–3: constraints → preferences → persona/emotion
 │   ├── data/                # Persona archetype templates
 │   └── frontend/            # React + Vite app (10 screens, hooks, Firebase client)
 │
 ├── shreyas/                 # Candidate Selection + Real-time
+│   ├── schemas/             # CoTraveller + Chat models, ApprovalStatus enum
 │   ├── retrieval/           # Embeddings + Pinecone search (SELECTION — finds candidates)
 │   ├── ranking/             # Filters, scores, and ranks candidates
 │   └── cotraveller/         # Matching algorithms, WebSocket chat, presence,
 │                            #   shared itinerary sync, approval
 │
 ├── ali/                     # AI Intelligence Layer
+│   ├── schemas/             # Trip/Itinerary models, ModelTier enum
 │   ├── vector/              # Pinecone index setup — get_pinecone_index() used by Shreyas
 │   ├── clients/             # LLM provider wrappers (one file per provider)
 │   ├── routing/             # Task classifier + multi-model routing engine
@@ -96,6 +98,7 @@ sonder/
 │                            #   explainer.py passes that context to LLM → "Why this?" text
 │
 ├── mushahid/                # Backend API + Orchestration + Validation
+│   ├── schemas/             # API request/response models, ValidationResult, VisaRequirement enum
 │   ├── main.py              # FastAPI app entry point
 │   ├── auth.py              # Firebase ID token verification
 │   ├── routes/              # All HTTP + WebSocket endpoints

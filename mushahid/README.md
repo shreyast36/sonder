@@ -8,6 +8,7 @@ You own the API, the pipeline that ties all modules together, the validation loo
 
 | Folder | Responsibility |
 |---|---|
+| `schemas/` | `ValidationStatus`, `VisaRequirement` enums · `ConstraintSatisfaction`, `ValidationResult` · all API request/response models |
 | `main.py` | FastAPI app entry point — CORS, lifespan, router registration |
 | `routes/` | All HTTP + WebSocket endpoints |
 | `pipeline/orchestrator.py` | Runs all 6 modules in sequence, streams SSE events |
@@ -23,8 +24,7 @@ You own the API, the pipeline that ties all modules together, the validation loo
 
 | From | What exactly | Where I use it | Status needed by |
 |---|---|---|---|
-| **Jahnvi** | `shared/schemas.py` finalised | Every route handler and model imports from here | **Right now — blocks everything** |
-| **Jahnvi** | `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest`, `UpdateTripResponse` shapes | Route handler type annotations | Before I can define route handlers |
+| **Jahnvi** | `UserProfile` finalised | Route handlers and orchestrator import it | Before orchestrator runs |
 | **Jahnvi** | `module1_constraints.capture_constraints(raw)` working | `pipeline/orchestrator.py` step 1a | Before orchestrator runs |
 | **Jahnvi** | `module2_preferences.parse_answers(raw)` working | `pipeline/orchestrator.py` step 1b | Before orchestrator runs |
 | **Jahnvi** | `module3_persona.infer_persona()` + `infer_emotion()` working | `pipeline/orchestrator.py` step 1c | Before orchestrator runs |
