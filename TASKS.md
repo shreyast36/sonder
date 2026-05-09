@@ -12,9 +12,9 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Schemas
 
-- [ ] `shreyas/schemas/enums.py` — `ApprovalStatus` — verify values match approval flow
-- [ ] `shreyas/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch` — verify fields match Screen 4 and your matching algorithm output
-- [ ] `shreyas/schemas/chat.py` — `ChatMessage`, `ChatSession`, `ChatStartResponse`, `SharedItinerary`, `ItineraryUpdateEvent` — verify match Screens 5–8 and WebSocket layer
+- [x] `shreyas/schemas/enums.py` — `ApprovalStatus` — created; verify values match approval flow
+- [x] `shreyas/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch` — created; verify fields match Screen 4 and your matching algorithm output
+- [x] `shreyas/schemas/chat.py` — `ChatMessage`, `ChatSession`, `ChatStartResponse`, `SharedItinerary`, `ItineraryUpdateEvent` — created; verify match Screens 5–8 and WebSocket layer
 
 ### Candidate Selection — Embeddings
 
@@ -50,7 +50,7 @@ Each section lists one person's title, their ownership boundaries, and every tas
 ### Integration
 
 - [ ] Confirm with Ali: `get_pinecone_index()` from `ali/vector/client.py` is available and `EMBED_DIMENSIONS` is in `shared/config.py` before building `search.py` or `embeddings.py`
-- [ ] Confirm with Mushahid: `ConnectionManager` is importable from `mushahid/routes/chat.py`
+- [ ] Confirm with Mushahid: `ConnectionManager` lives in `shreyas/cotraveller/chat.py` — Mushahid imports it from there in `routes/chat.py`
 - [ ] Confirm with Ali: `generate_topics()` + `generate_icebreaker()` are called by Mushahid's `start_chat` route — you do not call them
 
 ---
@@ -95,8 +95,8 @@ Jahnvi owns only the user-facing input schemas. Each other team member owns thei
 - [ ] `src/hooks/useFirestore.js` — `useDocument()`, `useCollection()` with `onSnapshot`
 - [ ] `src/hooks/useWebSocket.js` — Chat WebSocket hook with reconnect + 30s ping heartbeat
 - [ ] `src/hooks/useSSE.js` — SSE hook for itinerary generation stream
-- [ ] `src/styles/globals.css` — Tailwind directives + CSS custom properties from Figma tokens
-- [ ] `tailwind.config.js` — Brand palette and font tokens
+- [x] `src/styles/globals.css` — Tailwind directives + CSS custom properties from Figma tokens
+- [x] `tailwind.config.js` — Brand palette and font tokens
 - [x] `src/App.jsx` — All routes wired up with react-router-dom (10 routes incl. /discover)
 
 ### Frontend — Screens
@@ -124,7 +124,7 @@ Jahnvi owns only the user-facing input schemas. Each other team member owns thei
 ### Deployment
 
 - [ ] Update `vercel.json` API rewrite URL once Mushahid has a Render URL
-- [ ] Deploy to Vercel and confirm all 9 screens load
+- [ ] Deploy to Vercel and confirm all 10 screens load
 
 ---
 
@@ -136,8 +136,8 @@ Jahnvi owns only the user-facing input schemas. Each other team member owns thei
 
 ### Schemas
 
-- [ ] `ali/schemas/enums.py` — `ModelTier` — done (verify)
-- [ ] `ali/schemas/trip.py` — `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary` — verify fields match generation output and Figma Screen 3
+- [x] `ali/schemas/enums.py` — `ModelTier` — created; verify values are correct
+- [x] `ali/schemas/trip.py` — `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary` — created; verify fields match your generation output and Figma Screen 3
 
 ### Vector Database (do first — Shreyas is blocked on this)
 
@@ -196,9 +196,9 @@ Ali configures two slots — Small and Large — via env vars. Mushahid separate
 
 ### Schemas
 
-- [ ] `mushahid/schemas/enums.py` — `ValidationStatus`, `VisaRequirement` — verify values
-- [ ] `mushahid/schemas/validation.py` — `ConstraintSatisfaction`, `ValidationResult` — verify fields match your rule checks and LLM critic output
-- [ ] `mushahid/schemas/api.py` — `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest`, `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`, `VisaInfo` — verify all API contracts match your route handlers
+- [x] `mushahid/schemas/enums.py` — `ValidationStatus`, `VisaRequirement` — created; verify values
+- [x] `mushahid/schemas/validation.py` — `ConstraintSatisfaction`, `ValidationResult` — created; verify fields match your rule checks and LLM critic output
+- [x] `mushahid/schemas/api.py` — `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest`, `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`, `VisaInfo` — created; verify all API contracts match your route handlers
 
 ### FastAPI App (do first)
 
@@ -253,26 +253,28 @@ Mushahid owns two validator LLMs — one that checks Small model outputs, one th
 ## Dependency Order (build in this sequence)
 
 ```
-Phase 1 (parallel):
-  Jahnvi   → schemas first — everyone is blocked until these are finalised
+Phase 1 (parallel — start now):
+  Jahnvi   → user.py + enums.py schemas (unblocks Shreyas + Mushahid); pipeline modules 1–2
   Ali      → LLM clients + Pinecone vector DB setup + embed dimension decision
+  Shreyas  → verify own schemas; begin embeddings once Ali has EMBED_DIMENSIONS
+  Mushahid → verify own schemas; FastAPI app + auth + real-time layer
 
 Phase 2 (parallel):
-  Shreyas  → embeddings + search + ranking (needs schemas + Ali's Pinecone client)
+  Shreyas  → search + ranking (needs Ali's Pinecone client + EMBED_DIMENSIONS)
   Ali      → routing engine (needs clients)
-  Mushahid → FastAPI app + auth + real-time layer (needs schemas)
-  Jahnvi   → pipeline modules 1–2 (no external deps)
+  Mushahid → routes (needs Ali's clients)
+  Jahnvi   → module3_persona (needs embed_text from Shreyas)
 
 Phase 3 (parallel):
-  Shreyas  → co-traveller matching + chat (needs retrieval)
+  Shreyas  → co-traveller matching + chat
   Ali      → generation + RAG (needs routing engine + Shreyas's search)
-  Mushahid → routes + validator (needs Ali's clients)
-  Jahnvi   → module3_persona (needs embed_text from Shreyas)
+  Mushahid → validator + refinement loop (needs Ali's clients)
 
 Phase 4:
   Mushahid → orchestrator (needs all of Phase 3)
-  Mushahid → refinement loop + export routes
-  Jahnvi   → frontend (needs API + Figma designs)
+  Mushahid → export routes
+  Jahnvi   → frontend API integration: firebase.js, api.js, auth + SSE + WebSocket hooks
+             (UI is done — just needs backend running)
 
 Phase 5:
   All      → integration testing, deployment, monitoring
