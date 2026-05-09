@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { AnimatePresence, motion } from 'framer-motion'
 import Welcome         from './pages/Welcome'
 import Dashboard       from './pages/Dashboard'
 import TripPreferences from './pages/TripPreferences'
@@ -9,21 +10,43 @@ import ApproveDeny     from './pages/ApproveDeny'
 import SharedItinerary from './pages/SharedItinerary'
 import Notes           from './pages/Notes'
 import Discover        from './pages/Discover'
+import LuxCursor       from './components/LuxCursor'
+import { ToastProvider } from './components/Toast'
+
+function Page({ children }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+    >
+      {children}
+    </motion.div>
+  )
+}
 
 export default function App() {
+  const location = useLocation()
+
   return (
-    <Routes>
-      <Route path="/"                  element={<Welcome/>}/>
-      <Route path="/dashboard"         element={<Dashboard/>}/>
-      <Route path="/preferences"       element={<TripPreferences/>}/>
-      <Route path="/itinerary"         element={<Itinerary/>}/>
-      <Route path="/match/:id"         element={<MatchDetail/>}/>
-      <Route path="/chat/:sessionId"   element={<Chat/>}/>
-      <Route path="/approve/:sessionId"element={<ApproveDeny/>}/>
-      <Route path="/shared/:id"        element={<SharedItinerary/>}/>
-      <Route path="/notes/:id"         element={<Notes/>}/>
-      <Route path="/discover"          element={<Discover/>}/>
-      <Route path="*"                  element={<Navigate to="/" replace/>}/>
-    </Routes>
+    <ToastProvider>
+      <LuxCursor/>
+      <AnimatePresence mode="wait">
+        <Routes location={location} key={location.pathname}>
+          <Route path="/"                   element={<Page><Welcome/></Page>}/>
+          <Route path="/dashboard"          element={<Page><Dashboard/></Page>}/>
+          <Route path="/preferences"        element={<Page><TripPreferences/></Page>}/>
+          <Route path="/itinerary"          element={<Page><Itinerary/></Page>}/>
+          <Route path="/match/:id"          element={<Page><MatchDetail/></Page>}/>
+          <Route path="/chat/:sessionId"    element={<Page><Chat/></Page>}/>
+          <Route path="/approve/:sessionId" element={<Page><ApproveDeny/></Page>}/>
+          <Route path="/shared/:id"         element={<Page><SharedItinerary/></Page>}/>
+          <Route path="/notes/:id"          element={<Page><Notes/></Page>}/>
+          <Route path="/discover"           element={<Page><Discover/></Page>}/>
+          <Route path="*"                   element={<Navigate to="/" replace/>}/>
+        </Routes>
+      </AnimatePresence>
+    </ToastProvider>
   )
 }

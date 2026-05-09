@@ -16,8 +16,9 @@ const DIM       = 'rgba(244,237,224,0.16)'
 const GOLD_GRAD = 'linear-gradient(180deg,#F0DCB0 0%,#E8D4A8 28%,#D4B686 55%,#B89464 80%,#8A6F4A 100%)'
 
 const ease    = [0.16, 1, 0.3, 1]
-const reveal  = { hidden: { opacity: 0, y: 24 }, show: { opacity: 1, y: 0, transition: { duration: 1.2, ease } } }
 const stagger = { show: { transition: { staggerChildren: 0.18 } } }
+const wipe    = { hidden: { clipPath: 'inset(0 100% 0 0)' }, show: { clipPath: 'inset(0 0% 0 0)', transition: { duration: 1.1, ease } } }
+const fade    = { hidden: { opacity: 0, y: 16 },              show: { opacity: 1, y: 0,             transition: { duration: 1.0, ease } } }
 
 // ── Film grain ────────────────────────────────────────────────────────────────
 
@@ -397,28 +398,40 @@ function CTA() {
           A curated few are granted access each season.
         </p>
 
-        <div style={{ display: 'flex', maxWidth: 480, width: '100%' }}>
-          <input type="email" placeholder="your@email.com" style={{
-            flex: 1, padding: '15px 20px',
-            background: 'rgba(232,212,168,0.04)',
-            border: `1px solid rgba(232,212,168,0.18)`, borderRight: 'none',
-            borderRadius: '5px 0 0 5px', color: BONE,
-            fontFamily: '"Inter Tight",sans-serif', fontSize: 13, outline: 'none',
-          }}/>
-          <button style={{
-            padding: '15px 26px', background: GOLD, color: BG, border: 'none',
-            borderRadius: '0 5px 5px 0',
-            fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
-            letterSpacing: '0.20em', textTransform: 'uppercase', fontWeight: 500,
-            cursor: 'pointer', whiteSpace: 'nowrap',
-          }}>
+        <div style={{ maxWidth: 420, width: '100%' }}>
+          <div style={{ position: 'relative', marginBottom: 14 }}>
+            <input
+              type="email"
+              placeholder="your@email.com"
+              style={{
+                width: '100%', padding: '16px 20px',
+                background: 'rgba(232,212,168,0.03)',
+                border: 'none', borderBottom: `1px solid rgba(232,212,168,0.22)`,
+                color: BONE, fontFamily: '"Inter Tight",sans-serif',
+                fontSize: 14, fontWeight: 300, outline: 'none',
+                letterSpacing: '0.04em',
+              }}
+              onFocus={e => { e.currentTarget.style.borderBottomColor = GOLD }}
+              onBlur={e =>  { e.currentTarget.style.borderBottomColor = 'rgba(232,212,168,0.22)' }}
+            />
+          </div>
+          <button
+            style={{
+              width: '100%', padding: '16px 0',
+              background: GOLD, color: BG, border: 'none', borderRadius: 4,
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+              letterSpacing: '0.24em', textTransform: 'uppercase', fontWeight: 500,
+              cursor: 'pointer', whiteSpace: 'nowrap',
+              boxShadow: '0 0 48px rgba(212,182,134,0.28), 0 0 96px rgba(212,182,134,0.10)',
+              transition: 'transform 0.25s, box-shadow 0.25s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 0 64px rgba(212,182,134,0.42), 0 0 128px rgba(212,182,134,0.16)' }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 0 48px rgba(212,182,134,0.28), 0 0 96px rgba(212,182,134,0.10)' }}
+          >
             Request Access
           </button>
         </div>
 
-        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: DIM, marginTop: 16 }}>
-          By invitation only &nbsp;·&nbsp; No spam, ever
-        </p>
       </motion.div>
     </section>
   )
@@ -475,22 +488,22 @@ export default function Welcome() {
         <motion.div variants={stagger} initial="hidden" animate="show"
           style={{ position: 'relative', zIndex: 1, maxWidth: 860 }}>
 
-          <motion.p variants={reveal} style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.40em', textTransform: 'uppercase', color: GOLD, opacity: 0.75, marginBottom: 32 }}>
+          <motion.p variants={fade} style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.40em', textTransform: 'uppercase', color: GOLD, opacity: 0.75, marginBottom: 32 }}>
             For the Chronically Curious
           </motion.p>
 
-          <motion.h1 variants={reveal} style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 'clamp(52px, 7.5vw, 108px)', lineHeight: 1.02, letterSpacing: '-0.025em', color: BONE, margin: '0 0 4px' }}>
+          <motion.h1 variants={wipe} style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 'clamp(52px, 7.5vw, 108px)', lineHeight: 1.02, letterSpacing: '-0.025em', color: BONE, margin: '0 0 4px' }}>
             Plan together.
           </motion.h1>
-          <motion.h1 variants={reveal} style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 'clamp(52px, 7.5vw, 108px)', lineHeight: 1.02, letterSpacing: '-0.025em', background: GOLD_GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', display: 'block', marginBottom: 32 }}>
+          <motion.h1 variants={wipe} style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 'clamp(52px, 7.5vw, 108px)', lineHeight: 1.02, letterSpacing: '-0.025em', background: GOLD_GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', display: 'block', marginBottom: 32 }}>
             Travel better.
           </motion.h1>
 
-          <motion.p variants={reveal} style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 15, lineHeight: 1.88, color: MUTE, maxWidth: 340, margin: '0 auto 40px' }}>
-            The private intelligence layer for people who know exactly where they want to go.
+          <motion.p variants={fade} style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 15, lineHeight: 1.88, color: MUTE, margin: '0 auto 40px', whiteSpace: 'nowrap' }}>
+            Your next chapter is one destination away.
           </motion.p>
 
-          <motion.div variants={reveal}>
+          <motion.div variants={fade}>
             <button
               style={{ fontFamily: '"Inter Tight",sans-serif', display: 'inline-flex', alignItems: 'center', gap: 12, padding: '17px 44px', borderRadius: 6, background: GOLD, color: BG, border: 'none', fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, cursor: 'pointer', boxShadow: '0 0 60px rgba(212,182,134,0.26), 0 0 120px rgba(212,182,134,0.09)', transition: 'transform 0.28s, box-shadow 0.28s' }}
               onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 0 80px rgba(212,182,134,0.38),0 0 140px rgba(212,182,134,0.13)' }}
@@ -524,7 +537,7 @@ export default function Welcome() {
       <footer style={{ position: 'relative', zIndex: 10, padding: '24px 64px', borderTop: `1px solid ${HAIRLINE}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(8,8,7,0.7)', backdropFilter: 'blur(16px)' }}>
         <SonderNav3D markSize={32}/>
         <span style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 10, letterSpacing: '0.18em', color: DIM }}>
-          © 2025 Sonder
+          © 2026 Sonder
         </span>
       </footer>
 

@@ -94,7 +94,7 @@ export default function MatchDetail() {
 
   return (
     <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
-      <AppBackground />
+      <AppBackground accent="#8B5CF6" />
 
       {/* nav */}
       <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', padding: '0 48px', display: 'flex', alignItems: 'center', gap: 24, height: 68 }}>
