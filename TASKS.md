@@ -12,9 +12,9 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Schemas
 
-- [x] `shreyas/schemas/enums.py` — `ApprovalStatus` — created; verify values match approval flow
-- [x] `shreyas/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch` — created; verify fields match Screen 4 and your matching algorithm output
-- [x] `shreyas/schemas/chat.py` — `ChatMessage`, `ChatSession`, `ChatStartResponse`, `SharedItinerary`, `ItineraryUpdateEvent` — created; verify match Screens 5–8 and WebSocket layer
+- [ ] `shreyas/schemas/enums.py` — `ApprovalStatus` — verify values match approval flow
+- [ ] `shreyas/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch` — verify fields match Screen 4 and your matching algorithm output
+- [ ] `shreyas/schemas/chat.py` — `ChatMessage`, `ChatSession`, `ChatStartResponse`, `SharedItinerary`, `ItineraryUpdateEvent` — verify match Screens 5–8 and WebSocket layer
 
 ### Candidate Selection — Embeddings
 
@@ -136,8 +136,8 @@ Jahnvi owns only the user-facing input schemas. Each other team member owns thei
 
 ### Schemas
 
-- [x] `ali/schemas/enums.py` — `ModelTier` — created; verify values are correct
-- [x] `ali/schemas/trip.py` — `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary` — created; verify fields match your generation output and Figma Screen 3
+- [ ] `ali/schemas/enums.py` — `ModelTier` — verify values are correct
+- [ ] `ali/schemas/trip.py` — `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary` — verify fields match your generation output and Figma Screen 3
 
 ### Vector Database (do first — Shreyas is blocked on this)
 
@@ -196,9 +196,9 @@ Ali configures two slots — Small and Large — via env vars. Mushahid separate
 
 ### Schemas
 
-- [x] `mushahid/schemas/enums.py` — `ValidationStatus`, `VisaRequirement` — created; verify values
-- [x] `mushahid/schemas/validation.py` — `ConstraintSatisfaction`, `ValidationResult` — created; verify fields match your rule checks and LLM critic output
-- [x] `mushahid/schemas/api.py` — `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest`, `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`, `VisaInfo` — created; verify all API contracts match your route handlers
+- [ ] `mushahid/schemas/enums.py` — `ValidationStatus`, `VisaRequirement` — verify values
+- [ ] `mushahid/schemas/validation.py` — `ConstraintSatisfaction`, `ValidationResult` — verify fields match your rule checks and LLM critic output
+- [ ] `mushahid/schemas/api.py` — `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest`, `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`, `VisaInfo` — verify all API contracts match your route handlers
 
 ### FastAPI App (do first)
 
