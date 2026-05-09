@@ -488,11 +488,6 @@ export default function Welcome() {
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(ellipse 70% 65% at 50% 48%, rgba(10,9,8,0.94) 0%, transparent 100%)' }}/>
         <div style={{ position: 'absolute', top: '26%', left: '50%', transform: 'translateX(-50%)', width: 800, height: 560, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(212,182,134,0.12) 0%, transparent 65%)', pointerEvents: 'none' }}/>
 
-        {/* emblem — centered behind hero copy */}
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -54%)', zIndex: 0, opacity: 0.72, pointerEvents: 'none' }}>
-          <HeroEmblem size={600}/>
-        </div>
-
         <motion.div variants={stagger} initial="hidden" animate="show"
           style={{ position: 'relative', zIndex: 1, maxWidth: 860 }}>
 
