@@ -2,33 +2,41 @@ import openai
 from shared.config import OPENAI_API_KEY, EMBED_MODEL, EMBED_MODEL_PROVIDER
 from shared.schemas import UserProfile
 
-# Default embedding model — set EMBED_MODEL in .env to override.
-# text-embedding-3-small: 1536 dims, $0.02/1M tokens, best cost/quality for retrieval.
-_DEFAULT_EMBED_MODEL = "text-embedding-3-small"
+_local_model = None
 
 
-def _get_model() -> str:
-    return EMBED_MODEL or _DEFAULT_EMBED_MODEL
+def _get_local_model():
+    global _local_model
+    if _local_model is None:
+        from sentence_transformers import SentenceTransformer
+        _local_model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _local_model
 
 
 def embed_text(text: str) -> list[float]:
     """
-    Embed a single string into a float vector using OpenAI embeddings.
-    Length == EMBED_DIMENSIONS (default 1536 for text-embedding-3-small).
+    Embed a single string into a float vector.
+    Provider controlled by EMBED_MODEL_PROVIDER in .env:
+      local  -> sentence-transformers all-MiniLM-L6-v2 (384 dims, no API key)
+      openai -> text-embedding-3-small (1536 dims, requires OPENAI_API_KEY)
     """
+    if EMBED_MODEL_PROVIDER == "local":
+        return _get_local_model().encode(text).tolist()
+
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
-    response = client.embeddings.create(model=_get_model(), input=text)
+    response = client.embeddings.create(model=EMBED_MODEL or "text-embedding-3-small", input=text)
     return response.data[0].embedding
 
 
 def embed_batch(texts: list[str]) -> list[list[float]]:
     """
-    Embed a list of strings in a single API call.
-    Returns vectors in the same order as the input list.
+    Embed a list of strings. Returns vectors in the same order as input.
     """
+    if EMBED_MODEL_PROVIDER == "local":
+        return _get_local_model().encode(texts).tolist()
+
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
-    response = client.embeddings.create(model=_get_model(), input=texts)
-    # OpenAI returns results in the same order as input
+    response = client.embeddings.create(model=EMBED_MODEL or "text-embedding-3-small", input=texts)
     return [item.embedding for item in response.data]
 
 
@@ -47,12 +55,11 @@ def build_user_query(user_profile: UserProfile) -> str:
 
     if user_profile.persona_answers:
         pa = user_profile.persona_answers
-        interest_str = (
+        parts.append(
             f"food={pa.food_interest} adventure={pa.adventure_interest} "
             f"culture={pa.culture_interest} nature={pa.nature_interest} "
             f"nightlife={pa.nightlife_interest}"
         )
-        parts.append(interest_str)
 
     if user_profile.emotion_intent:
         parts.append(f"mood: {user_profile.emotion_intent.value}")
@@ -62,8 +69,6 @@ def build_user_query(user_profile: UserProfile) -> str:
 
 def build_refined_query(user_profile: UserProfile, feedback: str) -> str:
     """
-    Extend build_user_query() with explicit feedback text for re-querying Pinecone
-    after refinement — gives the retrieval layer a fresh signal.
+    Extend build_user_query() with explicit feedback for re-querying Pinecone after refinement.
     """
-    base = build_user_query(user_profile)
-    return f"{base} | feedback: {feedback}"
+    return f"{build_user_query(user_profile)} | feedback: {feedback}"
