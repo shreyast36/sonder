@@ -11,6 +11,7 @@ import SharedItinerary from './pages/SharedItinerary'
 import Notes           from './pages/Notes'
 import Discover        from './pages/Discover'
 import LuxCursor       from './components/LuxCursor'
+import { ToastProvider } from './components/Toast'
 
 function Page({ children }) {
   return (
@@ -29,7 +30,7 @@ export default function App() {
   const location = useLocation()
 
   return (
-    <>
+    <ToastProvider>
       <LuxCursor/>
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
@@ -46,6 +47,6 @@ export default function App() {
           <Route path="*"                   element={<Navigate to="/" replace/>}/>
         </Routes>
       </AnimatePresence>
-    </>
+    </ToastProvider>
   )
 }
