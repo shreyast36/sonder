@@ -27,7 +27,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from mushahid.routes import plan_trip, health
+from mushahid.routes import plan_trip, update_trip, cotraveller, chat, users, visa, export, health
 
 app.include_router(health.router)
+app.include_router(visa.router)
+app.include_router(users.router)
 app.include_router(plan_trip.router)
+app.include_router(update_trip.router)
+app.include_router(cotraveller.router)
+app.include_router(chat.router)
+app.include_router(export.router)

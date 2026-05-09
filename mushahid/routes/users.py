@@ -1,8 +1,12 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from mushahid.auth import verify_token
+from mushahid.realtime.firestore import create_user_profile, get_db
+from shared.config import LOCAL_MODE
 
 router = APIRouter()
+
+_local_profiles: dict = {}
 
 
 class CreateProfileRequest(BaseModel):
@@ -10,39 +14,31 @@ class CreateProfileRequest(BaseModel):
 
 
 @router.post("/users/profile", status_code=201)
-async def create_user_profile(body: CreateProfileRequest, uid: str = Depends(verify_token)):
-    """
-    Create a UserProfile document in Firestore on first sign-in.
-    Call this once immediately after Firebase Auth creates the account — before
-    the user reaches Screen 2. Every other endpoint assumes the profile exists.
+async def create_profile(body: CreateProfileRequest, uid: str = Depends(verify_token)):
+    if LOCAL_MODE:
+        if uid in _local_profiles:
+            return {"user_id": uid, "display_name": _local_profiles[uid], "created": False}
+        _local_profiles[uid] = body.display_name
+        await create_user_profile(uid, body.display_name)
+        return {"user_id": uid, "display_name": body.display_name, "created": True}
 
-    Auth: requires Firebase ID token (user_id extracted from the verified token).
-
-    Expected input:
-        Authorization: Bearer <firebase_id_token>
-        { "display_name": "Arjun" }
-
-    Expected output:
-        { "user_id": "firebase_uid_abc123", "display_name": "Arjun", "created": true }
-
-    Idempotent: if the profile already exists, return 200 without overwriting.
-    """
-    # TODO: user_id = verify_token(authorization header)
-    # TODO: check if user_profiles/{user_id} already exists — return 200 if so
-    # TODO: await create_user_profile(user_id, body.display_name)
-    # TODO: return {"user_id": user_id, "display_name": body.display_name, "created": True}
-    raise NotImplementedError
+    db = get_db()
+    doc = db.collection("user_profiles").document(uid).get()
+    if doc.exists:
+        return {"user_id": uid, "display_name": doc.to_dict().get("display_name"), "created": False}
+    await create_user_profile(uid, body.display_name)
+    return {"user_id": uid, "display_name": body.display_name, "created": True}
 
 
 @router.get("/users/profile")
-async def get_user_profile(uid: str = Depends(verify_token)):
-    """
-    Fetch the current user's profile from Firestore.
+async def get_profile(uid: str = Depends(verify_token)):
+    if LOCAL_MODE:
+        if uid not in _local_profiles:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        return {"user_id": uid, "display_name": _local_profiles[uid]}
 
-    Auth: requires Firebase ID token.
-
-    Expected output: UserProfile as JSON, or 404 if profile not yet created.
-    """
-    # TODO: user_id = verify_token(authorization header)
-    # TODO: return get_db().collection("user_profiles").document(user_id).get()
-    raise NotImplementedError
+    db = get_db()
+    doc = db.collection("user_profiles").document(uid).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return doc.to_dict()
