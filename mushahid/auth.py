@@ -1,51 +1,45 @@
+import firebase_admin
+from firebase_admin import credentials, auth as firebase_auth
 from fastapi import Header, HTTPException, Query, status
+from shared.config import (
+    FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY,
+    FIREBASE_CLIENT_EMAIL, LOCAL_MODE,
+)
+
+_app = None
+
+
+def _get_firebase_app():
+    global _app
+    if _app is not None:
+        return _app
+    cred = credentials.Certificate({
+        "type": "service_account",
+        "project_id": FIREBASE_PROJECT_ID,
+        "private_key": FIREBASE_PRIVATE_KEY,
+        "client_email": FIREBASE_CLIENT_EMAIL,
+        "token_uri": "https://oauth2.googleapis.com/token",
+    })
+    _app = firebase_admin.initialize_app(cred)
+    return _app
+
+
+def _verify(token: str) -> str:
+    if LOCAL_MODE:
+        return token or "local_dev_uid"
+    _get_firebase_app()
+    try:
+        decoded = firebase_auth.verify_id_token(token)
+        return decoded["uid"]
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
 
 async def verify_token(authorization: str = Header(...)) -> str:
-    """
-    FastAPI dependency. Verifies a Firebase ID token from the Authorization header.
-    Returns the user UID on success. Raises HTTP 401 on invalid or expired token.
-
-    Usage — add to any protected route:
-        @router.post("/plan-trip")
-        async def plan_trip(request: Request, body: PlanTripRequest, uid: str = Depends(verify_token)):
-            ...
-
-    Expected header:
-        Authorization: Bearer <firebase_id_token>
-
-    Expected output:
-        "firebase_uid_abc123"
-    """
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Bearer token")
-    token = authorization.replace("Bearer ", "")
-    # TODO: from firebase_admin import auth as firebase_auth
-    # TODO: try:
-    # TODO:     decoded = firebase_auth.verify_id_token(token)
-    # TODO:     return decoded["uid"]
-    # TODO: except firebase_auth.InvalidIdTokenError:
-    # TODO:     raise HTTPException(status_code=401, detail="Invalid or expired token")
-    raise NotImplementedError
+    return _verify(authorization.removeprefix("Bearer "))
 
 
-async def verify_ws_token(token: str = Query(..., description="Firebase ID token")) -> str:
-    """
-    WebSocket auth dependency. Browsers cannot set Authorization headers on WebSocket
-    connections, so the Firebase ID token is passed as a query parameter instead.
-
-    Usage:
-        @router.websocket("/ws/chat/{session_id}")
-        async def chat_ws(websocket: WebSocket, session_id: str, uid: str = Depends(verify_ws_token)):
-            ...
-
-    Client connects to:
-        wss://api.sonder.app/ws/chat/session_abc?token=<firebase_id_token>
-
-    On invalid token: close the WebSocket with code 1008 (Policy Violation) before accepting.
-    """
-    # TODO: same verification logic as verify_token
-    # Note: cannot close the WebSocket here — the websocket object is only available in
-    # the route handler. On failure, raise HTTPException(1008); FastAPI maps it to a
-    # WebSocket close. Handle the close in the route if you need custom close logic.
-    raise NotImplementedError
+async def verify_ws_token(token: str = Query(...)) -> str:
+    return _verify(token)
