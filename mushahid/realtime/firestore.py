@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from datetime import datetime, timezone
 from shared.config import (
     FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL, LOCAL_MODE,
@@ -108,14 +109,22 @@ async def write_chat_session(session) -> None:
     )
 
 
+async def get_chat_session(session_id: str) -> dict | None:
+    if LOCAL_MODE:
+        return _store.get(f"chat:{session_id}")
+    doc = await asyncio.to_thread(
+        lambda: get_db().collection("chat_sessions").document(session_id).get()
+    )
+    return doc.to_dict() if doc.exists else None
+
+
 async def append_chat_message(session_id: str, message: dict) -> None:
     if LOCAL_MODE:
         session_data = _store.get(f"chat:{session_id}", {})
         session_data.setdefault("messages", []).append(message)
         _store[f"chat:{session_id}"] = session_data
         return
-    import uuid
-    msg_id = message.get("id") or str(uuid.uuid4())
+    msg_id = str(uuid.uuid4())
     await asyncio.to_thread(
         lambda: get_db()
             .collection("chat_sessions")

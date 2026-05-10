@@ -26,7 +26,7 @@ async def run_refinement_loop(
     # Merge per-activity feedback into the feedback string
     if activity_feedback:
         act_lines = "; ".join(
-            f"{af.activity_id} ({af.feedback_type})"
+            f"{af.activity_id} ({af.action})" + (f": {af.reason}" if af.reason else "")
             for af in activity_feedback
         )
         feedback = f"{feedback} | Activity feedback: {act_lines}".strip(" |")

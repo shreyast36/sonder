@@ -169,6 +169,6 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
             validation=validation,
         ).model_dump(mode="json"))
 
-    except Exception as e:
+    except Exception:
         await write_itinerary_status(user_profile.user_id, "error")
-        yield format_event("error", {"step": step, "message": str(e)})
+        yield format_event("error", {"step": step, "message": "An unexpected error occurred. Please try again."})

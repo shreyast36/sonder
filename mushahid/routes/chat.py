@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from shared.schemas import ChatSession, ChatStartResponse, ApprovalStatus
 from mushahid.auth import verify_token, verify_token_string
 from mushahid.utils.sanitize import sanitize_user_input
-from mushahid.realtime.firestore import write_chat_session, append_chat_message
+from mushahid.realtime.firestore import write_chat_session, append_chat_message, get_chat_session
 
 router = APIRouter()
 
@@ -14,12 +14,12 @@ _sessions: dict = {}
 
 
 @router.post("/chat/start", response_model=ChatStartResponse)
-async def start_chat(user_id: str, profile_id: str, itinerary_id: str, uid: str = Depends(verify_token)):
+async def start_chat(profile_id: str, itinerary_id: str, uid: str = Depends(verify_token)):
     from ali.generation.topics import generate_topics, generate_icebreaker
     from shared.schemas import UserProfile, CoTravellerMatch, CoTravellerProfile, Itinerary, Destination
     from shared.schemas import PacePreference, BudgetStyle, TravelStyle
 
-    user_profile = UserProfile(user_id=user_id, display_name=uid, constraints=None, persona_answers=None)
+    user_profile = UserProfile(user_id=uid, display_name=uid, constraints=None, persona_answers=None)
 
     match = CoTravellerMatch(
         profile=CoTravellerProfile(
@@ -34,7 +34,7 @@ async def start_chat(user_id: str, profile_id: str, itinerary_id: str, uid: str 
     )
 
     dummy_itinerary = Itinerary(
-        itinerary_id=itinerary_id, user_id=user_id,
+        itinerary_id=itinerary_id, user_id=uid,
         destination=Destination(
             destination_id="dest_001", city="Destination", country="",
             avg_daily_cost_usd=100.0, tags=[], description="",
@@ -50,7 +50,7 @@ async def start_chat(user_id: str, profile_id: str, itinerary_id: str, uid: str 
     session_id = str(uuid.uuid4())
     session = ChatSession(
         session_id=session_id,
-        user_id=user_id,
+        user_id=uid,
         profile_id=profile_id,
         approval_status=ApprovalStatus.pending,
         created_at=datetime.now(timezone.utc).isoformat(),
@@ -61,11 +61,22 @@ async def start_chat(user_id: str, profile_id: str, itinerary_id: str, uid: str 
     return ChatStartResponse(session=session, icebreaker=icebreaker, topics=topics)
 
 
+def _assert_participant(session_id: str, uid: str) -> None:
+    """Raise 403 if uid is not a participant in the session."""
+    from fastapi import HTTPException
+    session_data = _sessions.get(session_id)
+    if session_data:
+        s = session_data["session"]
+        if uid not in (s.user_id, s.profile_id):
+            raise HTTPException(status_code=403, detail="Not a participant in this session")
+
+
 @router.post("/chat/approve")
-async def approve_match(session_id: str, user_id: str, _uid: str = Depends(verify_token)):
+async def approve_match(session_id: str, _uid: str = Depends(verify_token)):
+    _assert_participant(session_id, _uid)
     try:
         from shreyas.cotraveller.approval import approve_match as _approve
-        status = _approve(session_id, user_id)
+        status = _approve(session_id, _uid)
         return {"status": status.value}
     except (NotImplementedError, Exception):
         if session_id in _sessions:
@@ -76,10 +87,11 @@ async def approve_match(session_id: str, user_id: str, _uid: str = Depends(verif
 
 
 @router.post("/chat/deny")
-async def deny_match(session_id: str, user_id: str, _uid: str = Depends(verify_token)):
+async def deny_match(session_id: str, _uid: str = Depends(verify_token)):
+    _assert_participant(session_id, _uid)
     try:
         from shreyas.cotraveller.approval import deny_match as _deny
-        status = _deny(session_id, user_id)
+        status = _deny(session_id, _uid)
         return {"status": status.value}
     except (NotImplementedError, Exception):
         if session_id in _sessions:
@@ -104,10 +116,22 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
         return
 
     # Ownership check — uid must be a participant in this session.
+    # Check in-memory first; fall back to Firestore (handles server restarts).
     session_data = _sessions.get(session_id)
     if session_data:
         session_obj = session_data["session"]
         if uid not in (session_obj.user_id, session_obj.profile_id):
+            await websocket.close(code=4003, reason="Not a participant in this session")
+            return
+    else:
+        try:
+            stored = await get_chat_session(session_id)
+        except Exception:
+            stored = None
+        if stored is None:
+            await websocket.close(code=4004, reason="Session not found")
+            return
+        if uid not in (stored.get("user_id"), stored.get("profile_id")):
             await websocket.close(code=4003, reason="Not a participant in this session")
             return
 
