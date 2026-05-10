@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from jahnvi.schemas.user import TripConstraints, PersonaQuestionAnswers, UserProfile
 from ali.schemas.trip import Itinerary
@@ -156,5 +156,5 @@ class EmailItineraryRequest(BaseModel):
         )
     """
     itinerary_id:  str
-    recipients:    list[str]
+    recipients:    list[str] = Field(..., max_length=10)
     include_notes: bool = True

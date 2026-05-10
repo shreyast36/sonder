@@ -1,4 +1,5 @@
 import asyncio
+import json
 import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -11,6 +12,16 @@ router = APIRouter()
 
 # In-memory session store (Firestore replaces this in production)
 _sessions: dict = {}
+
+_MAX_WS_MSG_BYTES = 64 * 1024  # 64 KB per message
+
+
+async def _receive_json_checked(websocket: WebSocket) -> dict:
+    text = await websocket.receive_text()
+    if len(text.encode()) > _MAX_WS_MSG_BYTES:
+        await websocket.close(code=1009, reason="Message too large")
+        raise WebSocketDisconnect(code=1009)
+    return json.loads(text)
 
 
 @router.post("/chat/start", response_model=ChatStartResponse)
@@ -61,19 +72,28 @@ async def start_chat(profile_id: str, itinerary_id: str, uid: str = Depends(veri
     return ChatStartResponse(session=session, icebreaker=icebreaker, topics=topics)
 
 
-def _assert_participant(session_id: str, uid: str) -> None:
-    """Raise 403 if uid is not a participant in the session."""
+async def _assert_participant(session_id: str, uid: str) -> None:
+    """Raise 403/404 if uid is not a participant. Falls back to Firestore when session not in memory."""
     from fastapi import HTTPException
     session_data = _sessions.get(session_id)
     if session_data:
         s = session_data["session"]
         if uid not in (s.user_id, s.profile_id):
             raise HTTPException(status_code=403, detail="Not a participant in this session")
+    else:
+        try:
+            stored = await get_chat_session(session_id)
+        except Exception:
+            stored = None
+        if stored is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if uid not in (stored.get("user_id"), stored.get("profile_id")):
+            raise HTTPException(status_code=403, detail="Not a participant in this session")
 
 
 @router.post("/chat/approve")
 async def approve_match(session_id: str, _uid: str = Depends(verify_token)):
-    _assert_participant(session_id, _uid)
+    await _assert_participant(session_id, _uid)
     try:
         from shreyas.cotraveller.approval import approve_match as _approve
         status = _approve(session_id, _uid)
@@ -88,7 +108,7 @@ async def approve_match(session_id: str, _uid: str = Depends(verify_token)):
 
 @router.post("/chat/deny")
 async def deny_match(session_id: str, _uid: str = Depends(verify_token)):
-    _assert_participant(session_id, _uid)
+    await _assert_participant(session_id, _uid)
     try:
         from shreyas.cotraveller.approval import deny_match as _deny
         status = _deny(session_id, _uid)
@@ -108,7 +128,7 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
     # First message must be {"type": "auth", "token": "<firebase_id_token>"}.
     # Tokens must never travel in query params — they appear in server logs.
     try:
-        auth_msg = await asyncio.wait_for(websocket.receive_json(), timeout=10.0)
+        auth_msg = await asyncio.wait_for(_receive_json_checked(websocket), timeout=10.0)
         token = auth_msg.get("token", "")
         uid = verify_token_string(token)
     except Exception:
@@ -141,7 +161,7 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
         await manager.connect(websocket, session_id)
         try:
             while True:
-                msg = await websocket.receive_json()
+                msg = await _receive_json_checked(websocket)
                 if "content" in msg:
                     msg["content"] = sanitize_user_input(msg["content"])
                 msg["sender_id"] = uid
@@ -153,7 +173,7 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
     except (NotImplementedError, Exception):
         try:
             while True:
-                msg = await websocket.receive_json()
+                msg = await _receive_json_checked(websocket)
                 content = sanitize_user_input(msg.get("content", ""))
                 outgoing = {
                     "type": msg.get("type", "message"),
