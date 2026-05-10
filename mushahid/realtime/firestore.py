@@ -96,3 +96,31 @@ async def update_user_profile(user_id: str, updates: dict) -> None:
     await asyncio.to_thread(
         lambda: get_db().collection("user_profiles").document(user_id).update(updates)
     )
+
+
+async def write_chat_session(session) -> None:
+    data = session.model_dump(mode="json")
+    if LOCAL_MODE:
+        _store[f"chat:{session.session_id}"] = {**data, "messages": []}
+        return
+    await asyncio.to_thread(
+        lambda: get_db().collection("chat_sessions").document(session.session_id).set(data)
+    )
+
+
+async def append_chat_message(session_id: str, message: dict) -> None:
+    if LOCAL_MODE:
+        session_data = _store.get(f"chat:{session_id}", {})
+        session_data.setdefault("messages", []).append(message)
+        _store[f"chat:{session_id}"] = session_data
+        return
+    import uuid
+    msg_id = message.get("id") or str(uuid.uuid4())
+    await asyncio.to_thread(
+        lambda: get_db()
+            .collection("chat_sessions")
+            .document(session_id)
+            .collection("messages")
+            .document(msg_id)
+            .set(message)
+    )

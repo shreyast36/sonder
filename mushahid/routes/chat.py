@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from shared.schemas import ChatSession, ChatStartResponse, ApprovalStatus
 from mushahid.auth import verify_token, verify_ws_token
 from mushahid.utils.sanitize import sanitize_user_input
+from mushahid.realtime.firestore import write_chat_session, append_chat_message
 
 router = APIRouter()
 
@@ -55,6 +56,7 @@ async def start_chat(user_id: str, profile_id: str, itinerary_id: str, uid: str 
         created_at=datetime.now(timezone.utc).isoformat(),
     )
     _sessions[session_id] = {"session": session, "messages": []}
+    await write_chat_session(session)
 
     return ChatStartResponse(session=session, icebreaker=icebreaker, topics=topics)
 
@@ -98,6 +100,7 @@ async def chat_websocket(websocket: WebSocket, session_id: str, uid: str = Depen
                 msg = await websocket.receive_json()
                 msg["sender_id"] = uid
                 msg["timestamp"] = datetime.now(timezone.utc).isoformat()
+                await append_chat_message(session_id, msg)
                 await manager.broadcast_to_session(session_id, msg)
         except WebSocketDisconnect:
             manager.disconnect(websocket, session_id)
@@ -108,11 +111,13 @@ async def chat_websocket(websocket: WebSocket, session_id: str, uid: str = Depen
             while True:
                 msg = await websocket.receive_json()
                 content = sanitize_user_input(msg.get("content", ""))
-                await websocket.send_json({
+                outgoing = {
                     "type": msg.get("type", "message"),
                     "sender_id": uid,
                     "content": content,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                })
+                }
+                await append_chat_message(session_id, outgoing)
+                await websocket.send_json(outgoing)
         except WebSocketDisconnect:
             pass
