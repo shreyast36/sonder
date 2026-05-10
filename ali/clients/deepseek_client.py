@@ -5,6 +5,15 @@ from shared.config import DEEPSEEK_API_KEY, SMALL_MODEL_NAME, LARGE_MODEL_NAME
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
+_client: openai.AsyncOpenAI | None = None
+
+
+def _get_client() -> openai.AsyncOpenAI:
+    global _client
+    if _client is None:
+        _client = openai.AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
+    return _client
+
 
 class DeepSeekSmallClient(BaseLLMClient):
     """
@@ -25,8 +34,7 @@ class DeepSeekSmallClient(BaseLLMClient):
         return 0.000270  # deepseek-chat: $0.27 per 1M input tokens (cache miss)
 
     async def complete(self, prompt: str, system: str = "", max_tokens: int = 512) -> str:
-        client = openai.AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
-        response = await client.chat.completions.create(
+        response = await _get_client().chat.completions.create(
             model=self.model_name,
             messages=[
                 {"role": "system", "content": system},
@@ -37,18 +45,15 @@ class DeepSeekSmallClient(BaseLLMClient):
         return response.choices[0].message.content
 
     async def stream(self, prompt: str, system: str = ""):
-        client = openai.AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
-        response = await client.chat.completions.create(
+        async with _get_client().chat.completions.stream(
             model=self.model_name,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            stream=True,
-        )
-        async for chunk in response:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
 
 
 class DeepSeekLargeClient(BaseLLMClient):
@@ -70,8 +75,7 @@ class DeepSeekLargeClient(BaseLLMClient):
         return 0.000270  # deepseek-chat: $0.27 per 1M input tokens (cache miss)
 
     async def complete(self, prompt: str, system: str = "", max_tokens: int = 4096) -> str:
-        client = openai.AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
-        response = await client.chat.completions.create(
+        response = await _get_client().chat.completions.create(
             model=self.model_name,
             messages=[
                 {"role": "system", "content": system},
@@ -82,15 +86,12 @@ class DeepSeekLargeClient(BaseLLMClient):
         return response.choices[0].message.content
 
     async def stream(self, prompt: str, system: str = ""):
-        client = openai.AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
-        response = await client.chat.completions.create(
+        async with _get_client().chat.completions.stream(
             model=self.model_name,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            stream=True,
-        )
-        async for chunk in response:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text

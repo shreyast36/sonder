@@ -3,6 +3,15 @@ from ali.clients.base import BaseLLMClient
 from shared.schemas import ModelTier
 from shared.config import ANTHROPIC_API_KEY, LARGE_MODEL_NAME
 
+_client: anthropic.AsyncAnthropic | None = None
+
+
+def _get_client() -> anthropic.AsyncAnthropic:
+    global _client
+    if _client is None:
+        _client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+    return _client
+
 
 class AnthropicLargeClient(BaseLLMClient):
     """
@@ -25,8 +34,7 @@ class AnthropicLargeClient(BaseLLMClient):
         return 0.003000  # claude-sonnet-4-5: $3.00 per 1M input tokens
 
     async def complete(self, prompt: str, system: str = "", max_tokens: int = 4096) -> str:
-        client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-        response = await client.messages.create(
+        response = await _get_client().messages.create(
             model=self.model_name,
             system=system,
             messages=[{"role": "user", "content": prompt}],
@@ -35,8 +43,7 @@ class AnthropicLargeClient(BaseLLMClient):
         return response.content[0].text
 
     async def stream(self, prompt: str, system: str = ""):
-        client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-        async with client.messages.stream(
+        async with _get_client().messages.stream(
             model=self.model_name,
             system=system,
             messages=[{"role": "user", "content": prompt}],

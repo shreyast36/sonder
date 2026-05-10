@@ -6,24 +6,19 @@ from shared.config import SMALL_MODEL_PROVIDER, LARGE_MODEL_PROVIDER
 
 logger = logging.getLogger(__name__)
 
+# Providers tried after the configured primary fails, in order.
+_FALLBACK_ORDER = ["deepseek", "openai", "anthropic"]
+
+
+def _build_provider_list(tier: ModelTier) -> list[str]:
+    primary = SMALL_MODEL_PROVIDER if tier == ModelTier.small else LARGE_MODEL_PROVIDER
+    return [primary] + [p for p in _FALLBACK_ORDER if p != primary]
+
 
 def get_client(tier: ModelTier) -> BaseLLMClient:
-    """
-    Return the appropriate LLM client for the given tier.
-    Provider is set via SMALL_MODEL_PROVIDER / LARGE_MODEL_PROVIDER in .env.
-
-    Expected input:  ModelTier.large
-    Expected output: the correct BaseLLMClient subclass for the provider
-    """
+    """Return the configured primary client for the given tier."""
     provider = SMALL_MODEL_PROVIDER if tier == ModelTier.small else LARGE_MODEL_PROVIDER
     return _get_client_for_provider(tier, provider)
-
-
-# Fallback chain: if primary client fails, try these in order per tier.
-_FALLBACKS: dict[ModelTier, list] = {
-    ModelTier.small: ["deepseek", "openai"],
-    ModelTier.large: ["deepseek", "openai"],
-}
 
 
 def _get_client_for_provider(tier: ModelTier, provider: str) -> BaseLLMClient:
@@ -36,17 +31,19 @@ def _get_client_for_provider(tier: ModelTier, provider: str) -> BaseLLMClient:
     if provider == "openai":
         return OpenAISmallClient() if tier == ModelTier.small else OpenAILargeClient()
     if provider == "anthropic":
+        if tier == ModelTier.small:
+            raise ValueError("Anthropic has no small-tier client — choose deepseek or openai for SMALL_MODEL_PROVIDER")
         return AnthropicLargeClient()
     raise ValueError(f"Unsupported provider '{provider}'")
 
 
-async def route_request(task_type: str, prompt: str, system: str = "", context: dict = {}) -> str:
+async def route_request(task_type: str, prompt: str, system: str = "", context: dict | None = None) -> str:
     """
     Route a task to the right model and return the full response string.
-    Falls back to the next provider in the tier if the primary fails.
+    Starts with the configured primary provider, falls back to others on failure.
     """
     tier = classify(task_type, context)
-    providers = _FALLBACKS.get(tier, [])
+    providers = _build_provider_list(tier)
 
     last_exc: Exception = RuntimeError("No providers configured")
     for provider in providers:
@@ -62,13 +59,13 @@ async def route_request(task_type: str, prompt: str, system: str = "", context: 
     raise last_exc
 
 
-async def stream_request(task_type: str, prompt: str, system: str = "", context: dict = {}):
+async def stream_request(task_type: str, prompt: str, system: str = "", context: dict | None = None):
     """
     Streaming version of route_request. Yields raw token strings.
-    Falls back to the next provider in the tier if the primary fails.
+    Starts with the configured primary provider, falls back to others on failure.
     """
     tier = classify(task_type, context)
-    providers = _FALLBACKS.get(tier, [])
+    providers = _build_provider_list(tier)
 
     for provider in providers:
         try:

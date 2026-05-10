@@ -23,7 +23,7 @@ TASK_TIER_MAP: dict[str, ModelTier] = {
 }
 
 
-def classify(task_type: str, context: dict = {}) -> ModelTier:
+def classify(task_type: str, context: dict | None = None) -> ModelTier:
     """
     Determine which model tier to use for a given task.
 

@@ -3,6 +3,15 @@ from ali.clients.base import BaseLLMClient
 from shared.schemas import ModelTier
 from shared.config import OPENAI_API_KEY, SMALL_MODEL_NAME, LARGE_MODEL_NAME
 
+_client: openai.AsyncOpenAI | None = None
+
+
+def _get_client() -> openai.AsyncOpenAI:
+    global _client
+    if _client is None:
+        _client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
+    return _client
+
 
 class OpenAISmallClient(BaseLLMClient):
     """
@@ -25,8 +34,7 @@ class OpenAISmallClient(BaseLLMClient):
         return 0.000150  # gpt-4o-mini: $0.150 per 1M input tokens
 
     async def complete(self, prompt: str, system: str = "", max_tokens: int = 512) -> str:
-        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-        response = await client.chat.completions.create(
+        response = await _get_client().chat.completions.create(
             model=self.model_name,
             messages=[
                 {"role": "system", "content": system},
@@ -37,18 +45,15 @@ class OpenAISmallClient(BaseLLMClient):
         return response.choices[0].message.content
 
     async def stream(self, prompt: str, system: str = ""):
-        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-        response = await client.chat.completions.create(
+        async with _get_client().chat.completions.stream(
             model=self.model_name,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            stream=True,
-        )
-        async for chunk in response:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
 
 
 class OpenAILargeClient(BaseLLMClient):
@@ -72,8 +77,7 @@ class OpenAILargeClient(BaseLLMClient):
         return 0.002500  # gpt-4o: $2.50 per 1M input tokens
 
     async def complete(self, prompt: str, system: str = "", max_tokens: int = 4096) -> str:
-        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-        response = await client.chat.completions.create(
+        response = await _get_client().chat.completions.create(
             model=self.model_name,
             messages=[
                 {"role": "system", "content": system},
@@ -84,15 +88,12 @@ class OpenAILargeClient(BaseLLMClient):
         return response.choices[0].message.content
 
     async def stream(self, prompt: str, system: str = ""):
-        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-        response = await client.chat.completions.create(
+        async with _get_client().chat.completions.stream(
             model=self.model_name,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            stream=True,
-        )
-        async for chunk in response:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text

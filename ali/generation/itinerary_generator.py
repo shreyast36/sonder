@@ -1,8 +1,13 @@
 import json
 from typing import AsyncIterator
-from shared.schemas import UserProfile, Destination, Activity, ItineraryDay
+from shared.schemas import UserProfile, Destination, Activity, ItineraryDay, Itinerary, ValidationResult
 from ali.routing.engine import stream_request
-from ali.generation.prompts import ITINERARY_SYSTEM_PROMPT, build_itinerary_prompt
+from ali.generation.prompts import (
+    ITINERARY_SYSTEM_PROMPT,
+    REFINEMENT_SYSTEM_PROMPT,
+    build_itinerary_prompt,
+    build_refinement_prompt,
+)
 
 
 async def generate_itinerary(
@@ -16,6 +21,21 @@ async def generate_itinerary(
     """
     prompt = build_itinerary_prompt(user_profile, destination, activities)
     async for chunk in stream_request("itinerary_generation", prompt, ITINERARY_SYSTEM_PROMPT):
+        yield chunk
+
+
+async def generate_refined_itinerary(
+    itinerary: Itinerary,
+    feedback: str,
+    validation_result: ValidationResult,
+) -> AsyncIterator[str]:
+    """
+    Stream a revised itinerary incorporating user feedback and validation issues.
+    Call this from the refinement loop instead of generate_itinerary() so that
+    the feedback actually reaches the LLM via build_refinement_prompt().
+    """
+    prompt = build_refinement_prompt(itinerary, feedback, validation_result)
+    async for chunk in stream_request("complex_refinement", prompt, REFINEMENT_SYSTEM_PROMPT):
         yield chunk
 
 
