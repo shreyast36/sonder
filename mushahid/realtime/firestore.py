@@ -1,3 +1,5 @@
+import asyncio
+from datetime import datetime, timezone
 from shared.config import (
     FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL, LOCAL_MODE,
 )
@@ -33,15 +35,18 @@ async def write_itinerary_status(user_id: str, status: str) -> None:
     if LOCAL_MODE:
         _store[f"status:{user_id}"] = status
         return
-    get_db().collection("itinerary_status").document(user_id).set({"status": status})
+    await asyncio.to_thread(
+        lambda: get_db().collection("itinerary_status").document(user_id).set({"status": status})
+    )
 
 
 async def write_itinerary(itinerary: Itinerary) -> None:
     if LOCAL_MODE:
         _store[f"itinerary:{itinerary.itinerary_id}"] = itinerary.model_dump()
         return
-    get_db().collection("itineraries").document(itinerary.itinerary_id).set(
-        itinerary.model_dump(mode="json")
+    data = itinerary.model_dump(mode="json")
+    await asyncio.to_thread(
+        lambda: get_db().collection("itineraries").document(itinerary.itinerary_id).set(data)
     )
 
 
@@ -49,20 +54,37 @@ async def get_itinerary(itinerary_id: str) -> Itinerary | None:
     if LOCAL_MODE:
         data = _store.get(f"itinerary:{itinerary_id}")
         return Itinerary.model_validate(data) if data else None
-    doc = get_db().collection("itineraries").document(itinerary_id).get()
+    doc = await asyncio.to_thread(
+        lambda: get_db().collection("itineraries").document(itinerary_id).get()
+    )
     return Itinerary.model_validate(doc.to_dict()) if doc.exists else None
 
 
 async def create_user_profile(user_id: str, display_name: str) -> None:
-    from datetime import datetime
-    doc = {"user_id": user_id, "display_name": display_name,
-           "constraints": None, "persona_answers": None,
-           "compatibility_signals": {}, "travel_style_embedding": [],
-           "created_at": datetime.utcnow().isoformat()}
+    doc = {
+        "user_id": user_id,
+        "display_name": display_name,
+        "constraints": None,
+        "persona_answers": None,
+        "compatibility_signals": {},
+        "travel_style_embedding": [],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
     if LOCAL_MODE:
         _store[f"profile:{user_id}"] = doc
         return
-    get_db().collection("user_profiles").document(user_id).set(doc)
+    await asyncio.to_thread(
+        lambda: get_db().collection("user_profiles").document(user_id).set(doc)
+    )
+
+
+async def get_user_profile(user_id: str) -> dict | None:
+    if LOCAL_MODE:
+        return _store.get(f"profile:{user_id}")
+    doc = await asyncio.to_thread(
+        lambda: get_db().collection("user_profiles").document(user_id).get()
+    )
+    return doc.to_dict() if doc.exists else None
 
 
 async def update_user_profile(user_id: str, updates: dict) -> None:
@@ -71,4 +93,6 @@ async def update_user_profile(user_id: str, updates: dict) -> None:
         existing.update(updates)
         _store[f"profile:{user_id}"] = existing
         return
-    get_db().collection("user_profiles").document(user_id).update(updates)
+    await asyncio.to_thread(
+        lambda: get_db().collection("user_profiles").document(user_id).update(updates)
+    )
