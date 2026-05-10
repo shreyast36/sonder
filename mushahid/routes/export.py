@@ -1,3 +1,5 @@
+import html as html_lib
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from shared.schemas import EmailItineraryRequest
@@ -5,30 +7,37 @@ from mushahid.auth import verify_token
 from mushahid.realtime.firestore import get_itinerary
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _render_itinerary_html(itinerary, include_notes: bool = True) -> str:
     days_html = ""
     for day in itinerary.days:
         acts = "".join(
-            f"<li><b>{ia.time}</b> — {ia.activity.name}"
-            f"{(' <em>' + ia.why_this + '</em>') if ia.why_this else ''}</li>"
+            f"<li><b>{html_lib.escape(ia.time)}</b> — {html_lib.escape(ia.activity.name)}"
+            f"{(' <em>' + html_lib.escape(ia.why_this) + '</em>') if ia.why_this else ''}</li>"
             for ia in day.activities
         )
+        theme = html_lib.escape(day.theme) if day.theme else ""
         days_html += (
             f"<h3>Day {day.day_number}"
-            f"{(' — ' + day.theme) if day.theme else ''}"
+            f"{(' — ' + theme) if theme else ''}"
             f" (${day.daily_cost_usd:.0f})</h3><ul>{acts}</ul>"
         )
 
     notes_html = ""
     if include_notes and itinerary.notes:
-        notes_html = "<h3>Notes</h3><ul>" + "".join(f"<li>{n}</li>" for n in itinerary.notes) + "</ul>"
+        notes_html = "<h3>Notes</h3><ul>" + "".join(
+            f"<li>{html_lib.escape(n)}</li>" for n in itinerary.notes
+        ) + "</ul>"
+
+    city = html_lib.escape(itinerary.destination.city)
+    country = html_lib.escape(itinerary.destination.country)
 
     return f"""
     <html><body style="font-family:sans-serif;max-width:700px;margin:auto;padding:2rem">
     <h1>Sonder Itinerary</h1>
-    <h2>{itinerary.destination.city}, {itinerary.destination.country}</h2>
+    <h2>{city}, {country}</h2>
     <p>Total budget: <b>${itinerary.total_budget_usd:.0f}</b></p>
     {days_html}{notes_html}
     </body></html>
@@ -36,34 +45,43 @@ def _render_itinerary_html(itinerary, include_notes: bool = True) -> str:
 
 
 @router.post("/export/email")
-async def email_itinerary(body: EmailItineraryRequest, _uid: str = Depends(verify_token)):
+async def email_itinerary(body: EmailItineraryRequest, uid: str = Depends(verify_token)):
     itinerary = await get_itinerary(body.itinerary_id)
     if itinerary is None:
         raise HTTPException(status_code=404, detail="Itinerary not found")
+    if itinerary.user_id != uid:
+        raise HTTPException(status_code=403, detail="Not authorised to export this itinerary")
 
+    warning = None
     try:
         from shared.email import send_itinerary_email
         html = _render_itinerary_html(itinerary, include_notes=body.include_notes)
         await send_itinerary_email(body.recipients, html)
-    except Exception:
-        pass  # email is best-effort; don't fail the request
+    except Exception as exc:
+        logger.error("Failed to send itinerary email for %s: %s", body.itinerary_id, exc)
+        warning = "Email delivery failed — itinerary was not sent."
 
-    return {"sent_to": body.recipients}
+    response = {"sent_to": body.recipients}
+    if warning:
+        response["warning"] = warning
+    return response
 
 
 @router.get("/export/pdf/{itinerary_id}")
-async def download_itinerary_pdf(itinerary_id: str, _uid: str = Depends(verify_token)):
+async def download_itinerary_pdf(itinerary_id: str, uid: str = Depends(verify_token)):
     itinerary = await get_itinerary(itinerary_id)
     if itinerary is None:
         raise HTTPException(status_code=404, detail="Itinerary not found")
+    if itinerary.user_id != uid:
+        raise HTTPException(status_code=403, detail="Not authorised to export this itinerary")
 
     html = _render_itinerary_html(itinerary, include_notes=True)
 
     try:
         import weasyprint
         pdf_bytes = weasyprint.HTML(string=html).write_pdf()
-    except Exception:
-        pdf_bytes = html.encode()
+    except ImportError:
+        raise HTTPException(status_code=503, detail="PDF export is not available on this server")
 
     return StreamingResponse(
         iter([pdf_bytes]),
