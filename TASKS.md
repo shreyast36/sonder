@@ -12,13 +12,13 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Schemas
 
-- [ ] `shreyas/schemas/enums.py` — `ApprovalStatus` — verify values match approval flow
-- [ ] `shreyas/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch` — verify fields match Screen 4 and your matching algorithm output
-- [ ] `shreyas/schemas/chat.py` — `ChatMessage`, `ChatSession`, `ChatStartResponse`, `SharedItinerary`, `ItineraryUpdateEvent` — verify match Screens 5–8 and WebSocket layer
+- [x] `shreyas/schemas/enums.py` — `ApprovalStatus` — verify values match approval flow
+- [x] `shreyas/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch` — verify fields match Screen 4 and your matching algorithm output
+- [x] `shreyas/schemas/chat.py` — `ChatMessage`, `ChatSession`, `ChatStartResponse`, `SharedItinerary`, `ItineraryUpdateEvent` — verify match Screens 5–8 and WebSocket layer
 
 ### Candidate Selection — Embeddings
 
-- [ ] `shreyas/retrieval/embeddings.py` — `embed_text()`, `embed_batch()`, `build_user_query()`, `build_refined_query()` — converts user profile into a Pinecone query vector (uses Ali's `EMBED_MODEL` from `shared/config.py`)
+- [x] `shreyas/retrieval/embeddings.py` — `embed_text()`, `embed_batch()`, `build_user_query()`, `build_refined_query()` — converts user profile into a Pinecone query vector (uses Ali's `EMBED_MODEL` from `shared/config.py`)
 
 ### Candidate Selection — Search
 
@@ -136,12 +136,12 @@ Jahnvi owns only the user-facing input schemas. Each other team member owns thei
 
 ### Schemas
 
-- [ ] `ali/schemas/enums.py` — `ModelTier` — verify values are correct
-- [ ] `ali/schemas/trip.py` — `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary` — verify fields match your generation output and Figma Screen 3
+- [x] `ali/schemas/enums.py` — `ModelTier` — verify values are correct
+- [x] `ali/schemas/trip.py` — `Destination`, `Activity`, `ItineraryActivity`, `ItineraryDay`, `Itinerary` — verify fields match your generation output and Figma Screen 3
 
 ### Vector Database (do first — Shreyas is blocked on this)
 
-- [ ] `ali/vector/client.py` — initialise Pinecone client, create index if missing, expose `get_pinecone_index()` for Shreyas's `search.py` to import
+- [x] `ali/vector/client.py` — initialise Pinecone client, create index if missing, expose `get_pinecone_index()` for Shreyas's `search.py` to import
 - [ ] Decide data source (Amadeus / Foursquare / Tripadvisor / curated CSV) and seed the index: `python -m scripts.seed_pinecone --namespace all`
 - [ ] Decide `EMBED_MODEL` + `EMBED_DIMENSIONS`, write both into `shared/config.py` — Shreyas reads these in `embeddings.py`
 
@@ -154,33 +154,33 @@ Ali configures two slots — Small and Large — via env vars. Mushahid separate
 
 ### Routing Engine
 
-- [ ] `ali/routing/classifier.py` — `classify(task_type) → "small" | "large"`, `estimate_tokens(prompt) → int`
-- [ ] `ali/routing/engine.py` — `route_request(task_type, prompt, system) → LLMResponse`, `stream_request(task_type, prompt, system) → AsyncGenerator`
+- [x] `ali/routing/classifier.py` — `classify(task_type) → "small" | "large"`, `estimate_tokens(prompt) → int`
+- [x] `ali/routing/engine.py` — `route_request(task_type, prompt, system) → LLMResponse`, `stream_request(task_type, prompt, system) → AsyncGenerator`
   - SMALL → chat_topics, icebreaker, persona_label, quick_edit, short_explanation
   - LARGE → itinerary_generation, rag_explanation, conflict_resolution, complex_refinement
   - Reads `SMALL_MODEL_PROVIDER` + `LARGE_MODEL_PROVIDER` from `shared/config.py` to pick client
 
 ### Itinerary Generation
 
-- [ ] `ali/generation/prompts.py` — `ITINERARY_SYSTEM_PROMPT`, `build_itinerary_prompt()`, `REFINEMENT_SYSTEM_PROMPT`, `build_refinement_prompt()` (accepts `activity_feedback: list[ActivityFeedback]` for targeted swaps)
-- [ ] `ali/generation/output_parser.py` — `parse_itinerary()`, `validate_structure()`, retry on malformed JSON
-- [ ] `ali/generation/itinerary_generator.py` — `generate_itinerary()` streaming to Mushahid's SSE layer
+- [x] `ali/generation/prompts.py` — `ITINERARY_SYSTEM_PROMPT`, `build_itinerary_prompt()`, `REFINEMENT_SYSTEM_PROMPT`, `build_refinement_prompt()` (accepts `activity_feedback: list[ActivityFeedback]` for targeted swaps)
+- [x] `ali/generation/output_parser.py` — `parse_itinerary()`, `validate_structure()`, retry on malformed JSON
+- [x] `ali/generation/itinerary_generator.py` — `generate_itinerary()` streaming to Mushahid's SSE layer
 
 ### RAG — Context Retrieval + Explanation
 
 > **What this is NOT:** Shreyas's `search.py` selects candidates from Pinecone (e.g. "show me the top 20 destinations"). Ali's RAG is different — once a specific activity is already chosen, it fetches factual text about that activity from Pinecone, then passes those facts to the LLM to write the "Why this?" blurb shown on Screen 3.
 
-- [ ] `ali/rag/retriever.py` — given an already-chosen activity or destination, call `shreyas/retrieval/search.py` to fetch relevant text context chunks from Pinecone
+- [x] `ali/rag/retriever.py` — given an already-chosen activity or destination, call `shreyas/retrieval/search.py` to fetch relevant text context chunks from Pinecone
   - `retrieve_activity_context(activity, user_profile) → list[str]`
   - `retrieve_destination_context(destination, user_profile) → list[str]`
-- [ ] `ali/rag/explainer.py` — take the context chunks from `retriever.py` and pass them to the LLM to generate the explanation
+- [x] `ali/rag/explainer.py` — take the context chunks from `retriever.py` and pass them to the LLM to generate the explanation
   - `explain_activity(activity, context, user_profile) → str` — one-paragraph "Why this?" shown under each activity on Screen 3
   - `explain_day(day, context, user_profile) → str`
   - `explain_itinerary(itinerary, user_profile)` — populates `why_this` on every `ItineraryActivity`
 
 ### Chat Topics
 
-- [ ] `ali/generation/topics.py` — `generate_topics()` (5 topics, SMALL model), `generate_icebreaker()` (SMALL model); both called by Mushahid's `POST /chat/start` via `asyncio.gather`, returned in `ChatStartResponse`
+- [x] `ali/generation/topics.py` — `generate_topics()` (5 topics, SMALL model), `generate_icebreaker()` (SMALL model); both called by Mushahid's `POST /chat/start` via `asyncio.gather`, returned in `ChatStartResponse`
 
 ### Integration
 
@@ -196,50 +196,50 @@ Ali configures two slots — Small and Large — via env vars. Mushahid separate
 
 ### Schemas
 
-- [ ] `mushahid/schemas/enums.py` — `ValidationStatus`, `VisaRequirement` — verify values
-- [ ] `mushahid/schemas/validation.py` — `ConstraintSatisfaction`, `ValidationResult` — verify fields match your rule checks and LLM critic output
-- [ ] `mushahid/schemas/api.py` — `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest`, `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`, `VisaInfo` — verify all API contracts match your route handlers
+- [x] `mushahid/schemas/enums.py` — `ValidationStatus`, `VisaRequirement` — verify values
+- [x] `mushahid/schemas/validation.py` — `ConstraintSatisfaction`, `ValidationResult` — verify fields match your rule checks and LLM critic output
+- [x] `mushahid/schemas/api.py` — `PlanTripRequest`, `PlanTripResponse`, `UpdateTripRequest`, `UpdateTripResponse`, `ActivityFeedback`, `EmailItineraryRequest`, `VisaInfo` — verify all API contracts match your route handlers
 
 ### FastAPI App (do first)
 
-- [ ] `mushahid/main.py` — Register all routers (plan_trip, update_trip, cotraveller, chat, health, visa, users, export); CORS; lifespan hooks (Firestore init, Sentry, PostHog, presence cleanup)
-- [ ] `mushahid/auth.py` — Firebase ID token verification (`verify_token` + `verify_ws_token` for WebSocket query param auth)
+- [x] `mushahid/main.py` — Register all routers (plan_trip, update_trip, cotraveller, chat, health, visa, users, export); CORS; lifespan hooks (Firestore init, Sentry, PostHog, presence cleanup)
+- [x] `mushahid/auth.py` — Firebase ID token verification (`verify_token` + `verify_ws_token` for WebSocket query param auth)
 
 ### Routes
 
 - [x] `mushahid/routes/health.py` — `/health` pings Firestore + Pinecone, returns `{"status": "healthy"|"degraded", "services": {...}}`
-- [ ] `mushahid/routes/visa.py` — `/visa-check` with static JSON dataset (top 20 nationality/destination combos) or Sherpa API
-- [ ] `mushahid/routes/plan_trip.py` — `POST /plan-trip` → SSE stream via orchestrator
-- [ ] `mushahid/routes/update_trip.py` — `POST /update-trip` → refinement loop (passes both `feedback` and `activity_feedback` to loop)
-- [ ] `mushahid/routes/cotraveller.py` — `POST /cotraveller` + `POST /cotraveller/regenerate`
-- [ ] `mushahid/routes/chat.py` — `POST /chat/start` (returns `ChatStartResponse` with session + icebreaker + topics), `/approve`, `/deny`, `WS /ws/chat/{id}`
-- [ ] `mushahid/routes/export.py` — `POST /export/email` (sends itinerary via `shared/email.py`), `GET /export/pdf/{id}` (streams weasyprint PDF); both verify requester is a participant
+- [x] `mushahid/routes/visa.py` — `/visa-check` with static JSON dataset (top 20 nationality/destination combos) or Sherpa API
+- [x] `mushahid/routes/plan_trip.py` — `POST /plan-trip` → SSE stream via orchestrator
+- [x] `mushahid/routes/update_trip.py` — `POST /update-trip` → refinement loop (passes both `feedback` and `activity_feedback` to loop)
+- [x] `mushahid/routes/cotraveller.py` — `POST /cotraveller` + `POST /cotraveller/regenerate`
+- [x] `mushahid/routes/chat.py` — `POST /chat/start` (returns `ChatStartResponse` with session + icebreaker + topics), `/approve`, `/deny`, `WS /ws/chat/{id}`
+- [x] `mushahid/routes/export.py` — `POST /export/email` (sends itinerary via `shared/email.py`), `GET /export/pdf/{id}` (streams weasyprint PDF); both verify requester is a participant
 
 ### Real-time Layer
 
-- [ ] `mushahid/realtime/firestore.py` — Firebase Admin init, `write_itinerary_status()`, `write_itinerary()`, `get_itinerary()`, `create_user_profile()`, `update_user_profile()`
+- [x] `mushahid/realtime/firestore.py` — Firebase Admin init, `write_itinerary_status()`, `write_itinerary()`, `get_itinerary()`, `create_user_profile()`, `update_user_profile()`
 - [x] `mushahid/realtime/sse.py` — `format_event()`, `stream_pipeline_events()`
-- [ ] `mushahid/realtime/notifications.py` — `push_notification()`, `notify_match_found()`, `notify_itinerary_ready()`, `notify_co_traveller_approved()`
+- [x] `mushahid/realtime/notifications.py` — `push_notification()`, `notify_match_found()`, `notify_itinerary_ready()`, `notify_co_traveller_approved()`
 
 ### Pipeline Orchestrator
 
-- [ ] `mushahid/pipeline/orchestrator.py` — `run_plan_trip_pipeline()` async generator — all 7 steps with SSE events; calls `explain_day()` per day as it's yielded (pipelined, not batched)
+- [x] `mushahid/pipeline/orchestrator.py` — `run_plan_trip_pipeline()` async generator — all 7 steps with SSE events; calls `explain_day()` per day as it's yielded (pipelined, not batched)
 
 ### Validation
 
 Mushahid owns two validator LLMs — one that checks Small model outputs, one that checks Large model outputs. Both are configured via env vars and called directly from `critic.py` (not through Ali's routing engine).
 
-- [ ] `mushahid/validation/rules.py` — `check_budget()`, `check_duration()`, `check_pace()`, `check_must_haves()`, `check_avoid_list()`, `run_all_checks()`
-- [ ] `mushahid/validation/critic.py` — `validate_small_output(output) → ValidationResult`, `validate_large_output(output) → ValidationResult`; each calls its own validator LLM configured via `SMALL_VALIDATOR_PROVIDER` + `LARGE_VALIDATOR_PROVIDER` in `.env`
+- [x] `mushahid/validation/rules.py` — `check_budget()`, `check_duration()`, `check_pace()`, `check_must_haves()`, `check_avoid_list()`, `run_all_checks()`
+- [x] `mushahid/validation/critic.py` — `validate_small_output(output) → ValidationResult`, `validate_large_output(output) → ValidationResult`; each calls its own validator LLM configured via `SMALL_VALIDATOR_PROVIDER` + `LARGE_VALIDATOR_PROVIDER` in `.env`
 
 ### Refinement Loop
 
-- [ ] `mushahid/refinement/loop.py` — `run_refinement_loop()` up to `MAX_REFINEMENT_ATTEMPTS`; handles both free-text `feedback` and `activity_feedback` list; re-embeds with updated signals before each Pinecone query (not just re-prompting)
+- [x] `mushahid/refinement/loop.py` — `run_refinement_loop()` up to `MAX_REFINEMENT_ATTEMPTS`; handles both free-text `feedback` and `activity_feedback` list; re-embeds with updated signals before each Pinecone query (not just re-prompting)
 
 ### Email & PDF Export
 
 - [ ] `shared/email.py` — `render_itinerary_html()` (inline-styled HTML), `send_itinerary_email()` (Resend / SendGrid / SES — set `EMAIL_PROVIDER` in `.env`)
-- [ ] `mushahid/routes/export.py` — Wire `render_itinerary_html()` into the PDF route via weasyprint; add `weasyprint` to `requirements.txt`
+- [x] `mushahid/routes/export.py` — Wire `render_itinerary_html()` into the PDF route via weasyprint; add `weasyprint` to `requirements.txt`
 
 ### Monitoring & Deployment
 
