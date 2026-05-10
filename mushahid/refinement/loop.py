@@ -8,7 +8,7 @@ from mushahid.realtime.sse import format_event
 from mushahid.realtime.firestore import write_itinerary, update_user_profile
 from mushahid.validation.critic import validate_large_output
 from mushahid.validation.rules import run_all_checks
-from ali.generation.itinerary_generator import generate_itinerary
+from ali.generation.itinerary_generator import generate_refined_itinerary
 from ali.generation.output_parser import parse_itinerary
 from ali.vector.embeddings import build_refined_query, embed_text
 
@@ -36,7 +36,7 @@ async def run_refinement_loop(
         try:
             refined_query = build_refined_query(user_profile, feedback)
             user_profile = user_profile.model_copy(update={
-                "travel_style_embedding": embed_text(refined_query)
+                "travel_style_embedding": await embed_text(refined_query)
             })
             await update_user_profile(user_profile.user_id, {
                 "travel_style_embedding": user_profile.travel_style_embedding,
@@ -56,9 +56,7 @@ async def run_refinement_loop(
 
         try:
             chunks = []
-            async for chunk in generate_itinerary(user_profile, itinerary.destination, [
-                ia.activity for day in itinerary.days for ia in day.activities
-            ]):
+            async for chunk in generate_refined_itinerary(best_itinerary, combined_feedback, best_validation):
                 chunks.append(chunk)
             raw = "".join(chunks)
             new_itinerary = parse_itinerary(
@@ -88,9 +86,9 @@ async def run_refinement_loop(
         except Exception:
             new_validation = ValidationResult(
                 itinerary_id=new_itinerary.itinerary_id,
-                status=ValidationStatus.approved,
-                score=0.75,
-                feedback="Validation error — defaulting to approved.",
+                status=ValidationStatus.revise,
+                score=0.0,
+                feedback="Validation error — flagging for revision.",
             )
 
         if new_validation.score > best_validation.score:
