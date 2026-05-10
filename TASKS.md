@@ -12,13 +12,13 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Schemas
 
-- [ ] `shreyas/schemas/enums.py` — `ApprovalStatus` — verify values match approval flow
-- [ ] `shreyas/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch` — verify fields match Screen 4 and your matching algorithm output
-- [ ] `shreyas/schemas/chat.py` — `ChatMessage`, `ChatSession`, `ChatStartResponse`, `SharedItinerary`, `ItineraryUpdateEvent` — verify match Screens 5–8 and WebSocket layer
+- [x] `shreyas/schemas/enums.py` — `ApprovalStatus` — verify values match approval flow
+- [x] `shreyas/schemas/cotraveller.py` — `CoTravellerProfile`, `CoTravellerMatch` — verify fields match Screen 4 and your matching algorithm output
+- [x] `shreyas/schemas/chat.py` — `ChatMessage`, `ChatSession`, `ChatStartResponse`, `SharedItinerary`, `ItineraryUpdateEvent` — verify match Screens 5–8 and WebSocket layer
 
 ### Candidate Selection — Embeddings
 
-- [ ] `shreyas/retrieval/embeddings.py` — `embed_text()`, `embed_batch()`, `build_user_query()`, `build_refined_query()` — converts user profile into a Pinecone query vector (uses Ali's `EMBED_MODEL` from `shared/config.py`)
+- [x] `shreyas/retrieval/embeddings.py` — `embed_text()`, `embed_batch()`, `build_user_query()`, `build_refined_query()` — converts user profile into a Pinecone query vector (uses Ali's `EMBED_MODEL` from `shared/config.py`)
 
 ### Candidate Selection — Search
 
