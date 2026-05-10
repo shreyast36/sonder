@@ -118,6 +118,8 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
         try:
             while True:
                 msg = await websocket.receive_json()
+                if "content" in msg:
+                    msg["content"] = sanitize_user_input(msg["content"])
                 msg["sender_id"] = uid
                 msg["timestamp"] = datetime.now(timezone.utc).isoformat()
                 await append_chat_message(session_id, msg)

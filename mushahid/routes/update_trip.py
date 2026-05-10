@@ -1,7 +1,9 @@
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from shared.schemas import UpdateTripRequest, UpdateTripResponse, ValidationStatus, UserProfile, Itinerary, ValidationResult as VR
+from shared.config import UPDATE_TRIP_RATE_LIMIT
 from mushahid.auth import verify_token
+from mushahid.main import limiter
 from mushahid.realtime.firestore import get_itinerary, write_itinerary, get_user_profile
 from mushahid.validation.critic import validate_large_output
 from mushahid.refinement.loop import run_refinement_loop
@@ -11,7 +13,8 @@ router = APIRouter()
 
 
 @router.post("/update-trip", response_model=UpdateTripResponse)
-async def update_trip(body: UpdateTripRequest, uid: str = Depends(verify_token)):
+@limiter.limit(UPDATE_TRIP_RATE_LIMIT)
+async def update_trip(request: Request, body: UpdateTripRequest, uid: str = Depends(verify_token)):
     itinerary = body.current_itinerary
     if itinerary is None:
         itinerary = await get_itinerary(body.itinerary_id)
@@ -31,6 +34,10 @@ async def update_trip(body: UpdateTripRequest, uid: str = Depends(verify_token))
     )
 
     feedback = sanitize_user_input(body.feedback or "")
+    activity_feedback = [
+        af.model_copy(update={"reason": sanitize_user_input(af.reason) if af.reason else None})
+        for af in body.activity_feedback
+    ]
     validation = await validate_large_output(itinerary, user_profile)
 
     if validation.status == ValidationStatus.revise or feedback:
@@ -42,7 +49,7 @@ async def update_trip(body: UpdateTripRequest, uid: str = Depends(verify_token))
             itinerary, user_profile,
             feedback=feedback,
             validation_result=validation,
-            activity_feedback=body.activity_feedback,
+            activity_feedback=activity_feedback,
         ):
             data = json.loads(event.split("data: ", 1)[-1])
             if "itinerary" in data:

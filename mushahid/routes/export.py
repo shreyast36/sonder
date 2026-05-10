@@ -1,5 +1,6 @@
 import html as html_lib
 import logging
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from shared.schemas import EmailItineraryRequest
@@ -8,6 +9,8 @@ from mushahid.realtime.firestore import get_itinerary
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
 
 
 def _render_itinerary_html(itinerary, include_notes: bool = True) -> str:
@@ -46,6 +49,10 @@ def _render_itinerary_html(itinerary, include_notes: bool = True) -> str:
 
 @router.post("/export/email")
 async def email_itinerary(body: EmailItineraryRequest, uid: str = Depends(verify_token)):
+    invalid = [r for r in body.recipients if not _EMAIL_RE.match(r)]
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Invalid email address(es): {invalid}")
+
     itinerary = await get_itinerary(body.itinerary_id)
     if itinerary is None:
         raise HTTPException(status_code=404, detail="Itinerary not found")

@@ -1,16 +1,25 @@
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from shared.config import ALLOWED_ORIGINS
+from shared.config import ALLOWED_ORIGINS, LOCAL_MODE, FIREBASE_PROJECT_ID
+
+logger = logging.getLogger(__name__)
 
 limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if LOCAL_MODE and FIREBASE_PROJECT_ID:
+        logger.critical(
+            "LOCAL_MODE=true but FIREBASE_PROJECT_ID is set — "
+            "Firebase authentication is DISABLED. "
+            "Never run this configuration in production."
+        )
     yield
 
 
