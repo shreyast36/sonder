@@ -1,6 +1,6 @@
 import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
-from fastapi import Header, HTTPException, Query, status
+from fastapi import Header, HTTPException, status
 from shared.config import (
     FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY,
     FIREBASE_CLIENT_EMAIL, LOCAL_MODE,
@@ -41,5 +41,7 @@ async def verify_token(authorization: str = Header(...)) -> str:
     return _verify(authorization.removeprefix("Bearer "))
 
 
-async def verify_ws_token(token: str = Query(...)) -> str:
+def verify_token_string(token: str) -> str:
+    """Verify a raw token string (no 'Bearer ' prefix).
+    Used for WebSocket first-message auth — do NOT pass tokens in query params."""
     return _verify(token)

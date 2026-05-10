@@ -99,8 +99,10 @@ def parse_itinerary(
         except (json.JSONDecodeError, ValueError) as exc:
             raise ValueError(f"LLM returned malformed JSON: {exc}\n\nRaw output:\n{raw[:500]}") from exc
 
-    # Inject top-level fields
-    data.setdefault("itinerary_id", f"itin_{uuid.uuid4().hex[:8]}")
+    # Always generate itinerary_id server-side — never trust the LLM for this.
+    # LLM-generated IDs are not cryptographically unique and could collide with
+    # another user's document, causing a silent Firestore overwrite.
+    data["itinerary_id"] = f"itin_{uuid.uuid4().hex[:8]}"
     data["user_id"] = user_profile.user_id
 
     # Patch destination

@@ -17,6 +17,8 @@ async def update_trip(body: UpdateTripRequest, uid: str = Depends(verify_token))
         itinerary = await get_itinerary(body.itinerary_id)
     if itinerary is None:
         raise HTTPException(status_code=404, detail="Itinerary not found")
+    if itinerary.user_id != uid:
+        raise HTTPException(status_code=403, detail="Not authorised to update this itinerary")
 
     profile_doc = await get_user_profile(uid)
     display_name = profile_doc.get("display_name", "") if profile_doc else ""

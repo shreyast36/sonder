@@ -24,7 +24,7 @@ async def plan_trip(request: Request, body: PlanTripRequest, uid: str = Depends(
     display_name = profile_doc.get("display_name", "") if profile_doc else ""
 
     user_profile = UserProfile(
-        user_id=body.user_id,
+        user_id=uid,
         display_name=display_name,
         constraints=body.constraints,
         persona_answers=body.persona_answers,

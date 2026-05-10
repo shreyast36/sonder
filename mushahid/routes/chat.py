@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from shared.schemas import ChatSession, ChatStartResponse, ApprovalStatus
-from mushahid.auth import verify_token, verify_ws_token
+from mushahid.auth import verify_token, verify_token_string
 from mushahid.utils.sanitize import sanitize_user_input
 from mushahid.realtime.firestore import write_chat_session, append_chat_message
 
@@ -90,7 +90,27 @@ async def deny_match(session_id: str, user_id: str, _uid: str = Depends(verify_t
 
 
 @router.websocket("/ws/chat/{session_id}")
-async def chat_websocket(websocket: WebSocket, session_id: str, uid: str = Depends(verify_ws_token)):
+async def chat_websocket(websocket: WebSocket, session_id: str):
+    await websocket.accept()
+
+    # First message must be {"type": "auth", "token": "<firebase_id_token>"}.
+    # Tokens must never travel in query params — they appear in server logs.
+    try:
+        auth_msg = await asyncio.wait_for(websocket.receive_json(), timeout=10.0)
+        token = auth_msg.get("token", "")
+        uid = verify_token_string(token)
+    except Exception:
+        await websocket.close(code=4001, reason="Authentication failed")
+        return
+
+    # Ownership check — uid must be a participant in this session.
+    session_data = _sessions.get(session_id)
+    if session_data:
+        session_obj = session_data["session"]
+        if uid not in (session_obj.user_id, session_obj.profile_id):
+            await websocket.close(code=4003, reason="Not a participant in this session")
+            return
+
     try:
         from shreyas.cotraveller.chat import ConnectionManager
         manager = ConnectionManager()
@@ -105,8 +125,6 @@ async def chat_websocket(websocket: WebSocket, session_id: str, uid: str = Depen
         except WebSocketDisconnect:
             manager.disconnect(websocket, session_id)
     except (NotImplementedError, Exception):
-        # Fallback: simple echo relay without Shreyas's manager
-        await websocket.accept()
         try:
             while True:
                 msg = await websocket.receive_json()
