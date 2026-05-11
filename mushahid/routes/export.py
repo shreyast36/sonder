@@ -62,8 +62,13 @@ async def email_itinerary(body: EmailItineraryRequest, uid: str = Depends(verify
     warning = None
     try:
         from shared.email import send_itinerary_email
+        from mushahid.monitoring import capture
         html = _render_itinerary_html(itinerary, include_notes=body.include_notes)
         await send_itinerary_email(body.recipients, html)
+        capture(uid, "itinerary_emailed", {
+            "itinerary_id": body.itinerary_id,
+            "recipient_count": len(body.recipients),
+        })
     except Exception as exc:
         logger.error("Failed to send itinerary email for %s: %s", body.itinerary_id, exc)
         warning = "Email delivery failed — itinerary was not sent."

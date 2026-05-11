@@ -169,6 +169,15 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
             validation=validation,
         ).model_dump(mode="json"))
 
+        from mushahid.monitoring import capture
+        capture(user_profile.user_id, "trip_planned", {
+            "destination": f"{destination.city}, {destination.country}",
+            "budget_usd": itinerary.total_budget_usd,
+            "days": len(itinerary.days),
+            "match_count": len(matches),
+            "validation_score": validation.score,
+        })
+
     except Exception:
         await write_itinerary_status(user_profile.user_id, "error")
         yield format_event("error", {"step": step, "message": "An unexpected error occurred. Please try again."})

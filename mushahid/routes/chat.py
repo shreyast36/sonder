@@ -69,6 +69,9 @@ async def start_chat(profile_id: str, itinerary_id: str, uid: str = Depends(veri
     _sessions[session_id] = {"session": session, "messages": []}
     await write_chat_session(session)
 
+    from mushahid.monitoring import capture
+    capture(uid, "chat_started", {"session_id": session_id, "profile_id": profile_id})
+
     return ChatStartResponse(session=session, icebreaker=icebreaker, topics=topics)
 
 

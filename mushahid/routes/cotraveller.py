@@ -12,9 +12,12 @@ async def get_cotraveller_matches(itinerary_id: str, uid: str = Depends(verify_t
         from shreyas.retrieval.search import search_cotravellers
         from shreyas.cotraveller.matching import get_top_matches
         from shared.schemas import UserProfile
+        from mushahid.monitoring import capture
         user_profile = UserProfile(user_id=uid, display_name=uid, constraints=None, persona_answers=None)
         candidates = search_cotravellers(user_profile, itinerary_id)
-        return get_top_matches(user_profile, candidates)
+        matches = get_top_matches(user_profile, candidates)
+        capture(uid, "match_found", {"match_count": len(matches), "itinerary_id": itinerary_id})
+        return matches
     except NotImplementedError:
         return []
 

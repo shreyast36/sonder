@@ -5,7 +5,19 @@ from contextlib import asynccontextmanager
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from shared.config import ALLOWED_ORIGINS, LOCAL_MODE, FIREBASE_PROJECT_ID
+from shared.config import ALLOWED_ORIGINS, LOCAL_MODE, FIREBASE_PROJECT_ID, SENTRY_DSN
+
+import sentry_sdk
+from sentry_sdk.integrations.starlette import StarletteIntegration
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[StarletteIntegration(), FastApiIntegration()],
+        traces_sample_rate=0.2,
+        send_default_pii=False,
+    )
 
 logger = logging.getLogger(__name__)
 
