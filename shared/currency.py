@@ -117,8 +117,10 @@ def format_budget_display(budget_usd: float, currency_code: str) -> str:
     local_amount = budget_usd * rate
 
     CURRENCY_SYMBOLS = {
-        "USD": "$", "EUR": "€", "GBP": "£", "INR": "₹", "JPY": "¥",
-        "CNY": "¥", "KRW": "₩", "SGD": "S$", "AUD": "A$", "CAD": "C$",
+        "USD": "$",   "EUR": "€",   "GBP": "£",   "INR": "₹",  "JPY": "¥",
+        "CNY": "¥",   "KRW": "₩",   "SGD": "S$",  "AUD": "A$", "CAD": "C$",
+        "CHF": "Fr.", "HKD": "HK$", "NZD": "NZ$", "MXN": "MX$",
+        "SEK": "kr",  "NOK": "kr",
     }
     symbol = CURRENCY_SYMBOLS.get(code, code + " ")
     return f"~{symbol}{local_amount:,.0f}"
