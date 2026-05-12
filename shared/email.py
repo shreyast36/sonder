@@ -1,51 +1,33 @@
 """
 Transactional email utility. Used by mushahid/routes/export.py to send
-shared itinerary emails to both co-travellers.
+itinerary emails.
 
 Provider is configured via EMAIL_PROVIDER in shared/config.py.
 Supported values: "resend" | "sendgrid" | "ses"
-Falls back to logging the email content when LOCAL_MODE=True (no real send).
+Falls back to logging when LOCAL_MODE=True.
 """
 
 import json
+import logging
 from shared.config import EMAIL_PROVIDER, EMAIL_API_KEY, EMAIL_FROM, LOCAL_MODE
-from shared.schemas import SharedItinerary
+
+logger = logging.getLogger(__name__)
 
 
-def render_itinerary_html(shared: SharedItinerary, include_notes: bool = True) -> str:
+async def send_itinerary_email(to_addresses: list[str], html_body: str) -> None:
     """
-    Render a SharedItinerary as an HTML email body.
-
-    Expected output: HTML string with day-by-day activities, costs, and optional notes.
-    Keep it simple — inline styles only (email clients strip <style> blocks).
-    """
-    # TODO: build HTML string — iterate shared.itinerary.days, format each ItineraryDay
-    #       Include: destination, dates, total_budget_usd (formatted in user's currency if available),
-    #                per-day theme + activities (name, time, why_this, cost_usd),
-    #                shared.notes if include_notes
-    raise NotImplementedError
-
-
-async def send_itinerary_email(
-    to_addresses: list[str],
-    shared: SharedItinerary,
-    include_notes: bool = True,
-) -> None:
-    """
-    Send the shared itinerary to one or both co-travellers.
+    Send a rendered HTML itinerary email to one or more recipients.
 
     Expected input:
-        to_addresses = ["user@example.com", "cotraveller@example.com"]
-        shared       = SharedItinerary(itinerary=Itinerary(destination=Destination(city="Bali"), ...), notes=[...])
-
-    In LOCAL_MODE, logs the rendered HTML to stdout instead of sending.
+        to_addresses = ["user@example.com"]
+        html_body    = "<html>...</html>"
     """
-    subject = f"Your {shared.itinerary.destination.city} itinerary — Sonder"
-    html_body = render_itinerary_html(shared, include_notes=include_notes)
+    subject = "Your Sonder itinerary"
 
     if LOCAL_MODE:
-        # TODO: log subject + first 500 chars of html_body for local dev inspection
-        raise NotImplementedError
+        logger.info("LOCAL_MODE — email not sent. Subject: %s | To: %s | Body preview: %s",
+                    subject, to_addresses, html_body[:300])
+        return
 
     if EMAIL_PROVIDER == "resend":
         await _send_via_resend(to_addresses, subject, html_body)
@@ -58,11 +40,6 @@ async def send_itinerary_email(
 
 
 async def _send_via_resend(to_addresses: list[str], subject: str, html: str) -> None:
-    """
-    Send via Resend (resend.com). Requires EMAIL_API_KEY and EMAIL_FROM in .env.
-
-    Resend API docs: https://resend.com/docs/api-reference/emails/send-email
-    """
     import httpx
     payload = {"from": EMAIL_FROM, "to": to_addresses, "subject": subject, "html": html}
     async with httpx.AsyncClient() as client:
@@ -75,9 +52,6 @@ async def _send_via_resend(to_addresses: list[str], subject: str, html: str) -> 
 
 
 async def _send_via_sendgrid(to_addresses: list[str], subject: str, html: str) -> None:
-    """
-    Send via SendGrid. Requires EMAIL_API_KEY and EMAIL_FROM in .env.
-    """
     import httpx
     payload = {
         "personalizations": [{"to": [{"email": a} for a in to_addresses]}],
@@ -95,15 +69,11 @@ async def _send_via_sendgrid(to_addresses: list[str], subject: str, html: str) -
 
 
 async def _send_via_ses(to_addresses: list[str], subject: str, html: str) -> None:
-    """
-    Send via AWS SES. Uses boto3 — requires AWS credentials in shared/config.py.
-    Destination email addresses must be verified in SES (or production access enabled).
-    """
-    # TODO: import boto3
-    # TODO: client = boto3.client("ses", region_name=AWS_REGION)
-    # TODO: client.send_email(
-    #           Source=EMAIL_FROM,
-    #           Destination={"ToAddresses": to_addresses},
-    #           Message={"Subject": {"Data": subject}, "Body": {"Html": {"Data": html}}}
-    #       )
-    raise NotImplementedError
+    import boto3
+    from shared.config import AWS_REGION
+    client = boto3.client("ses", region_name=AWS_REGION)
+    client.send_email(
+        Source=EMAIL_FROM,
+        Destination={"ToAddresses": to_addresses},
+        Message={"Subject": {"Data": subject}, "Body": {"Html": {"Data": html}}},
+    )
