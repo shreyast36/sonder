@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Users } from 'lucide-react'
+import { ArrowLeft, Users, Mail } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
 import ActivityCard from '../components/ActivityCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
+import { emailItinerary } from '../lib/api'
+import { useAuth } from '../hooks/useAuth'
 
 const SKY    = '#38BDF8'
 const spring = { type: 'spring', stiffness: 280, damping: 22 }
@@ -50,8 +52,25 @@ const cardReveal = { hidden: { opacity: 0, y: 22 }, show: { opacity: 1, y: 0, tr
 
 export default function Itinerary() {
   const navigate            = useNavigate()
+  const { user }            = useAuth()
   const [activeDay, setDay] = useState(0)
   const [feedback, setFb]   = useState([])
+  const [emailing, setEmailing] = useState(false)
+  const [emailSent, setEmailSent] = useState(false)
+
+  async function handleEmailExport() {
+    if (!user?.email) return
+    setEmailing(true)
+    try {
+      await emailItinerary('mock-itinerary-id', [user.email], true)
+      setEmailSent(true)
+      setTimeout(() => setEmailSent(false), 3000)
+    } catch (err) {
+      console.error('Email export failed:', err)
+    } finally {
+      setEmailing(false)
+    }
+  }
 
   const day = DAYS[activeDay]
 
@@ -72,15 +91,29 @@ export default function Itinerary() {
           <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Dashboard</span>
         </motion.button>
         <SonderNav3D markSize={32}/>
-        <motion.button
-          whileHover={{ borderColor: `${SKY}55`, boxShadow: `0 0 24px ${SKY}22`, scale: 1.04, transition: spring }}
-          whileTap={{ scale: 0.96 }}
-          onClick={() => navigate('/shared/1')}
-          style={{ background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.2s' }}
-        >
-          <Users size={11} style={{ color: SKY }}/>
-          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: SKY }}>Shared with Priya</span>
-        </motion.button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <motion.button
+            whileHover={{ borderColor: `${SKY}55`, boxShadow: `0 0 24px ${SKY}22`, scale: 1.04, transition: spring }}
+            whileTap={{ scale: 0.96 }}
+            onClick={handleEmailExport}
+            disabled={emailing}
+            style={{ background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.2s', opacity: emailing ? 0.6 : 1 }}
+          >
+            <Mail size={11} style={{ color: GOLD }}/>
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD }}>
+              {emailing ? 'Sending…' : emailSent ? 'Sent!' : 'Email itinerary'}
+            </span>
+          </motion.button>
+          <motion.button
+            whileHover={{ borderColor: `${SKY}55`, boxShadow: `0 0 24px ${SKY}22`, scale: 1.04, transition: spring }}
+            whileTap={{ scale: 0.96 }}
+            onClick={() => navigate('/shared/1')}
+            style={{ background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.2s' }}
+          >
+            <Users size={11} style={{ color: SKY }}/>
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: SKY }}>Shared with Priya</span>
+          </motion.button>
+        </div>
       </nav>
 
       {/* destination header */}
