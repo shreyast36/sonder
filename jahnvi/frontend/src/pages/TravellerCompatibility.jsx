@@ -79,11 +79,6 @@ export default function TravellerCompatibility() {
     else save()
   }
 
-  function skip() {
-    setAnswers(prev => ({ ...prev, [current.key]: '' }))
-    advance()
-  }
-
   function save() {
     setSaving(true)
     const existing = JSON.parse(sessionStorage.getItem('sonder_trip_profile') || '{}')
@@ -159,22 +154,13 @@ export default function TravellerCompatibility() {
           ))}
         </div>
 
-        <div style={{ display: 'flex', gap: 12 }}>
-          <motion.button
-            whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-            onClick={skip}
-            style={{ flex: 1, padding: '18px 0', background: 'transparent', border: `1px solid ${HAIRLINE}`, borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, transition: 'all 0.2s' }}
-          >
-            Skip
-          </motion.button>
-          <motion.button
-            whileHover={{ y: -2, boxShadow: `0 0 48px ${ORANGE}44`, transition: spring }} whileTap={{ scale: 0.98 }}
-            onClick={advance}
-            style={{ flex: 3, padding: '18px 0', background: `linear-gradient(135deg, ${ORANGE} 0%, #EA580C 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff', transition: 'all 0.25s', boxShadow: `0 0 40px ${ORANGE}28` }}
-          >
-            {isLast ? (saving ? 'Saving…' : 'Find my matches') : 'Continue'}
-          </motion.button>
-        </div>
+        <motion.button
+          whileHover={{ y: -2, boxShadow: `0 0 48px ${ORANGE}44`, transition: spring }} whileTap={{ scale: 0.98 }}
+          onClick={advance}
+          style={{ width: '100%', padding: '18px 0', background: `linear-gradient(135deg, ${ORANGE} 0%, #EA580C 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff', transition: 'all 0.25s', boxShadow: `0 0 40px ${ORANGE}28` }}
+        >
+          {isLast ? (saving ? 'Saving…' : 'Find my matches') : 'Continue'}
+        </motion.button>
       </div>
     </div>
   )
