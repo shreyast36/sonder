@@ -68,7 +68,7 @@ Jahnvi owns only the user-facing input schemas. Each other team member owns thei
 
 ### Persona Templates
 
-- [x] `jahnvi/data/persona_templates.py` — Review `PERSONA_TEMPLATES` (5 archetypes: Cultural Explorer, Adventure Seeker, Relaxed Wanderer, Party Traveller, Foodie). Confirm archetype names, interests, embed_keywords, and labels match the product spec and Figma
+- [ ] `jahnvi/data/persona_templates.py` — Review `PERSONA_TEMPLATES` (5 archetypes: Cultural Explorer, Adventure Seeker, Relaxed Wanderer, Party Traveller, Foodie). Confirm archetype names, interests, embed_keywords, and labels match the product spec and Figma
 
 ### User Pipeline
 
