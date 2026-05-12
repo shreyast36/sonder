@@ -4,6 +4,8 @@ import { Canvas, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { ChevronRight, MapPin, Users, Landmark, Utensils, Sun } from 'lucide-react'
 import { SonderNav3D } from '../components/SonderMark3D'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../hooks/useAuth'
 
 // ── Tokens ────────────────────────────────────────────────────────────────────
 
@@ -442,6 +444,15 @@ function CTA() {
 const NAV_LINKS = ['How It Works', 'Destinations', 'For Groups']
 
 export default function Welcome() {
+  const navigate = useNavigate()
+  const { user, signInWithGoogle: GoogleSignIn } = useAuth()
+
+  async function SignIn() {
+    if (user) { navigate('/preferences'); return }
+    await GoogleSignIn()
+    navigate('/preferences')
+  }
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: BG, color: BONE, overflowX: 'hidden' }}>
 
@@ -509,6 +520,7 @@ export default function Welcome() {
               onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 0 80px rgba(212,182,134,0.38),0 0 140px rgba(212,182,134,0.13)' }}
               onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 0 60px rgba(212,182,134,0.26),0 0 120px rgba(212,182,134,0.09)' }}>
               Begin Your Journey <ChevronRight size={14}/>
+              onclick = {signIn}
             </button>
           </motion.div>
         </motion.div>
