@@ -60,17 +60,26 @@ def build_user_query(user_profile: UserProfile) -> str:
 
     if user_profile.constraints:
         c = user_profile.constraints
-        parts.append(f"{c.destination_type} trip")
-        parts.append(f"{c.pace_preference.value} pace")
+        if c.destination_query:
+            parts.append(c.destination_query)
+        if c.who_travelling_with:
+            parts.append(c.who_travelling_with.value)
+        if c.must_haves:
+            parts.append(" ".join(c.must_haves))
         parts.append(f"budget ${c.budget_usd:.0f}")
 
     if user_profile.persona_answers:
         pa = user_profile.persona_answers
-        parts.append(
-            f"food={pa.food_interest} adventure={pa.adventure_interest} "
-            f"culture={pa.culture_interest} nature={pa.nature_interest} "
-            f"nightlife={pa.nightlife_interest}"
-        )
+        for field in [pa.travel_goal, pa.pace_preference, pa.must_not_miss, pa.dream_trip]:
+            if field:
+                parts.append(field)
+
+    if user_profile.compatibility_signals:
+        cs = user_profile.compatibility_signals
+        if cs.get("top_interests"):
+            parts.extend(cs["top_interests"])
+        if cs.get("pace"):
+            parts.append(cs["pace"])
 
     if user_profile.emotion_intent:
         parts.append(f"mood: {user_profile.emotion_intent.value}")

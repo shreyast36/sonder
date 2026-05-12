@@ -1,48 +1,102 @@
+import logging
+from datetime import date
+
 from jahnvi.schemas.user import TripConstraints
-from jahnvi.schemas.enums import PacePreference
+from jahnvi.schemas.enums import TravelStyle
 from shared.currency import convert_to_usd
+
+logger = logging.getLogger(__name__)
 
 
 async def capture_constraints(raw_input: dict) -> TripConstraints:
     """
     Parse and validate raw form data from Screen 2 into a TripConstraints object.
-    Converts the user's budget to USD regardless of input currency.
+    If budget_currency is not USD, converts the amount to USD via shared/currency.py.
+    USD budgets pass through unchanged.
 
-    Expected input (from frontend form submission):
+    Expected input:
         {
-            "destination_type":  "beach",
-            "start_date":        "2025-06-01",
-            "end_date":          "2025-06-07",
-            "budget_amount":     150000.0,
-            "budget_currency":   "INR",        # ISO 4217 — defaults to "USD" if omitted
-            "group_size":        2,
-            "pace_preference":   "relaxed",
-            "must_haves":        ["snorkeling", "local food"],
-            "avoid_list":        ["nightclubs"]
+            "destination_query":        "Bali",
+            "destination_type":         "beach",
+            "nationality":              "British",
+            "start_date":               "2025-06-01",
+            "end_date":                 "2025-06-07",
+            "flexible_dates":           false,
+            "budget_amount":            2000.0,
+            "budget_currency":          "GBP",
+            "group_size":               2,
+            "who_travelling_with":      "couple",
+            "accommodation_preference": "boutique hotel with a view",
+            "hire_car":                 true,
+            "has_driving_licence":      true,
+            "must_haves":               ["snorkeling", "local food"],
+            "avoid_list":               ["nightclubs"]
         }
 
     Expected output:
         TripConstraints(
-            destination_type = "beach",
-            start_date       = date(2025, 6, 1),
-            end_date         = date(2025, 6, 7),
-            budget_usd       = 1796.41,   # converted from 150000 INR
-            budget_currency  = "INR",     # kept for display
-            group_size       = 2,
-            pace_preference  = PacePreference.relaxed,
-            must_haves       = ["snorkeling", "local food"],
-            avoid_list       = ["nightclubs"]
+            destination_query        = "Bali",
+            nationality              = "British",
+            start_date               = date(2025, 6, 1),
+            end_date                 = date(2025, 6, 7),
+            budget_usd               = 2531.65,
+            budget_currency          = "GBP",
+            ...
         )
-
-    Validation rules:
-        - end_date must be after start_date
-        - budget_amount must be > 0
-        - group_size must be >= 1
-        - budget_currency must be a recognised ISO 4217 code (see shared/currency.py FALLBACK_RATES)
     """
-    # TODO: parse start_date / end_date strings → date objects, validate order
-    # TODO: validate budget_amount > 0, group_size >= 1
-    # TODO: currency = raw_input.get("budget_currency", "USD").upper()
-    # TODO: budget_usd = await convert_to_usd(raw_input["budget_amount"], currency)
-    # TODO: return TripConstraints(**{...raw_input, "budget_usd": budget_usd, "budget_currency": currency})
-    raise NotImplementedError
+    start_date = _parse_date(raw_input.get("start_date"))
+    end_date   = _parse_date(raw_input.get("end_date"))
+    if start_date and end_date and end_date <= start_date:
+        raise ValueError("end_date must be after start_date")
+
+    currency      = str(raw_input.get("budget_currency") or "USD").upper()
+    budget_amount = float(raw_input.get("budget_amount") or raw_input.get("budget_usd") or 0)
+    if budget_amount < 0:
+        raise ValueError("budget must be non-negative")
+    budget_usd = await convert_to_usd(budget_amount, currency) if budget_amount > 0 else 0.0
+
+    group_size = int(raw_input.get("group_size") or 1)
+    if group_size < 1:
+        raise ValueError("group_size must be at least 1")
+
+    who_raw             = raw_input.get("who_travelling_with")
+    who_travelling_with = None
+    if who_raw:
+        try:
+            who_travelling_with = TravelStyle(who_raw)
+        except ValueError:
+            logger.warning("Unknown TravelStyle value '%s' — ignoring", who_raw)
+
+    hire_car            = bool(raw_input.get("hire_car", False))
+    has_driving_licence = raw_input.get("has_driving_licence")
+    if has_driving_licence is not None:
+        has_driving_licence = bool(has_driving_licence)
+
+    return TripConstraints(
+        destination_query        = str(raw_input.get("destination_query") or ""),
+        destination_type         = str(raw_input.get("destination_type") or ""),
+        nationality              = str(raw_input.get("nationality") or ""),
+        start_date               = start_date,
+        end_date                 = end_date,
+        flexible_dates           = bool(raw_input.get("flexible_dates", False)),
+        budget_usd               = round(budget_usd, 2),
+        budget_currency          = currency,
+        group_size               = group_size,
+        who_travelling_with      = who_travelling_with,
+        accommodation_preference = str(raw_input.get("accommodation_preference") or ""),
+        hire_car                 = hire_car,
+        has_driving_licence      = has_driving_licence,
+        must_haves               = list(raw_input.get("must_haves") or []),
+        avoid_list               = list(raw_input.get("avoid_list") or []),
+    )
+
+
+def _parse_date(value) -> date | None:
+    if not value:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        raise ValueError(f"Invalid date format: '{value}' — expected YYYY-MM-DD")
