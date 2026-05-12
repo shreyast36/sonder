@@ -53,6 +53,7 @@ export default function Dashboard() {
   const fileInputRef  = useRef(null)
   const [uploading, setUploading]   = useState(false)
   const [photoURL, setPhotoURL]     = useState(user?.photoURL ?? null)
+  useEffect(() => { if (user?.photoURL) setPhotoURL(user.photoURL) }, [user?.photoURL])
   const [dropdownOpen, setDropdown] = useState(false)
 
   async function handleAvatarChange(e) {
