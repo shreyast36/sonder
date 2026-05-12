@@ -74,7 +74,7 @@ EMAIL_API_KEY  = os.getenv("EMAIL_API_KEY")
 EMAIL_FROM     = os.getenv("EMAIL_FROM", "itinerary@sonder.app")
 
 # CORS — comma-separated list of allowed frontend origins
-ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")]
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:5177,http://localhost:5178,http://localhost:5179").split(",")]
 
 # Rate limiting — max calls per user per window
 PLAN_TRIP_RATE_LIMIT = os.getenv("PLAN_TRIP_RATE_LIMIT", "5/hour")
