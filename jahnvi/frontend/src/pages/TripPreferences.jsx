@@ -20,13 +20,20 @@ const STRUCTURED_STEPS = 6
 const STEP_LABELS = ['Destination', 'Dates', 'Travel style', 'Budget', 'Your group', 'Stay & transport']
 
 const PERSONA_QUESTIONS = [
-  { key: 'travel_goal',        q: 'What do you want to feel on this trip?',                          hint: '"Alive, unplug, at peace, inspired…"' },
-  { key: 'travel_personality', q: 'How do your friends describe you as a traveller?',                hint: '"The one who finds the hidden spots no one else knows about…"' },
-  { key: 'pace_preference',    q: 'How do you like your days to feel?',                              hint: '"Mornings packed and afternoons free to wander…"' },
-  { key: 'must_not_miss',      q: "What's the one thing that would make this trip unforgettable?",   hint: '"Eating at a place with no English menu…"' },
-  { key: 'leave_behind',       q: 'What do you want to leave behind?',                               hint: '"My inbox and the urge to document everything…"' },
-  { key: 'ideal_companion',    q: 'Describe your ideal travel companion.',                            hint: '"Someone who can sit in comfortable silence but goes deep when we talk…"' },
-  { key: 'dream_trip',         q: 'In a few words, what does your ideal trip feel like?',            hint: '"Slow, unexpected, nourishing…"' },
+  { key: 'travel_goal',          q: 'What do you want to feel on this trip?',                          hint: '"Alive, unplug, at peace, inspired…"' },
+  { key: 'travel_personality',   q: 'How do your friends describe you as a traveller?',                hint: '"The one who finds the hidden spots no one else knows about…"' },
+  { key: 'pace_preference',      q: 'How do you like your days to feel?',                              hint: '"Mornings packed and afternoons free to wander…"' },
+  { key: 'must_not_miss',        q: "What's the one thing that would make this trip unforgettable?",   hint: '"Eating at a place with no English menu…"' },
+  { key: 'leave_behind',         q: 'What do you want to leave behind?',                               hint: '"My inbox and the urge to document everything…"' },
+  { key: 'ideal_companion',      q: 'Describe your ideal travel companion.',                            hint: '"Someone who can sit in comfortable silence but goes deep when we talk…"' },
+  { key: 'dream_trip',           q: 'In a few words, what does your ideal trip feel like?',            hint: '"Slow, unexpected, nourishing…"' },
+  { key: 'memorable_moment',     q: "What's a travel moment you keep coming back to?",                 hint: '"Getting lost in a medina and stumbling into a family\'s courtyard…"' },
+  { key: 'natural_drift',        q: 'Where do you naturally drift when you have no plan?',             hint: '"Markets, side streets, anywhere with locals and no tourists…"' },
+  { key: 'impulsive_decision',   q: 'Tell us about a time you made an impulsive travel decision.',     hint: '"Missed my flight and ended up staying three extra days…"' },
+  { key: 'experiences_avoided',  q: 'What kinds of experiences do you usually avoid?',                 hint: '"Anything with a queue, a tour group, or a gift shop at the exit…"' },
+  { key: 'perfect_afternoon',    q: 'Describe your perfect unplanned afternoon.',                       hint: '"A good book, a slow walk, stumbling into something unexpected…"' },
+  { key: 'lose_track_of_time',   q: 'What makes you completely lose track of time?',                   hint: '"Conversations that go nowhere and everywhere at once…"' },
+  { key: 'small_special',        q: 'What small thing always makes a trip feel special?',              hint: '"A coffee drunk standing up at a bar, watching the street wake up…"' },
 ]
 
 const TOTAL_STEPS = STRUCTURED_STEPS + PERSONA_QUESTIONS.length
@@ -113,6 +120,8 @@ export default function TripPreferences() {
   const [persona, setPersona] = useState({
     travel_goal: '', travel_personality: '', pace_preference: '',
     must_not_miss: '', leave_behind: '', ideal_companion: '', dream_trip: '',
+    memorable_moment: '', natural_drift: '', impulsive_decision: '',
+    experiences_avoided: '', perfect_afternoon: '', lose_track_of_time: '', small_special: '',
   })
 
   const [step, setStep]         = useState(0)
