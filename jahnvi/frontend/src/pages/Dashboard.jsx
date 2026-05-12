@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, Plus, Zap } from 'lucide-react'
@@ -7,6 +7,10 @@ import MatchCard from '../components/MatchCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
+import { storage } from '../lib/firebase'
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { updateProfile } from 'firebase/auth'
+import { auth } from '../lib/firebase'
 
 // vivid amber — Dashboard accent
 const AMBER = '#F59E0B'
@@ -43,9 +47,27 @@ export default function Dashboard() {
   const { user }  = useAuth()
   const daysAway  = useCountUp(18, 1000, 600)
 
-  const firstName = user?.displayName?.split(' ')[0] ?? 'Traveller'
-  const hour      = new Date().getHours()
-  const greeting  = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  const firstName   = user?.displayName?.split(' ')[0] ?? 'Traveller'
+  const hour        = new Date().getHours()
+  const greeting    = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  const fileInputRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
+  const [photoURL, setPhotoURL]   = useState(user?.photoURL ?? null)
+
+  async function handleAvatarChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const storageRef = ref(storage, `avatars/${auth.currentUser.uid}`)
+      await uploadBytes(storageRef, file)
+      const url = await getDownloadURL(storageRef)
+      await updateProfile(auth.currentUser, { photoURL: url })
+      setPhotoURL(url)
+    } finally {
+      setUploading(false)
+    }
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
@@ -64,13 +86,22 @@ export default function Dashboard() {
           >
             New trip
           </motion.button>
-          <motion.img
-            whileHover={{ scale: 1.08, boxShadow: '0 0 0 2px rgba(245,158,11,0.50), 0 0 32px rgba(245,158,11,0.28)' }}
-            whileTap={{ scale: 0.95 }}
-            transition={spring}
-            src={user?.photoURL ?? 'https://i.pravatar.cc/80?img=32'} alt="You"
-            style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', border: `1.5px solid rgba(212,182,134,0.30)`, cursor: 'pointer', boxShadow: '0 0 20px rgba(212,182,134,0.12)' }}
-          />
+          <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => fileInputRef.current?.click()}>
+            <motion.img
+              whileHover={{ scale: 1.08, boxShadow: '0 0 0 2px rgba(245,158,11,0.50), 0 0 32px rgba(245,158,11,0.28)' }}
+              whileTap={{ scale: 0.95 }}
+              transition={spring}
+              src={photoURL ?? 'https://i.pravatar.cc/80?img=32'} alt="You"
+              style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', border: `1.5px solid rgba(212,182,134,0.30)`, cursor: 'pointer', boxShadow: '0 0 20px rgba(212,182,134,0.12)', opacity: uploading ? 0.5 : 1, transition: 'opacity 0.2s' }}
+            />
+            {uploading && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>
+                <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                  style={{ width: 14, height: 14, border: '2px solid transparent', borderTopColor: GOLD, borderRadius: '50%' }}/>
+              </div>
+            )}
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatarChange} style={{ display: 'none' }}/>
+          </div>
         </div>
       </nav>
 
