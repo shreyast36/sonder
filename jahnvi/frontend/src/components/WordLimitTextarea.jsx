@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { BONE, HAIRLINE, MUTE } from '../lib/tokens'
 
 const ORANGE = '#F97316'
-const LIMIT  = 30
+const LIMIT  = 20
 
 function countWords(text) {
   return text.trim() === '' ? 0 : text.trim().split(/\s+/).length
