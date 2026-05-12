@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
+import { useEffect } from 'react'
 import Welcome         from './pages/Welcome'
 import Dashboard       from './pages/Dashboard'
 import TripPreferences from './pages/TripPreferences'
@@ -27,11 +28,18 @@ function Page({ children }) {
   )
 }
 
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  useEffect(() => { window.scrollTo(0, 0) }, [pathname])
+  return null
+}
+
 export default function App() {
   const location = useLocation()
 
   return (
     <ToastProvider>
+      <ScrollToTop/>
       <LuxCursor/>
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
