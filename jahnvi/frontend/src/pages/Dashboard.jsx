@@ -6,6 +6,7 @@ import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tok
 import MatchCard from '../components/MatchCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
+import { useAuth } from '../hooks/useAuth'
 
 // vivid amber — Dashboard accent
 const AMBER = '#F59E0B'
@@ -39,7 +40,12 @@ const reveal  = { hidden: { opacity: 0, y: 28 }, show: { opacity: 1, y: 0, trans
 
 export default function Dashboard() {
   const navigate  = useNavigate()
+  const { user }  = useAuth()
   const daysAway  = useCountUp(18, 1000, 600)
+
+  const firstName = user?.displayName?.split(' ')[0] ?? 'Traveller'
+  const hour      = new Date().getHours()
+  const greeting  = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
   return (
     <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
@@ -62,7 +68,7 @@ export default function Dashboard() {
             whileHover={{ scale: 1.08, boxShadow: '0 0 0 2px rgba(245,158,11,0.50), 0 0 32px rgba(245,158,11,0.28)' }}
             whileTap={{ scale: 0.95 }}
             transition={spring}
-            src="https://i.pravatar.cc/80?img=32" alt="You"
+            src={user?.photoURL ?? 'https://i.pravatar.cc/80?img=32'} alt="You"
             style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', border: `1.5px solid rgba(212,182,134,0.30)`, cursor: 'pointer', boxShadow: '0 0 20px rgba(212,182,134,0.12)' }}
           />
         </div>
@@ -72,13 +78,13 @@ export default function Dashboard() {
       <div style={{ borderBottom: `1px solid ${HAIRLINE}`, padding: '44px 48px 40px', position: 'relative', zIndex: 1, overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'radial-gradient(ellipse 70% 140% at 15% 60%, rgba(212,182,134,0.09) 0%, transparent 65%)', pointerEvents: 'none' }}/>
         <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease }}>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, marginBottom: 8 }}>Good morning</p>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, marginBottom: 8 }}>{greeting}</p>
           <motion.h1
             animate={{ filter: ['drop-shadow(0 0 24px rgba(212,182,134,0.20))', 'drop-shadow(0 0 56px rgba(212,182,134,0.50))', 'drop-shadow(0 0 24px rgba(212,182,134,0.20))'] }}
             transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
             style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 68, lineHeight: 0.95, letterSpacing: '-0.02em', background: GOLD_GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', display: 'inline-block' }}
           >
-            Shreya
+            {firstName}
           </motion.h1>
         </motion.div>
       </div>
