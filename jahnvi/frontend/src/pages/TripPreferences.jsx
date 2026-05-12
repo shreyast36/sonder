@@ -235,7 +235,7 @@ export default function TripPreferences() {
     },
     {
       number: '04', heading: "What's your budget?",
-      sub: 'Total trip spend, not including flights.',
+      sub: 'Total trip spend, including flights.',
       content: (
         <div style={{ marginTop: 52 }}>
           <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 18 }}>Currency</p>
