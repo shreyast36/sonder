@@ -1,26 +1,87 @@
-// TODO: Jahnvi — Firestore real-time hooks.
-//
-// useDocument(collection, id) → { data, loading, error }
-//   Subscribes to a single document with onSnapshot.
-//   Unsubscribes on unmount.
-//
-// useCollection(collection, query) → { data, loading, error }
-//   Subscribes to a collection query with onSnapshot.
-//   Unsubscribes on unmount.
-//
-// useSharedItinerary(itineraryId) → { itinerary, version, loading, addActivity, addNote }
-//   Specialised hook for Screen 7. Wraps the shared itinerary document and exposes
-//   write helpers that handle HTTP 409 conflict responses.
-//
-//   Conflict handling (version mismatch):
-//     When addActivity() or addNote() receives a 409 from the backend, it means
-//     another user wrote to the itinerary between the last fetch and this write.
-//     The hook should:
-//       1. Re-fetch the latest SharedItinerary (sync_changes endpoint or onSnapshot)
-//       2. Show a non-blocking toast: "Your co-traveller just made a change — review and try again"
-//       3. Re-render with the latest version so the user can retry their edit
-//     Do NOT silently retry — the user should see the latest state before writing.
-//
-//   Expected addActivity signature:
-//     addActivity(activity, dayNumber) — reads current `version` from local state,
-//     sends it to POST /api/shared-itinerary/{id}/activity, handles 409 as above.
+import { useState, useEffect } from 'react'
+import { doc, collection, onSnapshot, query } from 'firebase/firestore'
+import { db } from '../lib/firebase'
+import { useToast } from '../components/Toast'
+import { addSharedActivity, addSharedNote } from '../lib/api'
+
+export function useDocument(collectionName, id) {
+  const [data, setData]       = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState(null)
+
+  useEffect(() => {
+    if (!id) return
+    const ref = doc(db, collectionName, id)
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        setData(snap.exists() ? { id: snap.id, ...snap.data() } : null)
+        setLoading(false)
+      },
+      (err) => {
+        setError(err)
+        setLoading(false)
+      },
+    )
+    return unsub
+  }, [collectionName, id])
+
+  return { data, loading, error }
+}
+
+export function useCollection(collectionName, constraints = []) {
+  const [data, setData]       = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState(null)
+
+  useEffect(() => {
+    const ref = collection(db, collectionName)
+    const q   = constraints.length ? query(ref, ...constraints) : ref
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setData(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+        setLoading(false)
+      },
+      (err) => {
+        setError(err)
+        setLoading(false)
+      },
+    )
+    return unsub
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collectionName])
+
+  return { data, loading, error }
+}
+
+export function useSharedItinerary(itineraryId) {
+  const { data: itinerary, loading } = useDocument('shared_itineraries', itineraryId)
+  const toast = useToast()
+
+  async function handleConflict(fn) {
+    try {
+      await fn()
+    } catch (err) {
+      if (err.status === 409) {
+        toast({ title: 'Your co-traveller just made a change — review and try again' })
+      } else {
+        throw err
+      }
+    }
+  }
+
+  function addActivity(activity, dayNumber) {
+    return handleConflict(() =>
+      addSharedActivity(itineraryId, activity, dayNumber, itinerary?.version),
+    )
+  }
+
+  function addNote(note) {
+    return handleConflict(() =>
+      addSharedNote(itineraryId, note, itinerary?.version),
+    )
+  }
+
+  return { itinerary, version: itinerary?.version, loading, addActivity, addNote }
+}

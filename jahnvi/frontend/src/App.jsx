@@ -9,8 +9,9 @@ import Chat            from './pages/Chat'
 import ApproveDeny     from './pages/ApproveDeny'
 import SharedItinerary from './pages/SharedItinerary'
 import Notes           from './pages/Notes'
-import Discover        from './pages/Discover'
-import LuxCursor       from './components/LuxCursor'
+import Discover               from './pages/Discover'
+import TravellerCompatibility from './pages/TravellerCompatibility'
+import LuxCursor              from './components/LuxCursor'
 import { ToastProvider } from './components/Toast'
 
 function Page({ children }) {
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="/shared/:id"         element={<Page><SharedItinerary/></Page>}/>
           <Route path="/notes/:id"          element={<Page><Notes/></Page>}/>
           <Route path="/discover"           element={<Page><Discover/></Page>}/>
+          <Route path="/compatibility"      element={<Page><TravellerCompatibility/></Page>}/>
           <Route path="*"                   element={<Navigate to="/" replace/>}/>
         </Routes>
       </AnimatePresence>

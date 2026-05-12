@@ -1,71 +1,95 @@
-// TODO: Jahnvi — typed API client for the FastAPI backend.
-// All requests attach the Firebase Auth ID token in the Authorization header.
-//
-// Helper:
-//   async function authHeaders() {
-//     const token = await auth.currentUser.getIdToken()
-//     return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
-//   }
-//
-// Endpoints:
-//
-//   createUserProfile(displayName)
-//     POST /api/users/profile
-//     Call once on first login (see useAuth.js). Idempotent — safe to call again.
-//
-//   getUserProfile()
-//     GET /api/users/profile
-//     Returns UserProfile JSON or 404 if not yet created.
-//
-//   planTrip(userProfile)
-//     POST /api/plan-trip  → SSE stream
-//     Returns a fetch() ReadableStream (not EventSource — needed for Auth header support).
-//     Use useSSE.js to parse the named events.
-//
-//   updateTrip(request)
-//     POST /api/update-trip → UpdateTripResponse
-//     request: { itinerary_id, feedback?, activity_feedback?, current_itinerary }
-//     Send feedback (string), activity_feedback (ActivityFeedback[]), or both.
-//     activity_feedback: [{ activity_id, action: "swap"|"remove"|"adjust_time", reason? }]
-//
-//   getCotravellers(userId, itineraryId)
-//     POST /api/cotraveller → list[CoTravellerMatch]
-//
-//   regenerateCotravellers(userId, excludedProfileIds, feedback)
-//     POST /api/cotraveller/regenerate → list[CoTravellerMatch]
-//     Call when user denies all current matches or taps "Show me different people".
-//
-//   startChat(userId, profileId, itineraryId)
-//     POST /api/chat/start → ChatStartResponse { session, icebreaker, topics }
-//     icebreaker: string — display as a pre-filled tap-to-send suggestion at top of chat
-//     topics: string[5] — show as tappable chips at the bottom of Screen 5 (suggested topics bar)
-//
-//   approveMatch(sessionId, userId)
-//     POST /api/chat/approve → { status: "approved" | "pending" }
-//
-//   denyMatch(sessionId, userId)
-//     POST /api/chat/deny → { status: "denied" }
-//
-//   emailItinerary(itineraryId, recipients, includeNotes = true)
-//     POST /api/export/email → { sent_to: string[] }
-//     recipients: list of email addresses (both co-travellers, or just one)
-//
-//   downloadItineraryPdf(itineraryId, idToken)
-//     GET /api/export/pdf/:itineraryId?token=<firebase_id_token>
-//     Returns a PDF stream — open in new tab: window.open(url) handles the save prompt.
-//
-//   openChatSocket(sessionId, token)
-//     Returns a WebSocket connected to /ws/chat/{sessionId}?token=<firebase_id_token>
-//     Token passed as query param — browsers cannot set headers on WebSocket connections.
-//
-//     IMPORTANT — presence heartbeat:
-//       After opening the socket, send {"type": "ping"} every ~30 seconds to keep the
-//       user's presence alive. The backend TTL is 90s — missing 3 pings marks the user offline.
-//       Clear the interval on socket close or component unmount.
-//
-//       Example:
-//         const ws = openChatSocket(sessionId, token)
-//         const pingInterval = setInterval(() => {
-//           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }))
-//         }, 30_000)
-//         ws.addEventListener("close", () => clearInterval(pingInterval))
+import { auth } from './firebase'
+
+const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+
+async function authHeaders() {
+  const token = await auth.currentUser.getIdToken()
+  return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+}
+
+async function get(path) {
+  const res = await fetch(`${BASE}${path}`, { headers: await authHeaders() })
+  if (!res.ok) throw Object.assign(new Error(res.statusText), { status: res.status })
+  return res.json()
+}
+
+async function post(path, body) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw Object.assign(new Error(res.statusText), { status: res.status })
+  return res.json()
+}
+
+export async function createUserProfile(displayName) {
+  return post('/api/users/profile', { display_name: displayName })
+}
+
+export async function getUserProfile() {
+  return get('/api/users/profile')
+}
+
+// Returns a raw fetch Response with a ReadableStream body — pass to useSSE.
+export async function planTrip(userProfile) {
+  const token = await auth.currentUser.getIdToken()
+  return fetch(`${BASE}/api/plan-trip`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(userProfile),
+  })
+}
+
+export async function updateTrip(request) {
+  return post('/api/update-trip', request)
+}
+
+// uid is read from the Auth token on the backend — do not send it in the body.
+export async function getCotravellers(itineraryId) {
+  return post('/api/cotraveller', { itinerary_id: itineraryId })
+}
+
+export async function regenerateCotravellers(excludedProfileIds, feedback) {
+  return post('/api/cotraveller/regenerate', { excluded_profile_ids: excludedProfileIds, feedback })
+}
+
+export async function startChat(profileId, itineraryId) {
+  return post('/api/chat/start', { profile_id: profileId, itinerary_id: itineraryId })
+}
+
+// uid is read from the Auth token on the backend — do not send user_id.
+export async function approveMatch(sessionId) {
+  return post('/api/chat/approve', { session_id: sessionId })
+}
+
+export async function denyMatch(sessionId) {
+  return post('/api/chat/deny', { session_id: sessionId })
+}
+
+export async function emailItinerary(itineraryId, recipients, includeNotes = true) {
+  return post('/api/export/email', {
+    itinerary_id: itineraryId,
+    recipients,
+    include_notes: includeNotes,
+  })
+}
+
+export async function downloadItineraryPdf(itineraryId) {
+  const token = await auth.currentUser.getIdToken()
+  window.open(`${BASE}/api/export/pdf/${itineraryId}?token=${encodeURIComponent(token)}`)
+}
+
+export async function addSharedActivity(itineraryId, activity, dayNumber, version) {
+  return post(`/api/shared-itinerary/${itineraryId}/activity`, { activity, day_number: dayNumber, version })
+}
+
+export async function addSharedNote(itineraryId, note, version) {
+  return post(`/api/shared-itinerary/${itineraryId}/note`, { note, version })
+}
+
+// Returns a WebSocket — useWebSocket sends auth token as first message (first-message auth pattern).
+export function openChatSocket(sessionId) {
+  const wsBase = BASE.replace(/^http/, 'ws')
+  return new WebSocket(`${wsBase}/ws/chat/${sessionId}`)
+}

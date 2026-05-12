@@ -1,34 +1,61 @@
-// TODO: Jahnvi — Server-Sent Events hook for itinerary generation stream.
-//
-// useSSE(url, handlers) → { status, abort }
-//
-// `handlers` is an object keyed by SSE event name. Wire up every named event
-// the backend emits so the UI updates stage by stage:
-//
-//   useSSE("/api/plan-trip", {
-//     persona_inferring:      () => setStage("Understanding your travel style..."),
-//     persona_inferred:       (data) => setPersona(data.archetype),
-//     retrieving:             () => setStage("Finding the best destinations..."),
-//     retrieval_done:         (data) => setDestinationCount(data.destination_count),
-//     ranking:                () => setStage("Ranking options for you..."),
-//     ranked:                 (data) => setTopDestination(data.top_destination),
-//     generating:             (data) => appendTokenChunk(data.chunk),  // ← token-by-token, may fire many times
-//     day_ready:              (data) => markDayReady(data.day_number, data.theme),
-//     itinerary_generated:    () => setStage("Adding personalised insights..."),
-//     explaining:             () => setStage("Explaining your activities..."),
-//     validating:             () => setStage("Checking everything looks right..."),
-//     revision:               (data) => setStage(`Refining... (attempt ${data.attempt})`),
-//     validated:              (data) => setValidationScore(data.score),
-//     matching_cotravellers:  () => setStage("Finding your perfect travel buddy..."),
-//     matched:                (data) => setMatchCount(data.match_count),
-//     done:                   (data) => setItinerary(data),  // full PlanTripResponse
-//     error:                  (data) => showError(data.step, data.message),  // ← always handle this
-//   })
-//
-// Notes:
-//   - `generating` fires once per token chunk — buffer and append, do not replace
-//   - `error` fires if the pipeline throws at any step; show a retry CTA, do not hang
-//   - call abort() to close the EventSource early (e.g. user navigates away)
-//   - attach the Firebase Auth token: new EventSource(url) doesn't support headers,
-//     so pass the token as a query param: `/api/plan-trip?token=<id_token>`
-//     OR use fetch() with ReadableStream to get header support (recommended)
+import { useState, useRef, useCallback } from 'react'
+import { planTrip } from '../lib/api'
+
+export function useSSE(handlers) {
+  const [status, setStatus] = useState('idle')
+  const abortRef = useRef(null)
+
+  const start = useCallback(async (userProfile) => {
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    setStatus('streaming')
+
+    try {
+      const res = await planTrip(userProfile)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+      const reader  = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer    = ''
+      let eventName = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        const lines = buffer.split('\n')
+        buffer = lines.pop() // keep incomplete line
+
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            eventName = line.slice(6).trim()
+          } else if (line.startsWith('data:')) {
+            const raw     = line.slice(5).trim()
+            const handler = handlers[eventName]
+            if (handler) {
+              try { handler(raw ? JSON.parse(raw) : undefined) } catch { /* malformed data */ }
+            }
+            eventName = null
+          } else if (line === '') {
+            eventName = null // reset between SSE blocks
+          }
+        }
+      }
+
+      setStatus('done')
+    } catch (err) {
+      if (err.name === 'AbortError') return
+      setStatus('error')
+      handlers.error?.({ step: 'stream', message: err.message })
+    }
+  }, [handlers])
+
+  const abort = useCallback(() => {
+    abortRef.current?.abort()
+    setStatus('idle')
+  }, [])
+
+  return { status, start, abort }
+}
