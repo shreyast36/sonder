@@ -47,6 +47,29 @@ def _render_itinerary_html(itinerary, include_notes: bool = True) -> str:
     """
 
 
+@router.post("/export/email/test")
+async def email_itinerary_test(body: dict, uid: str = Depends(verify_token)):
+    from shared.email import send_itinerary_email
+    recipient = body.get("email")
+    if not recipient or not _EMAIL_RE.match(recipient):
+        raise HTTPException(status_code=422, detail="Invalid email address")
+    html = """
+    <html><body style="font-family:sans-serif;max-width:700px;margin:auto;padding:2rem">
+    <h1>Sonder Itinerary — Test</h1>
+    <h2>Bali, Indonesia</h2>
+    <p>Jun 14 – Jun 21 · 7 days</p>
+    <h3>Day 1 — Arrival &amp; First Light</h3>
+    <ul>
+      <li><b>3:00 PM</b> — Alaya Ubud</li>
+      <li><b>5:00 PM</b> — Sacred Monkey Forest</li>
+      <li><b>7:30 PM</b> — Locavore NXT</li>
+    </ul>
+    </body></html>
+    """
+    await send_itinerary_email([recipient], html)
+    return {"sent": True}
+
+
 @router.post("/export/email")
 async def email_itinerary(body: EmailItineraryRequest, uid: str = Depends(verify_token)):
     invalid = [r for r in body.recipients if not _EMAIL_RE.match(r)]

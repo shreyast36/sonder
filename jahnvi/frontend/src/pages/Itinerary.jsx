@@ -6,7 +6,7 @@ import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tok
 import ActivityCard from '../components/ActivityCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
-import { emailItinerary } from '../lib/api'
+import { emailItineraryTest } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
 
 const SKY    = '#38BDF8'
@@ -62,7 +62,7 @@ export default function Itinerary() {
     if (!user?.email) return
     setEmailing(true)
     try {
-      await emailItinerary('mock-itinerary-id', [user.email], true)
+      await emailItineraryTest(user.email)
       setEmailSent(true)
       setTimeout(() => setEmailSent(false), 3000)
     } catch (err) {

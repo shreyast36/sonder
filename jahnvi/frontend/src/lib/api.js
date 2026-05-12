@@ -75,6 +75,10 @@ export async function emailItinerary(itineraryId, recipients, includeNotes = tru
   })
 }
 
+export async function emailItineraryTest(email) {
+  return post('/api/export/email/test', { email })
+}
+
 export async function downloadItineraryPdf(itineraryId) {
   const token = await auth.currentUser.getIdToken()
   window.open(`${BASE}/api/export/pdf/${itineraryId}?token=${encodeURIComponent(token)}`)
