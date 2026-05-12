@@ -419,15 +419,6 @@ export default function TripPreferences() {
             ))}
           </div>
 
-          {/* giant ghost number */}
-          <div style={{ position: 'relative', marginTop: 32 }}>
-            <AnimatePresence mode="wait">
-              <motion.span key={step} initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0, filter: [`drop-shadow(0 0 24px ${ORANGE}22)`, `drop-shadow(0 0 64px ${ORANGE}55)`, `drop-shadow(0 0 24px ${ORANGE}22)`] }} exit={{ opacity: 0, y: -30 }} transition={{ duration: 0.45, ease, filter: { duration: 5, repeat: Infinity, ease: 'easeInOut' } }}
-                style={{ display: 'block', fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 220, lineHeight: 0.82, letterSpacing: '-0.05em', color: ORANGE, opacity: 0.10, userSelect: 'none' }}>
-                {current.number}
-              </motion.span>
-            </AnimatePresence>
-          </div>
         </div>
 
         {/* right — form */}
