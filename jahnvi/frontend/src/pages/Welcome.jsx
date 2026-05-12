@@ -448,9 +448,9 @@ export default function Welcome() {
   const { user, signInWithGoogle: GoogleSignIn } = useAuth()
 
   async function SignIn() {
-    if (user) { navigate('/preferences'); return }
+    if (user) { navigate('/dashboard'); return }
     await GoogleSignIn()
-    navigate('/preferences')
+    navigate('/dashboard')
   }
 
   return (
