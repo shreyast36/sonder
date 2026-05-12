@@ -81,15 +81,6 @@ export default function Dashboard() {
       <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
         <SonderNav3D markSize={32}/>
         <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-          <motion.button
-            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-            onClick={() => navigate('/preferences')}
-            style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.20em', textTransform: 'uppercase', color: MUTE, background: 'none', border: 'none', cursor: 'pointer', transition: 'color 0.2s' }}
-            onMouseEnter={e => { e.currentTarget.style.color = BONE }}
-            onMouseLeave={e => { e.currentTarget.style.color = MUTE }}
-          >
-            New trip
-          </motion.button>
           <div style={{ position: 'relative' }}>
             <div style={{ cursor: 'pointer' }} onClick={() => setDropdown(o => !o)}>
               <motion.img
