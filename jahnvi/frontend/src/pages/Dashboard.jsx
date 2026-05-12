@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, Plus, Zap } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
@@ -44,15 +44,16 @@ const reveal  = { hidden: { opacity: 0, y: 28 }, show: { opacity: 1, y: 0, trans
 
 export default function Dashboard() {
   const navigate  = useNavigate()
-  const { user }  = useAuth()
+  const { user, signOut }  = useAuth()
   const daysAway  = useCountUp(18, 1000, 600)
 
   const firstName   = user?.displayName?.split(' ')[0] ?? 'Traveller'
   const hour        = new Date().getHours()
   const greeting    = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
-  const fileInputRef = useRef(null)
-  const [uploading, setUploading] = useState(false)
-  const [photoURL, setPhotoURL]   = useState(user?.photoURL ?? null)
+  const fileInputRef  = useRef(null)
+  const [uploading, setUploading]   = useState(false)
+  const [photoURL, setPhotoURL]     = useState(user?.photoURL ?? null)
+  const [dropdownOpen, setDropdown] = useState(false)
 
   async function handleAvatarChange(e) {
     const file = e.target.files?.[0]
@@ -86,20 +87,44 @@ export default function Dashboard() {
           >
             New trip
           </motion.button>
-          <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => fileInputRef.current?.click()}>
-            <motion.img
-              whileHover={{ scale: 1.08, boxShadow: '0 0 0 2px rgba(245,158,11,0.50), 0 0 32px rgba(245,158,11,0.28)' }}
-              whileTap={{ scale: 0.95 }}
-              transition={spring}
-              src={photoURL ?? 'https://i.pravatar.cc/80?img=32'} alt="You"
-              style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', border: `1.5px solid rgba(212,182,134,0.30)`, cursor: 'pointer', boxShadow: '0 0 20px rgba(212,182,134,0.12)', opacity: uploading ? 0.5 : 1, transition: 'opacity 0.2s' }}
-            />
-            {uploading && (
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>
-                <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-                  style={{ width: 14, height: 14, border: '2px solid transparent', borderTopColor: GOLD, borderRadius: '50%' }}/>
-              </div>
-            )}
+          <div style={{ position: 'relative' }}>
+            <div style={{ cursor: 'pointer' }} onClick={() => setDropdown(o => !o)}>
+              <motion.img
+                whileHover={{ scale: 1.08, boxShadow: '0 0 0 2px rgba(245,158,11,0.50), 0 0 32px rgba(245,158,11,0.28)' }}
+                whileTap={{ scale: 0.95 }}
+                transition={spring}
+                src={photoURL ?? 'https://i.pravatar.cc/80?img=32'} alt="You"
+                style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', border: `1.5px solid rgba(212,182,134,0.30)`, cursor: 'pointer', boxShadow: '0 0 20px rgba(212,182,134,0.12)', opacity: uploading ? 0.5 : 1, transition: 'opacity 0.2s', display: 'block' }}
+              />
+              {uploading && (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>
+                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                    style={{ width: 14, height: 14, border: '2px solid transparent', borderTopColor: GOLD, borderRadius: '50%' }}/>
+                </div>
+              )}
+            </div>
+            <AnimatePresence>
+              {dropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                  transition={{ duration: 0.18, ease }}
+                  style={{ position: 'absolute', top: 44, right: 0, minWidth: 190, background: 'rgba(18,15,10,0.96)', border: `1px solid ${HAIRLINE}`, borderRadius: 12, overflow: 'hidden', backdropFilter: 'blur(20px)', boxShadow: '0 16px 48px rgba(0,0,0,0.5)', zIndex: 100 }}
+                >
+                  {[
+                    { label: 'Change profile picture', action: () => { setDropdown(false); fileInputRef.current?.click() } },
+                    { label: 'Sign out', action: () => { setDropdown(false); signOut().then(() => navigate('/')) } },
+                  ].map(({ label, action }) => (
+                    <button key={label} onClick={action}
+                      style={{ width: '100%', padding: '14px 18px', background: 'none', border: 'none', textAlign: 'left', fontFamily: '"Inter Tight",sans-serif', fontSize: 12, letterSpacing: '0.04em', color: MUTE, cursor: 'pointer', transition: 'all 0.15s', display: 'block' }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(232,212,168,0.06)'; e.currentTarget.style.color = BONE }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = MUTE }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatarChange} style={{ display: 'none' }}/>
           </div>
         </div>
