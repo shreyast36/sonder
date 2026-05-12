@@ -103,6 +103,7 @@ Jahnvi owns only the user-facing input schemas. Each other team member owns thei
 
 - [x] Screen 1: `Welcome.jsx` — Hero, feature list, Start Planning CTA; 3D metallic Sonder logo
 - [x] Screen 2: `TripPreferences.jsx` — Multi-step form (destination, dates, travel style, budget + currency); orange accent; ElegantInput with animated focus line; step tracker with spring pulse
+  - [ ] Extend with personality questions (Screen 3 of user flow spec) — one question at a time, full-screen, large typography, soft transitions, optional skip per question; appended as final steps inside the existing multi-step form
 - [x] Screen 3: `Itinerary.jsx` — Day tabs, activity cards with stagger entrance, "Why this?" expand, batch confirm; sky blue accent
 - [x] Screen 4: `MatchDetail.jsx` — Profile card, animated SVG score ring, compatibility breakdown, AI topics list, Start Chat; violet accent
 - [x] Screen 5: `Chat.jsx` — Chat UI with slide-in bubbles, typing indicator, icebreaker pre-fill, Review match CTA; rose accent
@@ -111,6 +112,7 @@ Jahnvi owns only the user-facing input schemas. Each other team member owns thei
 - [x] Screen 8: `Notes.jsx` — Shared notes feed with slide-in bubbles, real-time add; teal accent
 - [x] Screen 9: `Dashboard.jsx` — Upcoming trip card, companion matches, Plan new trip CTA; amber accent
 - [x] Screen 10: `Discover.jsx` — Match discovery with filter sidebar (style, pace, score), animated card grid, MiniRing SVG per card; pink accent
+- [ ] Screen 11: `TravellerCompatibility.jsx` — Co-traveller compatibility questions shown one at a time before entering `MatchDetail.jsx`; triggered only when user opts in on `Discover.jsx`; 10 questions covering trust, conflict, independence, and shared travel style; answers generate a separate compatibility embedding used exclusively for co-traveller matching
 
 ### Frontend — Components
 
