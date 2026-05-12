@@ -72,9 +72,9 @@ Jahnvi owns only the user-facing input schemas. Each other team member owns thei
 
 ### User Pipeline
 
-- [ ] `jahnvi/pipeline/module1_constraints.py` — `capture_constraints(raw_input) → TripConstraints` (async; accepts `budget_amount` + `budget_currency`, calls `convert_to_usd()` from `shared/currency.py`)
-- [ ] `jahnvi/pipeline/module2_preferences.py` — `get_questions()`, `parse_answers() → PersonaQuestionAnswers`
-- [ ] `jahnvi/pipeline/module3_persona.py` — `infer_persona()` (uses `PERSONA_TEMPLATES`), `infer_emotion()`, `build_compatibility_signals()`, `build_travel_style_embedding()`; `update_profile_from_feedback()` for refinement loop
+- [x] `jahnvi/pipeline/module1_constraints.py` — `capture_constraints(raw_input) → TripConstraints` (async; accepts `budget_amount` + `budget_currency`, calls `convert_to_usd()` from `shared/currency.py`)
+- [x] `jahnvi/pipeline/module2_preferences.py` — `get_questions()`, `parse_answers() → PersonaQuestionAnswers`
+- [x] `jahnvi/pipeline/module3_persona.py` — `infer_persona()` (uses `PERSONA_TEMPLATES`), `infer_emotion()`, `build_compatibility_signals()`, `build_travel_style_embedding()`; `update_profile_from_feedback()` for refinement loop
 
 ### Multi-currency
 
