@@ -5,6 +5,7 @@ import { ArrowLeft, Globe, Check, Users } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
+import WordLimitTextarea from '../components/WordLimitTextarea'
 
 const ORANGE = '#F97316'
 const spring = { type: 'spring', stiffness: 280, damping: 22 }
@@ -339,19 +340,11 @@ export default function TripPreferences() {
               <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 48, lineHeight: 1.2, color: BONE, marginBottom: 48 }}>
                 {currentPersona.q}
               </h2>
-              <textarea
+              <WordLimitTextarea
                 value={persona[currentPersona.key]}
-                onChange={e => setPersona(prev => ({ ...prev, [currentPersona.key]: e.target.value }))}
+                onChange={val => setPersona(prev => ({ ...prev, [currentPersona.key]: val }))}
                 placeholder={currentPersona.hint}
                 rows={4}
-                style={{
-                  width: '100%', background: 'rgba(232,212,168,0.03)', border: `1px solid ${HAIRLINE}`,
-                  borderRadius: 16, padding: '20px 24px', color: BONE, outline: 'none', resize: 'none',
-                  fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 22,
-                  lineHeight: 1.6, boxSizing: 'border-box', transition: 'border-color 0.2s',
-                }}
-                onFocus={e => { e.target.style.borderColor = `${ORANGE}66` }}
-                onBlur={e => { e.target.style.borderColor = HAIRLINE }}
               />
             </motion.div>
           </AnimatePresence>

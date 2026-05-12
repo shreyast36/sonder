@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react'
 import { BG, BONE, MUTE, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
+import WordLimitTextarea from '../components/WordLimitTextarea'
 
 const ORANGE = '#F97316'
 const spring = { type: 'spring', stiffness: 280, damping: 22 }
@@ -33,7 +34,7 @@ const QUESTIONS = [
   {
     key:  'mood_handling',
     q:    'What do you do when someone you\'re with is in a bad mood?',
-    hint: '"Give them space. Check in quietly. Try to fix it."',
+    hint: '"Let them be if they don\'t want to be bothered. Or try to cheer them up creating a fun distraction"',
   },
   {
     key:  'budget_style',
@@ -53,12 +54,12 @@ const QUESTIONS = [
   {
     key:  'conflict_style',
     q:    'When you and someone disagree on what to do, what usually happens?',
-    hint: '"We find a third option. I usually give in. We split up and compare notes."',
+    hint: '"We come to a compromise and agree to do both activities"',
   },
   {
     key:  'trip_value',
     q:    'What makes a trip feel worth it to you?',
-    hint: '"One moment I couldn\'t have planned. Feeling genuinely rested."',
+    hint: '"Being super spontaneous and trying michelin starred restaurants I could never experience otherwise"',
   },
 ]
 
@@ -137,21 +138,12 @@ export default function TravellerCompatibility() {
               {current.q}
             </h2>
 
-            <textarea
+            <WordLimitTextarea
               key={current.key}
               value={answers[current.key]}
-              onChange={e => setAnswers(prev => ({ ...prev, [current.key]: e.target.value }))}
+              onChange={val => setAnswers(prev => ({ ...prev, [current.key]: val }))}
               placeholder={current.hint}
               rows={4}
-              style={{
-                width: '100%', background: 'rgba(232,212,168,0.03)',
-                border: `1px solid ${HAIRLINE}`, borderRadius: 16,
-                padding: '20px 24px', color: BONE, outline: 'none', resize: 'none',
-                fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 22,
-                lineHeight: 1.65, boxSizing: 'border-box', transition: 'border-color 0.2s',
-              }}
-              onFocus={e => { e.target.style.borderColor = `${ORANGE}66` }}
-              onBlur={e => { e.target.style.borderColor = HAIRLINE }}
             />
           </motion.div>
         </AnimatePresence>
