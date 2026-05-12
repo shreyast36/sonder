@@ -66,6 +66,8 @@ export default function Dashboard() {
       const url = await getDownloadURL(storageRef)
       await updateProfile(auth.currentUser, { photoURL: url })
       setPhotoURL(url)
+    } catch (err) {
+      console.error('Avatar upload failed:', err.code, err.message)
     } finally {
       setUploading(false)
     }
