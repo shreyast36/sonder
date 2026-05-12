@@ -240,7 +240,7 @@ Mushahid owns two validator LLMs — one that checks Small model outputs, one th
 
 ### Email & PDF Export
 
-- [ ] `shared/email.py` — `render_itinerary_html()` (inline-styled HTML), `send_itinerary_email()` (Resend / SendGrid / SES — set `EMAIL_PROVIDER` in `.env`)
+- [x] `shared/email.py` — `render_itinerary_html()` (inline-styled HTML), `send_itinerary_email()` (Resend / SendGrid / SES — set `EMAIL_PROVIDER` in `.env`)
 - [x] `mushahid/routes/export.py` — Wire `render_itinerary_html()` into the PDF route via weasyprint; add `weasyprint` to `requirements.txt`
 
 ### Monitoring & Deployment
