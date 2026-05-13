@@ -33,7 +33,7 @@ DATA = Path("data/seed")
 UA = "Sonder/1.0 (https://discoversonder.com)"
 
 # Caps to keep token + storage reasonable
-MAX_TBO_HOTELS          = 3000
+MAX_TBO_HOTELS          = 1000
 MAX_ACTIVITIES_PER_CITY = 30
 MAX_CITIES_FOR_WIKI     = 200
 BATCH_SIZE              = 90   # Pinecone integrated-embedding upsert limit
@@ -48,9 +48,9 @@ def _find(*candidates: str) -> Path:
     raise FileNotFoundError(f"None of these exist in {DATA}: {candidates}")
 
 
-TL_PATH       = _find("TripAdvisor Luxury Hotels.csv", "tl_worlds_best_hotels.csv")
-TBO_PATH      = _find("Hotels.csv", "tbo_hotels.csv")
-MICHELIN_PATH = _find("Michelin Guide Restaurants.csv", "michelin_2021.csv")
+TL_PATH       = _find("Travel and Leisure Worlds Best Luxury Hotels.csv")
+TBO_PATH      = _find("Hotels.csv")
+MICHELIN_PATH = _find("Michelin Guide Restaurants.csv")
 
 
 # ── Hotels: T+L luxury list (prestige tier) ──────────────────────────────────
@@ -69,7 +69,7 @@ def load_tl_hotels() -> list[dict]:
             rank    = (row.get("Rank") or "0").strip()
             text = (
                 f"{hotel} — luxury hotel by {company} in {city}, {country}. "
-                f"Theme: {theme}. TripAdvisor luxury score {score}/100. "
+                f"Theme: {theme}. Travel and Leisure luxury score {score}/100. "
                 f"Editorial-quality property; one of the world's most acclaimed stays."
             )
             out.append({
@@ -80,7 +80,7 @@ def load_tl_hotels() -> list[dict]:
                 "tier":        "prestige",
                 "category":    "hotel",
                 "subcategory": "luxury",
-                "source":      "tripadvisor_luxury",
+                "source":      "travel_and_leisure_luxury",
                 "score":       _to_float(score, 0.0),
                 "theme":       theme,
             })
