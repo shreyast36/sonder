@@ -49,3 +49,10 @@ scripts/*.json
 
 # AWS
 .aws/
+
+# Seed data (downloaded from Kaggle, too large for git)
+data/seed/*.csv
+data/seed/*.zip
+
+# Cities API cache
+.cache/
