@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect } from 'react'
 import Welcome         from './pages/Welcome'
 import SignUp          from './pages/SignUp'
+import AuthAction      from './pages/AuthAction'
 import Dashboard       from './pages/Dashboard'
 import TripPreferences from './pages/TripPreferences'
 import Itinerary       from './pages/Itinerary'
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="/"                   element={<Page><Welcome/></Page>}/>
           <Route path="/signup"             element={<Page><SignUp/></Page>}/>
           <Route path="/signin"             element={<Page><SignUp/></Page>}/>
+          <Route path="/auth/action"        element={<Page><AuthAction/></Page>}/>
           <Route path="/dashboard"          element={<Page><Dashboard/></Page>}/>
           <Route path="/preferences"        element={<Page><TripPreferences/></Page>}/>
           <Route path="/itinerary"          element={<Page><Itinerary/></Page>}/>
