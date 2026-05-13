@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft, Mail, Lock, User } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
@@ -69,9 +69,11 @@ function Field({ icon: Icon, type, value, onChange, placeholder, autoComplete })
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function SignUp() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { signIn, signUp, resetPassword } = useAuth()
 
-  const [mode, setMode]               = useState('signup')   // 'signup' | 'signin' | 'reset'
+  const initialMode = location.pathname === '/signin' ? 'signin' : 'signup'
+  const [mode, setMode]               = useState(initialMode)   // 'signup' | 'signin' | 'reset'
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail]             = useState('')
   const [password, setPassword]       = useState('')

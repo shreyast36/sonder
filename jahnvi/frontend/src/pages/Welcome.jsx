@@ -447,8 +447,11 @@ export default function Welcome() {
   const navigate = useNavigate()
   const { user } = useAuth()
 
-  function SignIn() {
+  function goSignUp() {
     navigate(user ? '/dashboard' : '/signup')
+  }
+  function goSignIn() {
+    navigate(user ? '/dashboard' : '/signin')
   }
 
   return (
@@ -476,7 +479,7 @@ export default function Welcome() {
           ))}
         </div>
         <button
-          onClick={SignIn}
+          onClick={goSignUp}
           style={{ fontFamily: '"Inter Tight",sans-serif', display: 'flex', alignItems: 'center', gap: 8, padding: '11px 26px', borderRadius: 5, fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 500, border: `1px solid rgba(212,182,134,0.45)`, color: GOLD, background: 'none', cursor: 'pointer', transition: 'all 0.25s' }}
           onMouseEnter={e => { e.currentTarget.style.background = GOLD; e.currentTarget.style.color = BG }}
           onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = GOLD }}>
@@ -525,7 +528,7 @@ export default function Welcome() {
 
           <motion.div variants={fade}>
             <button
-              onClick={SignIn}
+              onClick={goSignIn}
               style={{ fontFamily: '"Inter Tight",sans-serif', display: 'inline-flex', alignItems: 'center', gap: 12, padding: '17px 44px', borderRadius: 6, background: GOLD, color: BG, border: 'none', fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, cursor: 'pointer', boxShadow: '0 0 60px rgba(212,182,134,0.26), 0 0 120px rgba(212,182,134,0.09)', transition: 'transform 0.28s, box-shadow 0.28s' }}
               onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 0 80px rgba(212,182,134,0.38),0 0 140px rgba(212,182,134,0.13)' }}
               onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 0 60px rgba(212,182,134,0.26),0 0 120px rgba(212,182,134,0.09)' }}>
