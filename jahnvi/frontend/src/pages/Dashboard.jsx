@@ -47,18 +47,60 @@ export default function Dashboard() {
   const { user, signOut }  = useAuth()
   const daysAway  = useCountUp(18, 1000, 600)
 
+  // displayName changes via updateProfile don't refire onAuthStateChanged, so
+  // we track an in-component override that takes precedence over user.displayName.
+  const [displayNameOverride, setDisplayNameOverride] = useState(null)
+  useEffect(() => { setDisplayNameOverride(null) }, [user?.uid])
+  const effectiveDisplayName = displayNameOverride ?? user?.displayName ?? null
+
   // Prefer the user's chosen display name. Fall back to the local part of their
   // email (e.g. "ali.khan@gmail.com" → "Ali"), capitalized. Only resort to a
   // generic greeting when neither is available — but post-signup that should
   // never happen.
   const firstName = (() => {
-    if (user?.displayName) return user.displayName.split(' ')[0]
+    if (effectiveDisplayName) return effectiveDisplayName.split(' ')[0]
     if (user?.email) {
       const local = user.email.split('@')[0].split(/[._-]/)[0]
       return local.charAt(0).toUpperCase() + local.slice(1).toLowerCase()
     }
     return ''
   })()
+
+  // Inline name editor state
+  const [editingName, setEditingName] = useState(false)
+  const [nameInput,   setNameInput]   = useState('')
+  const [savingName,  setSavingName]  = useState(false)
+  const [nameError,   setNameError]   = useState(null)
+
+  function openNameEditor() {
+    setNameInput(effectiveDisplayName ?? '')
+    setNameError(null)
+    setEditingName(true)
+  }
+  function cancelNameEdit() {
+    setEditingName(false)
+    setNameError(null)
+    setNameInput('')
+  }
+  async function saveName(e) {
+    e?.preventDefault?.()
+    const trimmed = nameInput.trim()
+    if (!trimmed) { setNameError('Name cannot be empty.'); return }
+    if (trimmed.length > 60) { setNameError('Name is too long.'); return }
+    setSavingName(true)
+    setNameError(null)
+    try {
+      await updateProfile(auth.currentUser, { displayName: trimmed })
+      setDisplayNameOverride(trimmed)
+      setEditingName(false)
+      setDropdown(false)
+      setNameInput('')
+    } catch (err) {
+      setNameError('Failed to update. Try again.')
+    } finally {
+      setSavingName(false)
+    }
+  }
   const hour        = new Date().getHours()
   const greeting    = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
   const fileInputRef  = useRef(null)
@@ -114,16 +156,56 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-            <AnimatePresence>
+            <AnimatePresence onExitComplete={cancelNameEdit}>
               {dropdownOpen && (
                 <motion.div
                   initial={{ opacity: 0, y: -8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.96 }}
                   transition={{ duration: 0.18, ease }}
-                  style={{ position: 'absolute', top: 44, right: 0, minWidth: 190, background: 'rgba(18,15,10,0.96)', border: `1px solid ${HAIRLINE}`, borderRadius: 12, overflow: 'hidden', backdropFilter: 'blur(20px)', boxShadow: '0 16px 48px rgba(0,0,0,0.5)', zIndex: 100 }}
+                  style={{ position: 'absolute', top: 44, right: 0, minWidth: editingName ? 260 : 200, background: 'rgba(18,15,10,0.96)', border: `1px solid ${HAIRLINE}`, borderRadius: 12, overflow: 'hidden', backdropFilter: 'blur(20px)', boxShadow: '0 16px 48px rgba(0,0,0,0.5)', zIndex: 100 }}
                 >
-                  {[
+                  {editingName ? (
+                    <form onSubmit={saveName} style={{ padding: '14px 14px 12px' }}>
+                      <label style={{ display: 'block', fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE, marginBottom: 8 }}>
+                        Display name
+                      </label>
+                      <input
+                        autoFocus
+                        type="text"
+                        value={nameInput}
+                        onChange={e => setNameInput(e.target.value)}
+                        placeholder="Your name"
+                        maxLength={60}
+                        style={{
+                          width: '100%', boxSizing: 'border-box',
+                          padding: '10px 12px',
+                          background: 'rgba(232,212,168,0.04)',
+                          border: `1px solid ${HAIRLINE}`,
+                          borderRadius: 6,
+                          outline: 'none',
+                          fontFamily: '"Inter Tight",sans-serif', fontSize: 13, color: BONE,
+                          letterSpacing: '0.01em',
+                        }}
+                      />
+                      {nameError && (
+                        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: '#E89B7C', margin: '8px 2px 0' }}>{nameError}</p>
+                      )}
+                      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                        <button type="button" onClick={cancelNameEdit}
+                          style={{ flex: 1, padding: '9px 0', background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 6, fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, cursor: 'pointer', transition: 'color 0.15s, border-color 0.15s' }}
+                          onMouseEnter={e => { e.currentTarget.style.color = BONE }}
+                          onMouseLeave={e => { e.currentTarget.style.color = MUTE }}>
+                          Cancel
+                        </button>
+                        <button type="submit" disabled={savingName}
+                          style={{ flex: 1, padding: '9px 0', background: GOLD, border: 'none', borderRadius: 6, fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: BG, fontWeight: 600, cursor: savingName ? 'wait' : 'pointer', opacity: savingName ? 0.65 : 1, transition: 'opacity 0.2s' }}>
+                          {savingName ? 'Saving…' : 'Save'}
+                        </button>
+                      </div>
+                    </form>
+                  ) : [
+                    { label: 'Change name',            action: openNameEditor },
                     { label: 'Change profile picture', action: () => { setDropdown(false); fileInputRef.current?.click() } },
-                    { label: 'Sign out', action: () => { setDropdown(false); signOut().then(() => navigate('/')) } },
+                    { label: 'Sign out',               action: () => { setDropdown(false); signOut().then(() => navigate('/')) } },
                   ].map(({ label, action }) => (
                     <button key={label} onClick={action}
                       style={{ width: '100%', padding: '14px 18px', background: 'none', border: 'none', textAlign: 'left', fontFamily: '"Inter Tight",sans-serif', fontSize: 12, letterSpacing: '0.04em', color: MUTE, cursor: 'pointer', transition: 'all 0.15s', display: 'block' }}
