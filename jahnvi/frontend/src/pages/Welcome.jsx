@@ -500,8 +500,18 @@ export default function Welcome() {
         <motion.div variants={stagger} initial="hidden" animate="show"
           style={{ position: 'relative', zIndex: 1, maxWidth: 860 }}>
 
-          <motion.p variants={fade} style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.40em', textTransform: 'uppercase', color: GOLD, opacity: 0.75, marginBottom: 32 }}>
-            For the Chronically Curious
+          <motion.p variants={fade} style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 'clamp(20px, 2.2vw, 28px)', letterSpacing: '0.005em', lineHeight: 1.3, marginBottom: 36, color: BONE }}>
+            <motion.span
+              animate={{ filter: ['drop-shadow(0 0 12px rgba(244,237,224,0.06))','drop-shadow(0 0 22px rgba(244,237,224,0.14))','drop-shadow(0 0 12px rgba(244,237,224,0.06))'] }}
+              transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+              style={{ color: 'rgba(244,237,224,0.72)' }}
+            >Wanting wonder?</motion.span>
+            &nbsp;&nbsp;
+            <motion.span
+              animate={{ filter: ['drop-shadow(0 0 16px rgba(212,182,134,0.22))','drop-shadow(0 0 44px rgba(212,182,134,0.55))','drop-shadow(0 0 16px rgba(212,182,134,0.22))'] }}
+              transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 0.4 }}
+              style={{ background: GOLD_GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', fontWeight: 500 }}
+            >Discover Sonder.</motion.span>
           </motion.p>
 
           <motion.h1 variants={wipe} style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 'clamp(52px, 7.5vw, 108px)', lineHeight: 1.02, letterSpacing: '-0.025em', color: BONE, margin: '0 0 4px' }}>

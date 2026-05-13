@@ -7,6 +7,9 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from shared.config import ALLOWED_ORIGINS, LOCAL_MODE, FIREBASE_PROJECT_ID, SENTRY_DSN
 
+_LOCAL_DEV_ORIGINS = [f"http://localhost:{p}" for p in range(5173, 5180)]
+_CORS_ORIGINS = _LOCAL_DEV_ORIGINS if LOCAL_MODE else ALLOWED_ORIGINS
+
 import sentry_sdk
 from sentry_sdk.integrations.starlette import StarletteIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -42,19 +45,24 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+## temporary test route for sentry
+@app.get("/debug-sentry")
+async def trigger_error():
+    raise Exception("This is a test exception, sentry should capture this!")
+
 from mushahid.routes import plan_trip, update_trip, cotraveller, chat, users, visa, export, health
 
 app.include_router(health.router)
-app.include_router(visa.router)
-app.include_router(users.router)
-app.include_router(plan_trip.router)
-app.include_router(update_trip.router)
-app.include_router(cotraveller.router)
-app.include_router(chat.router)
-app.include_router(export.router)
+app.include_router(visa.router,         prefix="/api")
+app.include_router(users.router,        prefix="/api")
+app.include_router(plan_trip.router,    prefix="/api")
+app.include_router(update_trip.router,  prefix="/api")
+app.include_router(cotraveller.router,  prefix="/api")
+app.include_router(chat.router,         prefix="/api")
+app.include_router(export.router,       prefix="/api")

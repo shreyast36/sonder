@@ -47,26 +47,95 @@ def _render_itinerary_html(itinerary, include_notes: bool = True) -> str:
     """
 
 
+_TEST_DAYS = [
+    ("Arrival & First Light", [
+        ("3:00 PM",  "Alaya Ubud",                 "Boutique resort with wellness focus — matched to your relaxed pace."),
+        ("5:00 PM",  "Sacred Monkey Forest",       "A 10-minute walk from your hotel. UNESCO-listed and perfect for a gentle first evening."),
+        ("7:30 PM",  "Locavore NXT",               "Ubud's most celebrated chef-led tasting menu. Reservations rare — booked ahead for you."),
+    ]),
+    ("Culture & Ceremony", [
+        ("8:00 AM",  "Tirta Empul Temple",         "Best visited early. The ritual purification pools are a once-in-a-lifetime experience."),
+        ("11:00 AM", "Tegalalang Rice Terraces",   "Most photogenic terraces near Ubud — morning light is ideal."),
+        ("6:00 PM",  "Kecak Fire Dance, Uluwatu",  "Sunset backdrop and traditional Balinese performance — one of Bali's signature experiences."),
+    ]),
+    ("Coastline & Calm", [
+        ("9:00 AM",  "Uluwatu Temple",             "Dramatic 70m cliff views. Aligns with the scenic nature preference you set."),
+        ("11:30 AM", "Padang Padang Beach",        "Hidden cove accessed by carved stone stairs. Worth every step."),
+        ("6:30 PM",  "Jimbaran Seafood, Beachside","Fresh catch grilled on the beach at sunset. Within your daily budget."),
+    ]),
+    ("Rest & Renewal", [
+        ("10:00 AM", "Balinese Healing Massage",   "Your wellness travel flag — 90-min traditional massage at the resort."),
+        ("1:00 PM",  "Campuhan Ridge Walk",        "Quiet 2km jungle ridge trail. Low effort, high reward."),
+        ("6:00 PM",  "Sari Organik",               "Farm-to-table dinner in the rice fields. The most serene setting in Ubud."),
+    ]),
+]
+
+
+def _render_test_itinerary_html() -> str:
+    BG, INK, GOLD, MUTE, RULE = "#FAF8F4", "#2A241A", "#B89968", "#8B7355", "#E5DCC9"
+    SERIF = "'Cormorant Garamond', Georgia, 'Times New Roman', serif"
+    SANS  = "'Inter Tight', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
+
+    def day_block(n: int, theme: str, acts) -> str:
+        rows = "".join(
+            f"""
+            <tr>
+              <td valign="top" style="padding:18px 0;border-top:1px solid {RULE};">
+                <p style="margin:0 0 4px;font-family:{SANS};font-size:10px;letter-spacing:0.18em;text-transform:uppercase;color:{GOLD};">{html_lib.escape(time)}</p>
+                <p style="margin:0 0 6px;font-family:{SERIF};font-size:22px;color:{INK};line-height:1.2;">{html_lib.escape(name)}</p>
+                <p style="margin:0;font-family:{SANS};font-size:13px;line-height:1.55;color:{MUTE};">{html_lib.escape(why)}</p>
+              </td>
+            </tr>"""
+            for time, name, why in acts
+        )
+        return f"""
+        <tr><td style="padding:40px 48px 8px;">
+          <p style="margin:0 0 6px;font-family:{SANS};font-size:9px;letter-spacing:0.32em;text-transform:uppercase;color:{MUTE};">Day {n}</p>
+          <h2 style="margin:0 0 18px;font-family:{SERIF};font-style:italic;font-weight:400;font-size:32px;color:{INK};line-height:1;">{html_lib.escape(theme)}</h2>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">{rows}</table>
+        </td></tr>"""
+
+    days_html = "".join(day_block(i + 1, theme, acts) for i, (theme, acts) in enumerate(_TEST_DAYS))
+
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Your Sonder Itinerary</title></head>
+<body style="margin:0;padding:0;background:{BG};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{BG};">
+    <tr><td align="center" style="padding:48px 16px;">
+      <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background:#FFFFFF;border:1px solid {RULE};">
+
+        <tr><td style="padding:40px 48px 8px;text-align:center;">
+          <p style="margin:0;font-family:{SANS};font-size:10px;letter-spacing:0.38em;text-transform:uppercase;color:{GOLD};">Sonder</p>
+        </td></tr>
+
+        <tr><td style="padding:24px 48px 48px;text-align:center;border-bottom:1px solid {RULE};">
+          <p style="margin:0 0 8px;font-family:{SANS};font-size:10px;letter-spacing:0.28em;text-transform:uppercase;color:{MUTE};">Your itinerary</p>
+          <h1 style="margin:0 0 12px;font-family:{SERIF};font-weight:400;font-size:54px;color:{INK};line-height:1;letter-spacing:-0.02em;">Bali, Indonesia</h1>
+          <p style="margin:0;font-family:{SANS};font-size:13px;color:{MUTE};letter-spacing:0.04em;">Jun 14 – Jun 21 &nbsp;·&nbsp; 7 days</p>
+        </td></tr>
+
+        {days_html}
+
+        <tr><td style="padding:40px 48px 48px;border-top:1px solid {RULE};text-align:center;">
+          <p style="margin:0 0 8px;font-family:{SANS};font-size:10px;letter-spacing:0.32em;text-transform:uppercase;color:{MUTE};">Curated for you by</p>
+          <p style="margin:0;font-family:{SERIF};font-style:italic;font-size:20px;color:{GOLD};">Sonder</p>
+        </td></tr>
+
+      </table>
+      <p style="margin:24px 0 0;font-family:{SANS};font-size:11px;color:{MUTE};">You're receiving this because you requested an itinerary export.</p>
+    </td></tr>
+  </table>
+</body></html>"""
+
+
 @router.post("/export/email/test")
 async def email_itinerary_test(body: dict, uid: str = Depends(verify_token)):
     from shared.email import send_itinerary_email
     recipient = body.get("email")
     if not recipient or not _EMAIL_RE.match(recipient):
         raise HTTPException(status_code=422, detail="Invalid email address")
-    html = """
-    <html><body style="font-family:sans-serif;max-width:700px;margin:auto;padding:2rem">
-    <h1>Sonder Itinerary — Test</h1>
-    <h2>Bali, Indonesia</h2>
-    <p>Jun 14 – Jun 21 · 7 days</p>
-    <h3>Day 1 — Arrival &amp; First Light</h3>
-    <ul>
-      <li><b>3:00 PM</b> — Alaya Ubud</li>
-      <li><b>5:00 PM</b> — Sacred Monkey Forest</li>
-      <li><b>7:30 PM</b> — Locavore NXT</li>
-    </ul>
-    </body></html>
-    """
-    await send_itinerary_email([recipient], html)
+    html = _render_test_itinerary_html()
+    await send_itinerary_email([recipient], html, force=True)
     return {"sent": True}
 
 

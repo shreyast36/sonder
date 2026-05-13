@@ -20,7 +20,11 @@ export function useAuth() {
           await getUserProfile()
         } catch (err) {
           if (err.status === 404) {
-            await createUserProfile(firebaseUser.displayName || 'Traveller')
+            try {
+              await createUserProfile(firebaseUser.displayName || 'Traveller')
+            } catch (createErr) {
+              console.warn('Profile creation failed (backend may be unavailable):', createErr.message)
+            }
           }
         }
         setUser(firebaseUser)

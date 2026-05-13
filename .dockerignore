@@ -1,0 +1,41 @@
+# Frontend — deployed separately on Vercel
+jahnvi/
+
+# Secrets — set via `fly secrets set`, never bake into image
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Git / IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts / logs
+*.log
+dist/
+build/
+
+# Tests / dev-only docs (optional — drop if you want them in the image)
+tests/
+*.md

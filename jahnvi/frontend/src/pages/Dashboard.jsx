@@ -52,9 +52,16 @@ export default function Dashboard() {
   const greeting    = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
   const fileInputRef  = useRef(null)
   const [uploading, setUploading]   = useState(false)
-  const [photoURL, setPhotoURL]     = useState(user?.photoURL ?? null)
-  useEffect(() => { if (user?.photoURL) setPhotoURL(user.photoURL) }, [user?.photoURL])
   const [dropdownOpen, setDropdown] = useState(false)
+  const [photoURL, setPhotoURL]     = useState(user?.photoURL ?? null)
+
+  useEffect(() => {
+    if (!user?.uid) return
+    const storageRef = ref(storage, `avatars/${user.uid}`)
+    getDownloadURL(storageRef)
+      .then(url => setPhotoURL(url))
+      .catch(() => setPhotoURL(user.photoURL ?? null))
+  }, [user?.uid])
 
   async function handleAvatarChange(e) {
     const file = e.target.files?.[0]
@@ -64,7 +71,6 @@ export default function Dashboard() {
       const storageRef = ref(storage, `avatars/${auth.currentUser.uid}`)
       await uploadBytes(storageRef, file)
       const url = await getDownloadURL(storageRef)
-      await updateProfile(auth.currentUser, { photoURL: url })
       setPhotoURL(url)
     } catch (err) {
       console.error('Avatar upload failed:', err.code, err.message)

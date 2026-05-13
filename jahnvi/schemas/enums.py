@@ -14,10 +14,10 @@ class BudgetStyle(str, Enum):
 
 
 class TravelStyle(str, Enum):
-    solo   = "solo"
-    couple = "couple"
-    family = "family"
-    group  = "group"
+    solo    = "solo"
+    couple  = "couple"
+    family  = "family"
+    friends = "friends"
 
 
 class EmotionIntent(str, Enum):

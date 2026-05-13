@@ -14,17 +14,19 @@ from shared.config import EMAIL_PROVIDER, EMAIL_API_KEY, EMAIL_FROM, LOCAL_MODE
 logger = logging.getLogger(__name__)
 
 
-async def send_itinerary_email(to_addresses: list[str], html_body: str) -> None:
+async def send_itinerary_email(to_addresses: list[str], html_body: str, *, force: bool = False) -> None:
     """
     Send a rendered HTML itinerary email to one or more recipients.
 
     Expected input:
         to_addresses = ["user@example.com"]
         html_body    = "<html>...</html>"
+
+    Pass force=True to send even when LOCAL_MODE=True (used by the test endpoint).
     """
     subject = "Your Sonder itinerary"
 
-    if LOCAL_MODE:
+    if LOCAL_MODE and not force:
         logger.info("LOCAL_MODE — email not sent. Subject: %s | To: %s | Body preview: %s",
                     subject, to_addresses, html_body[:300])
         return
