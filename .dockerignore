@@ -1,5 +1,7 @@
-# Frontend — deployed separately on Vercel
-jahnvi/
+# Frontend — deployed separately on Cloudflare Pages.
+# NOTE: only exclude jahnvi/frontend/. jahnvi/schemas/ is a shared Python
+# module imported by the backend (shared/schemas.py does `from jahnvi.schemas...`).
+jahnvi/frontend/
 
 # Secrets — set via `fly secrets set`, never bake into image
 .env
