@@ -75,6 +75,7 @@ export default function SignUp() {
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail]             = useState('')
   const [password, setPassword]       = useState('')
+  const [confirmPassword, setConfirm] = useState('')
   const [loading, setLoading]         = useState(false)
   const [error, setError]             = useState(null)
   const [resetSent, setResetSent]     = useState(false)
@@ -82,12 +83,19 @@ export default function SignUp() {
   function flip(newMode) {
     setError(null)
     setResetSent(false)
+    setConfirm('')
     setMode(newMode)
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null)
+
+    if (mode === 'signup' && password !== confirmPassword) {
+      setError('Passwords don\'t match.')
+      return
+    }
+
     setLoading(true)
     try {
       if (mode === 'signup') {
@@ -107,13 +115,13 @@ export default function SignUp() {
     }
   }
 
-  const title = mode === 'signup' ? 'Begin your journey'
-              : mode === 'signin' ? 'Welcome back'
+  const title = mode === 'signup' ? 'Welcome to Sonder!'
+              : mode === 'signin' ? ''
               : 'Reset your password'
 
-  const subtitle = mode === 'signup' ? 'Create your Sonder account.'
+  const subtitle = mode === 'signup' ? 'Create your account.'
                  : mode === 'signin' ? 'Sign in to continue.'
-                 : 'We\'ll send you a link to reset it.'
+                 : 'We\'ll send you a secure link to reset it.'
 
   return (
     <div style={{
@@ -197,6 +205,12 @@ export default function SignUp() {
             <Field
               icon={Lock} type="password" value={password} onChange={setPassword}
               placeholder="Password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+            />
+          )}
+          {mode === 'signup' && (
+            <Field
+              icon={Lock} type="password" value={confirmPassword} onChange={setConfirm}
+              placeholder="Confirm password" autoComplete="new-password"
             />
           )}
 
