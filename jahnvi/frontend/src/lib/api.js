@@ -27,6 +27,19 @@ export async function createUserProfile(displayName) {
   return post('/api/users/profile', { display_name: displayName })
 }
 
+// Public endpoint — no auth token required. Always resolves successfully
+// even if the email doesn't exist (the backend silently swallows errors
+// to prevent account enumeration).
+export async function requestPasswordReset(email) {
+  const res = await fetch(`${BASE}/api/auth/password-reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  })
+  if (!res.ok) throw Object.assign(new Error(res.statusText), { status: res.status })
+  return res.json()
+}
+
 export async function getUserProfile() {
   return get('/api/users/profile')
 }

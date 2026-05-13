@@ -14,18 +14,13 @@ from shared.config import EMAIL_PROVIDER, EMAIL_API_KEY, EMAIL_FROM, LOCAL_MODE
 logger = logging.getLogger(__name__)
 
 
-async def send_itinerary_email(to_addresses: list[str], html_body: str, *, force: bool = False) -> None:
+async def send_email(to_addresses: list[str], subject: str, html_body: str, *, force: bool = False) -> None:
     """
-    Send a rendered HTML itinerary email to one or more recipients.
+    Generic transactional email send via the configured provider.
 
-    Expected input:
-        to_addresses = ["user@example.com"]
-        html_body    = "<html>...</html>"
-
-    Pass force=True to send even when LOCAL_MODE=True (used by the test endpoint).
+    Pass force=True to send even when LOCAL_MODE=True (used by test endpoints
+    that need real delivery during local development).
     """
-    subject = "Your Sonder itinerary"
-
     if LOCAL_MODE and not force:
         logger.info("LOCAL_MODE — email not sent. Subject: %s | To: %s | Body preview: %s",
                     subject, to_addresses, html_body[:300])
@@ -39,6 +34,11 @@ async def send_itinerary_email(to_addresses: list[str], html_body: str, *, force
         await _send_via_ses(to_addresses, subject, html_body)
     else:
         raise ValueError(f"Unknown EMAIL_PROVIDER '{EMAIL_PROVIDER}'. Set to resend | sendgrid | ses.")
+
+
+async def send_itinerary_email(to_addresses: list[str], html_body: str, *, force: bool = False) -> None:
+    """Backwards-compatible wrapper around send_email for itinerary delivery."""
+    await send_email(to_addresses, "Your Sonder itinerary", html_body, force=force)
 
 
 async def _send_via_resend(to_addresses: list[str], subject: str, html: str) -> None:

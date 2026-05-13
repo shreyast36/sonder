@@ -4,11 +4,10 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
-  sendPasswordResetEmail,
   signOut as fbSignOut,
 } from 'firebase/auth'
 import { auth } from '../lib/firebase'
-import { getUserProfile, createUserProfile } from '../lib/api'
+import { getUserProfile, createUserProfile, requestPasswordReset } from '../lib/api'
 
 export function useAuth() {
   const [user, setUser]       = useState(null)
@@ -50,7 +49,7 @@ export function useAuth() {
   }
 
   async function resetPassword(email) {
-    return sendPasswordResetEmail(auth, email)
+    return requestPasswordReset(email)
   }
 
   async function signOut() {

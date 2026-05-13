@@ -56,11 +56,12 @@ app.add_middleware(
 async def trigger_error():
     raise Exception("This is a test exception, sentry should capture this!")
 
-from mushahid.routes import plan_trip, update_trip, cotraveller, chat, users, visa, export, health
+from mushahid.routes import plan_trip, update_trip, cotraveller, chat, users, visa, export, health, auth as auth_routes
 
 app.include_router(health.router)
 app.include_router(visa.router,         prefix="/api")
 app.include_router(users.router,        prefix="/api")
+app.include_router(auth_routes.router,  prefix="/api")
 app.include_router(plan_trip.router,    prefix="/api")
 app.include_router(update_trip.router,  prefix="/api")
 app.include_router(cotraveller.router,  prefix="/api")
