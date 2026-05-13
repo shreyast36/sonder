@@ -48,7 +48,10 @@ def _find(*candidates: str) -> Path:
     raise FileNotFoundError(f"None of these exist in {DATA}: {candidates}")
 
 
-TL_PATH       = _find("Travel and Leisure Worlds Best Luxury Hotels.csv")
+TL_PATH       = _find(
+    "Travel and Leisure World's Best Luxury Hotels.csv",
+    "Travel and Leisure Worlds Best Luxury Hotels.csv",
+)
 TBO_PATH      = _find("Hotels.csv")
 MICHELIN_PATH = _find("Michelin Guide Restaurants.csv")
 
