@@ -445,12 +445,10 @@ const NAV_LINKS = ['How It Works', 'Destinations', 'For Groups']
 
 export default function Welcome() {
   const navigate = useNavigate()
-  const { user, signInWithGoogle: GoogleSignIn } = useAuth()
+  const { user } = useAuth()
 
-  async function SignIn() {
-    if (user) { navigate('/dashboard'); return }
-    await GoogleSignIn()
-    navigate('/dashboard')
+  function SignIn() {
+    navigate(user ? '/dashboard' : '/signup')
   }
 
   return (

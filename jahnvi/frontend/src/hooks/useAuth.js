@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  sendPasswordResetEmail,
   signOut as fbSignOut,
-  GoogleAuthProvider,
-  signInWithPopup,
 } from 'firebase/auth'
 import { auth } from '../lib/firebase'
 import { getUserProfile, createUserProfile } from '../lib/api'
@@ -40,15 +41,22 @@ export function useAuth() {
     return signInWithEmailAndPassword(auth, email, password)
   }
 
+  async function signUp(email, password, displayName) {
+    const cred = await createUserWithEmailAndPassword(auth, email, password)
+    if (displayName) {
+      await updateProfile(cred.user, { displayName })
+    }
+    return cred
+  }
+
+  async function resetPassword(email) {
+    return sendPasswordResetEmail(auth, email)
+  }
+
   async function signOut() {
     await fbSignOut(auth)
     setUser(null)
   }
 
-  async function signInWithGoogle() {
-    const provider = new GoogleAuthProvider()
-    return signInWithPopup(auth, provider)
-  }
-
-  return { user, loading, signIn, signOut, signInWithGoogle }
+  return { user, loading, signIn, signUp, resetPassword, signOut }
 }
