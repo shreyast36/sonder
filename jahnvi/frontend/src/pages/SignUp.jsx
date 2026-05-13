@@ -93,15 +93,21 @@ export default function SignUp() {
     e.preventDefault()
     setError(null)
 
-    if (mode === 'signup' && password !== confirmPassword) {
-      setError('Passwords don\'t match.')
-      return
+    if (mode === 'signup') {
+      if (!displayName.trim()) {
+        setError('Please enter your name.')
+        return
+      }
+      if (password !== confirmPassword) {
+        setError('Passwords don\'t match.')
+        return
+      }
     }
 
     setLoading(true)
     try {
       if (mode === 'signup') {
-        await signUp(email.trim(), password, displayName.trim() || null)
+        await signUp(email.trim(), password, displayName.trim())
         navigate('/dashboard')
       } else if (mode === 'signin') {
         await signIn(email.trim(), password)

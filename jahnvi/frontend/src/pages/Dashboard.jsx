@@ -47,7 +47,18 @@ export default function Dashboard() {
   const { user, signOut }  = useAuth()
   const daysAway  = useCountUp(18, 1000, 600)
 
-  const firstName   = user?.displayName?.split(' ')[0] ?? 'Traveller'
+  // Prefer the user's chosen display name. Fall back to the local part of their
+  // email (e.g. "ali.khan@gmail.com" → "Ali"), capitalized. Only resort to a
+  // generic greeting when neither is available — but post-signup that should
+  // never happen.
+  const firstName = (() => {
+    if (user?.displayName) return user.displayName.split(' ')[0]
+    if (user?.email) {
+      const local = user.email.split('@')[0].split(/[._-]/)[0]
+      return local.charAt(0).toUpperCase() + local.slice(1).toLowerCase()
+    }
+    return ''
+  })()
   const hour        = new Date().getHours()
   const greeting    = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
   const fileInputRef  = useRef(null)
