@@ -445,13 +445,16 @@ const NAV_LINKS = ['How It Works', 'Destinations', 'For Groups']
 
 export default function Welcome() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  // `user` intentionally not used — both CTAs always route to their auth page,
+  // regardless of whether a session already exists. (User can sign out from the
+  // signin form if they reach it while already authenticated.)
+  useAuth()
 
   function goSignUp() {
-    navigate(user ? '/dashboard' : '/signup')
+    navigate('/signup')
   }
   function goSignIn() {
-    navigate(user ? '/dashboard' : '/signin')
+    navigate('/signin')
   }
 
   return (
