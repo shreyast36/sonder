@@ -21,7 +21,7 @@ _index_lock = asyncio.Lock()
 # Maps the model's expected text field to the field name we use in records.
 # Every record we upsert must have a `chunk_text` field — Pinecone embeds that.
 _EMBED_MODEL = "llama-text-embed-v2"
-_FIELD_MAP = {"text": "chunk_text"}
+_FIELD_MAP = {"text": "text"}
 
 
 async def get_pinecone_index():
