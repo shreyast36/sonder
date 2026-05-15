@@ -1,19 +1,12 @@
 """
 One-time Pinecone seed.
 
-Universe = data/destinations/top100.json (curated 364 destinations covering
-every traveler persona: cities, beaches, mountains, parks, heritage, wellness,
-safari, wine country). This file is the single source of truth — no algorithmic
-universe layers, no editorial/population/tbo_supply logic.
+Universe: data/destinations/top100.json.
+Sources: T+L luxury + TBO 3-5★ hotels, Michelin star/bib restaurants,
+Foursquare for hotels/restaurants/activities. OpenAI text-embedding-3-small.
 
-Three Pinecone namespaces, all filtered to records inside the curated universe:
-    hotels       — T+L luxury + TBO 3-5★
-    restaurants  — Michelin star/bib + Foursquare top dining (popularity-sorted)
-    activities   — Foursquare arts / landmarks / outdoors (popularity-sorted)
-
-Usage:
-    $env:PINECONE_API_KEY="..."; $env:PINECONE_INDEX_NAME="sonder-index"
-    $env:FOURSQUARE_API_KEY="..."
+    $env:PINECONE_API_KEY="..."; $env:PINECONE_INDEX_NAME="sonder-openai"
+    $env:FOURSQUARE_API_KEY="..."; $env:OPENAI_API_KEY="..."
     python -m scripts.seed_pinecone [--only hotels,restaurants,activities]
 """
 
@@ -45,30 +38,19 @@ FOURSQUARE_ENDPOINT    = "https://places-api.foursquare.com/places/search"
 FOURSQUARE_API_VERSION = "2025-06-17"
 UA = "Sonder/1.0 (https://discoversonder.com)"
 
-MAX_TBO_HOTELS        = 5000   # cap on TBO stream (universe filter reduces this naturally)
-MAX_PER_CITY          = 30     # Foursquare allows up to 50; 30 keeps signal tight
+MAX_TBO_HOTELS        = 5000
+MAX_PER_CITY          = 30
 RADIUS_METERS         = 15_000
 BATCH_SIZE            = 50
 UPSERT_PAUSE_SEC      = 6
 UPSERT_RETRY_BACKOFF  = 60
 TBO_PER_STAR_CITY_CAP = 15
 
-# Foursquare category IDs (new Places API uses long-form hex IDs).
-#   4d4b7104d754a06370d81259  Arts & Entertainment
-#   4d4b7105d754a06377d81259  Outdoors & Recreation
-#   4d4b7105d754a06374d81259  Food
-#   4bf58dd8d48988d1fa931735  Hotel
-#   4bf58dd8d48988d1ee931735  Hostel
-#   4bf58dd8d48988d1ed931735  Bed & Breakfast
-#   56aa371be4b08b9a8d573535  Vacation Rental
 ACTIVITY_CATEGORIES = "4d4b7104d754a06370d81259,4d4b7105d754a06377d81259"
 DINING_CATEGORIES   = "4d4b7105d754a06374d81259"
 LODGING_CATEGORIES  = "4bf58dd8d48988d1fa931735,4bf58dd8d48988d1ee931735,4bf58dd8d48988d1ed931735,56aa371be4b08b9a8d573535"
 
-# Only drop records whose categories are clearly not-a-destination at any
-# persona — pure infrastructure. Religious sites, casinos, nightclubs etc.
-# stay in; runtime persona filtering decides what surfaces (kid-friendly
-# excludes casinos, secular travelers exclude churches, etc.).
+# Pure infrastructure — never a destination at any persona.
 FSQ_CAT_BLOCKLIST = {
     "atm", "gas station", "fuel station", "parking", "baggage claim",
     "airport terminal", "airport gate", "airport lounge",
@@ -93,9 +75,6 @@ WORLDCITIES_PATH = _find("worldcities.csv")
 
 
 # ── Country normalization ────────────────────────────────────────────────────
-# Aliases built from REST Countries API + worldcities.csv admin_name column.
-# Cached to .cache/country_aliases.json so re-runs skip the API call.
-
 _COUNTRY_ALIASES_CACHE = Path(".cache/country_aliases.json")
 
 
@@ -133,7 +112,7 @@ def _fetch_country_aliases() -> dict[str, str]:
                     if isinstance(v, str) and v.strip():
                         aliases[v.strip().lower()] = canonical
     except Exception as e:
-        log.warning("REST Countries fetch failed: %s — continuing with subdivision data only", e)
+        log.warning("REST Countries fetch failed: %s", e)
 
     try:
         with open(WORLDCITIES_PATH, encoding="utf-8") as f:
@@ -181,12 +160,7 @@ def _to_float(s, default=0.0):
 
 
 def _norm_city(city: str) -> str:
-    """Key form for city lookup: lowercased, punctuation collapsed to spaces.
-
-    Matches 'Bora-Bora' to 'Bora Bora', 'St. Petersburg' to 'Saint Petersburg'
-    (after the saint expansion below), 'São Paulo' stays accented. Applied
-    symmetrically wherever city keys are built or compared.
-    """
+    """Match 'Bora-Bora' to 'Bora Bora', 'St. Petersburg' to 'Saint Petersburg'."""
     s = (city or "").strip().lower()
     s = re.sub(r"[.\-_/]+", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
@@ -201,11 +175,7 @@ _NOMINATIM_CACHE_PATH = Path(".cache/nominatim_cities.json")
 
 
 class CityIndex:
-    """Coord lookup with progressive fallbacks for messy real-world inputs.
-
-    Fast path: worldcities.csv. Slow path: Nominatim for small vacation towns
-    not in worldcities (Interlaken, Zermatt, Tulum, ...). Cached per pair.
-    """
+    """worldcities.csv fast path; Nominatim slow path for small vacation towns."""
 
     def __init__(self) -> None:
         self.by_pair:   dict[tuple[str, str], dict] = {}
@@ -315,7 +285,6 @@ class CityIndex:
             except (KeyError, ValueError, TypeError):
                 entry = None
 
-        # Only cache real hits; transient None responses get retried next run.
         if entry is not None:
             self._nominatim_cache[key] = entry
             self._persist_nominatim_cache()
@@ -329,7 +298,7 @@ class CityIndex:
         )
 
 
-# ── Universe (single source of truth) ────────────────────────────────────────
+# ── Universe ─────────────────────────────────────────────────────────────────
 def load_destinations() -> list[dict]:
     data = json.loads(DESTINATIONS_PATH.read_text(encoding="utf-8"))
     log.info("Loaded %d curated destinations from %s", len(data), DESTINATIONS_PATH)
@@ -337,7 +306,6 @@ def load_destinations() -> list[dict]:
 
 
 def _destination_keys(destinations: list[dict]) -> set[tuple[str, str]]:
-    """Return the set of normalized (city, country) keys for membership tests."""
     return {(_norm_city(d["city"]), _norm_country(d["country"])) for d in destinations}
 
 
@@ -345,7 +313,7 @@ def _in_universe(city: str, country: str, dest_keys: set[tuple[str, str]]) -> bo
     return (_norm_city(city), _norm_country(country)) in dest_keys
 
 
-# ── Loaders (filtered to universe) ───────────────────────────────────────────
+# ── Loaders ──────────────────────────────────────────────────────────────────
 def load_tl_hotels(dest_keys: set[tuple[str, str]]) -> list[dict]:
     out = []
     with open(TL_PATH, encoding="utf-8-sig", errors="replace") as f:
@@ -383,7 +351,7 @@ def load_tl_hotels(dest_keys: set[tuple[str, str]]) -> list[dict]:
                 "year":               _to_float(year),
                 "theme":              theme,
             })
-    log.info("Loaded %d T+L hotels (filtered to universe)", len(out))
+    log.info("Loaded %d T+L hotels", len(out))
     return out
 
 
@@ -391,7 +359,7 @@ _TBO_STARS = {"FiveStar": 5, "FourStar": 4, "ThreeStar": 3}
 
 
 def _detect_encoding(path: Path) -> str:
-    """Sniff first 64 KB. UTF-8 if it decodes cleanly, else CP1252 (Windows Excel)."""
+    """UTF-8 if first 64 KB decodes cleanly, else CP1252."""
     with open(path, "rb") as f:
         sample = f.read(65536)
     try:
@@ -402,7 +370,6 @@ def _detect_encoding(path: Path) -> str:
 
 
 def load_tbo_hotels(dest_keys: set[tuple[str, str]]) -> list[dict]:
-    """Streams 2.4 GB Hotels.csv. Per-star-per-city cap spreads coverage."""
     out: list[dict] = []
     seen: dict[tuple[str, int], int] = {}
     encoding = _detect_encoding(TBO_PATH)
@@ -444,8 +411,7 @@ def load_tbo_hotels(dest_keys: set[tuple[str, str]]) -> list[dict]:
             seen[(city, stars)] = seen.get((city, stars), 0) + 1
             if i and i % 100_000 == 0:
                 log.info("  ...streamed %d TBO rows, kept %d", i, len(out))
-    log.info("Loaded %d TBO hotels (3★–5★, filtered to universe) — skipped %d mojibake rows",
-             len(out), skipped_mojibake)
+    log.info("Loaded %d TBO hotels — skipped %d mojibake rows", len(out), skipped_mojibake)
     return out
 
 
@@ -453,7 +419,6 @@ _MICHELIN_KEEP = {"3 stars", "2 stars", "1 star", "3 star", "2 star", "bib gourm
 
 
 def load_michelin(dest_keys: set[tuple[str, str]]) -> list[dict]:
-    """Star/bib only — skips the long-tail 'Selected Restaurants' tier."""
     out = []
     with open(MICHELIN_PATH, encoding="utf-8-sig", errors="replace") as f:
         for i, row in enumerate(csv.DictReader(f)):
@@ -481,7 +446,7 @@ def load_michelin(dest_keys: set[tuple[str, str]]) -> list[dict]:
                 "price":    price,
                 "source":   "michelin",
             })
-    log.info("Loaded %d Michelin restaurants (filtered to universe)", len(out))
+    log.info("Loaded %d Michelin restaurants", len(out))
     return out
 
 
@@ -552,9 +517,6 @@ class _AuthError(Exception):
 
 async def _fsq_call(client: httpx.AsyncClient, lat: float, lon: float,
                     categories: str, limit: int) -> list[dict]:
-    """New Foursquare Places API call. Requests premium fields explicitly —
-    these (rating, popularity, price, description) may add to the per-call
-    credit cost but power the runtime metadata filters in Pinecone."""
     for attempt in range(3):
         try:
             r = await client.get(
@@ -575,7 +537,7 @@ async def _fsq_call(client: httpx.AsyncClient, lat: float, lon: float,
                 },
             )
             if r.status_code in (401, 403):
-                log.error("  Foursquare auth error %d — check FOURSQUARE_API_KEY", r.status_code)
+                log.error("  Foursquare auth error %d", r.status_code)
                 raise _AuthError()
             if r.status_code == 429 or r.status_code >= 500:
                 wait = 2 ** (attempt + 2)
@@ -600,7 +562,7 @@ async def fetch_foursquare(
     destinations: list[dict],
     cities: CityIndex,
     categories: str,
-    record_category: str,    # "restaurant" | "activity"
+    record_category: str,
     cache_subdir: str,
 ) -> list[dict]:
     if not FOURSQUARE_API_KEY:
@@ -637,7 +599,7 @@ async def fetch_foursquare(
 
             city_recs: list[dict] = []
             for place in places:
-                fsq_id = place.get("fsq_place_id") or place.get("fsq_id")  # new + legacy
+                fsq_id = place.get("fsq_place_id") or place.get("fsq_id")
                 name   = (place.get("name") or "").strip()
                 if not fsq_id or not name or fsq_id in seen:
                     continue
@@ -645,7 +607,6 @@ async def fetch_foursquare(
                     continue
                 seen.add(fsq_id)
 
-                # New API returns lat/lon at top level; legacy nests under geocodes.main
                 lat = place.get("latitude")
                 lon = place.get("longitude")
                 if lat is None or lon is None:
@@ -668,7 +629,7 @@ async def fetch_foursquare(
                     "categories":  ",".join(_category_names(place)),
                     "address":     location.get("formatted_address", "") or location.get("address", ""),
                 }
-                # Only include premium fields when present — Pinecone rejects null metadata.
+                # Pinecone rejects null metadata — only include premium fields when present.
                 for src_key, dst_key in [("rating", "rating"), ("popularity", "popularity"),
                                           ("price", "price_tier"), ("website", "website"),
                                           ("tel", "phone")]:
@@ -683,7 +644,7 @@ async def fetch_foursquare(
 
             _save_cache(city, country, city_recs, cache_subdir)
             log.info("  Foursquare: %d %s for %s, %s", len(city_recs), record_category, city, country)
-            await asyncio.sleep(1.0)   # ~1 QPS to stay under trial-tier rate limit
+            await asyncio.sleep(1.0)  # trial-tier QPS cap
 
     log.info("Loaded %d Foursquare %s total", len(out), record_category)
     return out
@@ -692,7 +653,6 @@ async def fetch_foursquare(
 # ── Pinecone upsert ──────────────────────────────────────────────────────────
 _TRANSIENT_TOKENS = ("429", "resource_exhausted", "500", "502", "503", "504",
                      "timeout", "connection")
-# Hard caps where retrying just burns time
 _HARD_LIMIT_TOKENS = ("embedding token limit", "monthly", "upgrade your plan")
 
 
@@ -704,7 +664,6 @@ def _is_transient(err: str) -> bool:
 
 
 def _to_vector_record(rec: dict, embedding: list[float]) -> dict:
-    """Build a Pinecone upsert payload. `text` goes into metadata for retrieval debugging."""
     meta = {k: v for k, v in rec.items() if k != "_id" and v is not None and v != ""}
     return {"id": rec["_id"], "values": embedding, "metadata": meta}
 
