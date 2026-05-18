@@ -20,7 +20,7 @@ def check_pace(itinerary: Itinerary, constraints: TripConstraints) -> bool:
     if not itinerary.days:
         return True
     avg = sum(len(d.activities) for d in itinerary.days) / len(itinerary.days)
-    return avg <= _PACE_MAX.get(constraints.pace_preference, 999)
+    return avg <= _PACE_MAX.get(constraints.pace, 999)
 
 
 def check_must_haves(itinerary: Itinerary, constraints: TripConstraints) -> bool:

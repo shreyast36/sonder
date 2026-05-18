@@ -68,11 +68,8 @@ def build_user_query(user_profile: UserProfile) -> str:
             parts.append(" ".join(c.must_haves))
         parts.append(f"budget ${c.budget_usd:.0f}")
 
-    if user_profile.persona_answers:
-        pa = user_profile.persona_answers
-        for field in [pa.travel_goal, pa.pace_preference, pa.must_not_miss, pa.dream_trip]:
-            if field:
-                parts.append(field)
+    if user_profile.persona_answers and user_profile.persona_answers.small_thing:
+        parts.append(user_profile.persona_answers.small_thing)
 
     if user_profile.compatibility_signals:
         cs = user_profile.compatibility_signals

@@ -102,10 +102,12 @@ def _constraints_summary(user_profile: UserProfile) -> str:
     c = user_profile.constraints
     if not c:
         return "No constraints provided."
+    pace = c.pace.value if c.pace else "moderate"
+    duration = (c.end_date - c.start_date).days if (c.start_date and c.end_date) else "?"
     parts = [
         f"Budget: ${c.budget_usd:.0f}",
-        f"Duration: {(c.end_date - c.start_date).days} days",
-        f"Pace: {c.pace_preference.value}",
+        f"Duration: {duration} days",
+        f"Pace: {pace}",
     ]
     if c.must_haves:
         parts.append(f"Must-haves: {', '.join(c.must_haves)}")

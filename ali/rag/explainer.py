@@ -15,24 +15,32 @@ def _build_explain_prompt(
     context: list[str],
     user_profile: UserProfile,
 ) -> str:
-    pa = user_profile.persona_answers
-    interests = ""
-    if pa:
-        scored = sorted(
-            [("food", pa.food_interest), ("adventure", pa.adventure_interest),
-             ("culture", pa.culture_interest), ("nature", pa.nature_interest)],
-            key=lambda x: -x[1],
-        )
-        interests = ", ".join(f"{k} ({v}/5)" for k, v in scored[:3])
+    c = user_profile.constraints
+    pace = c.pace.value if (c and c.pace) else "moderate"
 
-    pace = user_profile.constraints.pace_preference.value if user_profile.constraints else "moderate"
+    # Persona signals come from the LLM-inferred dimensions stored on compatibility_signals.
+    cs = user_profile.compatibility_signals or {}
+    top_interests = cs.get("top_interests") or []
+    top_push      = cs.get("top_push") or []
+    interest_str  = ", ".join(top_interests) if top_interests else "—"
+    push_str      = ", ".join(top_push) if top_push else "—"
+
+    small_thing = ""
+    if user_profile.persona_answers and user_profile.persona_answers.small_thing:
+        small_thing = user_profile.persona_answers.small_thing.strip()
+
     mood = user_profile.emotion_intent.value if user_profile.emotion_intent else "excited"
     context_block = "\n".join(f"- {c}" for c in context) if context else "No additional context available."
 
     return f"""Activity: {activity.name} ({activity.category}, {activity.duration_hours}h, ${activity.cost_usd:.0f})
 Description: {activity.description}
 
-Traveller profile: pace={pace}, mood={mood}, top interests: {interests}
+Traveller profile:
+- Pace: {pace}
+- Mood: {mood}
+- Push motivations: {push_str}
+- Pull interests: {interest_str}
+- Something they said recently: "{small_thing or "—"}"
 
 Context snippets:
 {context_block}
