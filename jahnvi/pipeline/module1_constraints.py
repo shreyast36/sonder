@@ -16,25 +16,18 @@ async def capture_constraints(raw_input: dict) -> TripConstraints:
 
     Expected input:
         {
-            "destination_query":       "Bali",
-            "destination_type":        "beach",
-            "origin_query":            "London",
-            "nationality":             "British",
-            "start_date":              "2025-06-01",
-            "end_date":                "2025-06-07",
-            "flexible_dates":          false,
-            "budget_amount":           2000.0,
-            "budget_currency":         "GBP",
-            "budget_includes_flights": true,
-            "group_size":              2,
-            "who_travelling_with":     "couple",
-            "accommodation_types":     ["Boutique", "Hotel"],
-            "hire_car":                true,
-            "has_driving_licence":     true,
-            "mobility_notes":          "",
-            "dietary_notes":           "vegetarian",
-            "must_haves":              ["snorkeling", "local food"],
-            "avoid_list":              ["nightclubs"]
+            "destination_query":   "Bali",
+            "destination_type":    "beach",
+            "nationality":         "British",
+            "start_date":          "2025-06-01",
+            "end_date":            "2025-06-07",
+            "flexible_dates":      false,
+            "budget_amount":       2000.0,
+            "budget_currency":     "GBP",
+            "group_size":          2,
+            "who_travelling_with": "couple",
+            "must_haves":          ["snorkeling", "local food"],
+            "avoid_list":          ["nightclubs"]
         }
 
     Expected output:
@@ -71,31 +64,19 @@ async def capture_constraints(raw_input: dict) -> TripConstraints:
         except ValueError:
             logger.warning("Unknown TravelStyle value '%s' — ignoring", who_raw)
 
-    hire_car            = bool(raw_input.get("hire_car", False))
-    has_driving_licence = raw_input.get("has_driving_licence")
-    if has_driving_licence is not None:
-        has_driving_licence = bool(has_driving_licence)
-
     return TripConstraints(
-        destination_query       = str(raw_input.get("destination_query") or ""),
-        destination_type        = str(raw_input.get("destination_type") or ""),
-        origin_query            = str(raw_input.get("origin_query") or ""),
-        nationality             = str(raw_input.get("nationality") or ""),
-        start_date              = start_date,
-        end_date                = end_date,
-        flexible_dates          = bool(raw_input.get("flexible_dates", False)),
-        budget_usd              = round(budget_usd, 2),
-        budget_currency         = currency,
-        budget_includes_flights = bool(raw_input.get("budget_includes_flights", True)),
-        group_size              = group_size,
-        who_travelling_with     = who_travelling_with,
-        accommodation_types     = list(raw_input.get("accommodation_types") or []),
-        hire_car                = hire_car,
-        has_driving_licence     = has_driving_licence,
-        mobility_notes          = str(raw_input.get("mobility_notes") or ""),
-        dietary_notes           = str(raw_input.get("dietary_notes") or ""),
-        must_haves              = list(raw_input.get("must_haves") or []),
-        avoid_list              = list(raw_input.get("avoid_list") or []),
+        destination_query   = str(raw_input.get("destination_query") or ""),
+        destination_type    = str(raw_input.get("destination_type") or ""),
+        nationality         = str(raw_input.get("nationality") or ""),
+        start_date          = start_date,
+        end_date            = end_date,
+        flexible_dates      = bool(raw_input.get("flexible_dates", False)),
+        budget_usd          = round(budget_usd, 2),
+        budget_currency     = currency,
+        group_size          = group_size,
+        who_travelling_with = who_travelling_with,
+        must_haves          = list(raw_input.get("must_haves") or []),
+        avoid_list          = list(raw_input.get("avoid_list") or []),
     )
 
 
