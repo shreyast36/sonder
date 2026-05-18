@@ -13,7 +13,7 @@ vs. extrovert sociality) emerge compositionally across dimensions rather than
 via dedicated negative axes.
 
 Budget and pace are structured constraints on TripConstraints (budget_usd,
-pace), not latent dimensions — they don't need to be mined from free text.
+pace), not latent dimensions.
 
 Owned by Jahnvi. Module3 reads these without hardcoding dimension names.
 """
@@ -22,7 +22,6 @@ Owned by Jahnvi. Module3 reads these without hardcoding dimension names.
 
 PUSH_DIMENSIONS: dict[str, list[str]] = {
     "escape_reset": [
-        # Detachment from current life + physical/mental recovery.
         "disconnect", "off the grid", "unplug", "switch off",
         "leave behind", "leave it all", "leave everything", "drop everything",
         "no emails", "no work", "out of routine",
@@ -40,7 +39,6 @@ PUSH_DIMENSIONS: dict[str, list[str]] = {
         "mentally exhausted",
     ],
     "adventure_novelty": [
-        # Push myself, risk, spontaneity, first-time.
         "feel alive", "push myself", "challenge myself", "take a risk",
         "adrenaline", "thrill",
         "out of comfort zone", "push boundaries",
@@ -51,7 +49,6 @@ PUSH_DIMENSIONS: dict[str, list[str]] = {
         "rough it", "uncharted",
     ],
     "connection": [
-        # Travel together — companions or partner; quality time / shared memories.
         "share", "bond", "quality time", "be present with",
         "memories with", "making memories", "shared experience",
         "inside joke", "catch up", "reconnect",
@@ -69,7 +66,6 @@ PUSH_DIMENSIONS: dict[str, list[str]] = {
         "our place", "privacy",
     ],
     "reflection": [
-        # Think clearly, perspective, identity processing.
         "reflect", "process", "perspective", "clarity",
         "think clearly", "alone with my thoughts", "figure out",
         "introspect", "journal", "meditate on", "sit with",
@@ -81,7 +77,6 @@ PUSH_DIMENSIONS: dict[str, list[str]] = {
         "new chapter", "life transition",
     ],
     "curiosity": [
-        # Intellectual stimulation, want to understand.
         "curious", "fascinated", "intrigued", "want to know",
         "make sense of", "go deeper",
         "story behind", "significance",
@@ -91,9 +86,6 @@ PUSH_DIMENSIONS: dict[str, list[str]] = {
         "worldview", "read about", "background",
     ],
     "prestige_reward": [
-        # Bucket list / earned / once-in-a-lifetime.
-        # Note: contains both milestone-marking and status-signaling clusters;
-        # may split into prestige_milestone / prestige_status in v2.
         "dream trip", "once in a lifetime", "earned this", "deserved",
         "bucket list", "milestone", "anniversary trip",
         "unforgettable", "memorable trip",
@@ -112,7 +104,6 @@ PUSH_DIMENSIONS: dict[str, list[str]] = {
 
 PULL_DIMENSIONS: dict[str, list[str]] = {
     "nature_outdoors": [
-        # Landscape + outdoor activity merged — was always one dim split in two.
         "beach", "mountain", "ocean", "forest", "wildlife",
         "coast", "island", "lake", "river",
         "sunrise", "sunset", "fresh air",
@@ -159,8 +150,6 @@ PULL_DIMENSIONS: dict[str, list[str]] = {
         "tea ceremony", "unforgettable meal",
     ],
     "nightlife_social": [
-        # Nightlife + atmosphere/sociality merged. v2 may split warm-conviviality
-        # (long-Italian-lunch register) from bass-in-your-chest party energy.
         "nightclub", "dance floor", "rooftop bar", "speakeasy",
         "live music", "concert", "gig", "dj set",
         "techno", "house music", "afrobeats", "rave", "underground",
@@ -181,8 +170,6 @@ PULL_DIMENSIONS: dict[str, list[str]] = {
         "easy to meet people",
     ],
     "comfort_luxury": [
-        # Friction-avoidance + premium service merged. A backpacker can want
-        # comfort without luxury; v2 may re-split if real vectors diverge.
         "easy", "convenient", "stress-free", "seamless",
         "walkable", "comfortable", "cozy",
         "familiar", "reliable", "smooth", "no hassle",
@@ -207,8 +194,6 @@ PULL_DIMENSIONS: dict[str, list[str]] = {
         "the best table", "the best room", "upgrade",
     ],
     "exploration_local": [
-        # Wandering + anti-tourist merged. v2 may split process (wander/get lost)
-        # from preference (no crowds / locals only).
         "explore", "wander", "stumble", "get lost",
         "follow my nose", "see where it goes", "no destination",
         "happen to find",
