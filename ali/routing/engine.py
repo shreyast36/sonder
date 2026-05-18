@@ -24,16 +24,14 @@ def get_client(tier: ModelTier) -> BaseLLMClient:
 def _get_client_for_provider(tier: ModelTier, provider: str) -> BaseLLMClient:
     from ali.clients.deepseek_client import DeepSeekSmallClient, DeepSeekLargeClient
     from ali.clients.openai_client import OpenAISmallClient, OpenAILargeClient
-    from ali.clients.anthropic_client import AnthropicLargeClient
+    from ali.clients.anthropic_client import AnthropicSmallClient, AnthropicLargeClient
 
     if provider == "deepseek":
         return DeepSeekSmallClient() if tier == ModelTier.small else DeepSeekLargeClient()
     if provider == "openai":
         return OpenAISmallClient() if tier == ModelTier.small else OpenAILargeClient()
     if provider == "anthropic":
-        if tier == ModelTier.small:
-            raise ValueError("Anthropic has no small-tier client — choose deepseek or openai for SMALL_MODEL_PROVIDER")
-        return AnthropicLargeClient()
+        return AnthropicSmallClient() if tier == ModelTier.small else AnthropicLargeClient()
     raise ValueError(f"Unsupported provider '{provider}'")
 
 
