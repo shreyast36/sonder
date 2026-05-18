@@ -166,6 +166,39 @@ def _extract_json_object(raw: str) -> str:
     raise ValueError("unterminated JSON object")
 
 
+# ── Pool auto-correct ─────────────────────────────────────────────────────────
+
+def _redistribute_pools(obj: dict) -> dict:
+    """
+    Move misplaced PUSH/PULL ids between top_push and top_interests. If the LLM
+    put a valid PULL id into top_push (or vice versa), shift it to the right
+    list rather than rejecting. Caps each list to the required size (2 push,
+    3 pull) and deduplicates while preserving order.
+    """
+    if not isinstance(obj, dict):
+        return obj
+    raw_push = obj.get("top_push") if isinstance(obj.get("top_push"), list) else []
+    raw_pull = obj.get("top_interests") if isinstance(obj.get("top_interests"), list) else []
+
+    new_push: list[str] = []
+    new_pull: list[str] = []
+    for item in list(raw_push) + list(raw_pull):
+        if not isinstance(item, str):
+            continue
+        if item in _ALLOWED_PUSH:
+            new_push.append(item)
+        elif item in _ALLOWED_PULL:
+            new_pull.append(item)
+        # Items in neither pool are dropped (LLM hallucinated).
+
+    new_push = list(dict.fromkeys(new_push))[:2]
+    new_pull = list(dict.fromkeys(new_pull))[:3]
+
+    obj["top_push"] = new_push
+    obj["top_interests"] = new_pull
+    return obj
+
+
 # ── Python structural validators ──────────────────────────────────────────────
 
 def _structural_validate(obj: dict) -> list[str]:
@@ -240,25 +273,35 @@ async def persona_infer(
         raise HTTPException(status_code=502, detail=f"persona LLM unparseable: {type(e).__name__}: {e}") from e
 
     # Structural validation — schema, allowed dimension IDs, counts, no itinerary leakage.
-    # On failure, do ONE corrective retry with the errors fed back to the LLM.
+    # The LLM keeps swapping a few PULL ids into top_push (process-verb keywords
+    # in dims like exploration_local read as motivations to the model). Try to
+    # auto-correct the pool placement first; only fall back to an LLM retry if
+    # redistribution can't recover counts.
     issues = _structural_validate(obj)
     if issues:
-        logger.warning("persona structural validation failed on first try: %s — retrying with correction", issues)
-        correction = (
-            f"\n\nYour previous JSON had these errors:\n- "
-            + "\n- ".join(issues)
-            + "\n\nReturn ONLY the corrected JSON object. Re-check that top_push uses ONLY PUSH ids and top_interests uses ONLY PULL ids."
-        )
-        try:
-            raw_retry = await route_request("persona_label", user_prompt + correction, _system_prompt())
-            obj = json.loads(_extract_json_object(_strip_fences(raw_retry)))
-        except Exception as e:
-            logger.error("persona retry failed: %s", e)
-            raise HTTPException(status_code=502, detail=f"persona retry failed: {type(e).__name__}: {e}") from e
+        logger.warning("persona structural validation failed on first try: %s", issues)
+        obj = _redistribute_pools(obj)
         issues = _structural_validate(obj)
-        if issues:
-            logger.error("persona structural validation failed after retry: %s", issues)
-            raise HTTPException(status_code=502, detail=f"persona output invalid: {'; '.join(issues)}")
+        if not issues:
+            logger.info("persona pools auto-corrected — no LLM retry needed")
+        else:
+            logger.warning("auto-correct insufficient (%s) — retrying with LLM correction", issues)
+            correction = (
+                f"\n\nYour previous JSON had these errors:\n- "
+                + "\n- ".join(issues)
+                + "\n\nReturn ONLY the corrected JSON object. Re-check that top_push uses ONLY PUSH ids and top_interests uses ONLY PULL ids."
+            )
+            try:
+                raw_retry = await route_request("persona_label", user_prompt + correction, _system_prompt())
+                obj = json.loads(_extract_json_object(_strip_fences(raw_retry)))
+            except Exception as e:
+                logger.error("persona retry failed: %s", e)
+                raise HTTPException(status_code=502, detail=f"persona retry failed: {type(e).__name__}: {e}") from e
+            obj = _redistribute_pools(obj)  # auto-correct retry output too
+            issues = _structural_validate(obj)
+            if issues:
+                logger.error("persona structural validation failed after retry: %s", issues)
+                raise HTTPException(status_code=502, detail=f"persona output invalid: {'; '.join(issues)}")
 
     # Semantic validation — tone, echo, scope drift. Fails open on validator outage.
     valid, sem_issues = await validate_persona(user_prompt, obj)
