@@ -25,21 +25,21 @@ const PERSONA_SCREENS = [
     key: 'friends_would_say',
     q: 'Your friends call you the one who:',
     options: [
-      { key: 'has_a_guy',           label: 'Has a guy in every city' },
-      { key: 'bartender_bff',       label: 'Becomes best friends with the bartender by 10pm' },
-      { key: 'mid_night_disappear', label: 'Disappears mid-night and comes back with a story' },
-      { key: 'planner',             label: 'Has the spreadsheet, the playlist, and the backup plan' },
+      { key: 'knows_someone',      label: 'Knows someone everywhere' },
+      { key: 'bathroom_bff',       label: 'Becomes best friends with strangers in public bathrooms' },
+      { key: 'vanishes_for_story', label: 'Vanishes for an hour and comes back with a story' },
+      { key: 'planner',            label: 'Has the spreadsheet, the playlist, and the backup plan' },
     ],
   },
   {
     type: 'radio',
     key: 'restaurant_order',
-    q: "At a restaurant you've never been to, you order:",
+    q: "At a restaurant you've never been to, you:",
     options: [
-      { key: 'server_pick',       label: 'Whatever the server tells me I have to get' },
-      { key: 'most_expensive',    label: 'The most expensive thing — vacation rules' },
-      { key: 'snacks_and_drinks', label: 'A negroni and three appetizers, skip the main' },
-      { key: 'always_same',       label: 'The same thing I always get, no matter where I am' },
+      { key: 'cant_miss',        label: "Ask the server what you absolutely can't miss" },
+      { key: 'order_for_table',  label: 'Order for the table before anyone else is ready' },
+      { key: 'drink_and_sides',  label: "Get a drink and three sides, somehow that's dinner" },
+      { key: 'find_familiar',    label: 'Find the one familiar thing and commit to it' },
     ],
   },
   {
@@ -57,17 +57,17 @@ const PERSONA_SCREENS = [
     type: 'textarea',
     key: 'small_thing',
     q: "A small thing that's made you weirdly happy lately.",
-    hint: '"a new toothpaste, the 4pm light, anything"',
+    hint: 'the 4pm light, cold sheets, a perfectly timed green light — anything',
   },
   {
     type: 'radio',
     key: 'ideal_atmosphere',
     q: "Pick the vibe you'd be most at home in:",
     options: [
-      { key: 'jazz_bar',       label: 'Wood-panelled bar, low lighting, jazz on vinyl, slow Tuesday' },
-      { key: 'sun_and_sea',    label: 'Blue tile, bright sun, sea breeze, kids laughing somewhere' },
-      { key: 'concrete_neon',  label: 'Concrete and neon, bass in your chest, no one knows your name' },
-      { key: 'linen_candles',  label: 'Linen curtains, candles, conversation in another language' },
+      { key: 'wood_bar',       label: 'Wood-panelled bar, low lighting, nobody rushing you out' },
+      { key: 'loud_lunch',     label: 'Bright sun, loud lunch, two bottles already on the table' },
+      { key: 'concrete_neon',  label: 'Concrete, neon, music you feel in your ribs' },
+      { key: 'quiet_morning',  label: 'Quiet morning, open windows, nowhere to be for hours' },
     ],
   },
 ]
@@ -436,6 +436,11 @@ export default function TripPreferences() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 48px', maxWidth: 720, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
           <AnimatePresence mode="wait">
             <motion.div key={step} initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -24 }} transition={{ duration: 0.42, ease }} style={{ width: '100%', textAlign: 'center' }}>
+              {personaIdx === 0 && (
+                <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 18, color: `${ORANGE}cc`, marginBottom: 14 }}>
+                  Okay. Let's make this feel like you.
+                </p>
+              )}
               <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 24 }}>
                 {personaIdx + 1} of {PERSONA_SCREENS.length}
               </p>
