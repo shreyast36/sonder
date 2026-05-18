@@ -2,17 +2,17 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import date
 from jahnvi.schemas.enums import (
-    PacePreference, BudgetStyle, TravelStyle, EmotionIntent,
-    Occasion, EnergyLevel,
+    PacePreference, BudgetStyle, TravelStyle, EmotionIntent, Occasion,
 )
 
 
 class TripConstraints(BaseModel):
     """
     Hard constraints + vibe selections from the trip preferences form.
-    Vibe fields (occasion, contrast_seeking, energy_level, hotel_style,
-    dining_vibe, day_activities) map directly to Pinecone metadata filters
-    at retrieval time.
+    Vibe fields (occasion, contrast_seeking, hotel_style, dining_vibe,
+    day_activities) map directly to Pinecone metadata filters at retrieval
+    time. Personality probes (saturday_morning, restaurant_order,
+    friends_would_say) are non-travel signals that shape ranking.
     """
     destination_query:          str = ""
     destination_type:           str = ""
@@ -30,19 +30,22 @@ class TripConstraints(BaseModel):
     # Vibe selections — drive Pinecone filters at retrieval
     occasion:                   Optional[Occasion] = None
     contrast_seeking:           list[str] = Field(default_factory=list)
-    energy_level:               Optional[EnergyLevel] = None
     hotel_style:                list[str] = Field(default_factory=list)
     dining_vibe:                list[str] = Field(default_factory=list)
     day_activities:             list[str] = Field(default_factory=list)
+
+    # Personality probes — non-travel questions that reveal traveler type
+    saturday_morning:           Optional[str] = None
+    restaurant_order:           Optional[str] = None
+    friends_would_say:          Optional[str] = None
 
 
 class PersonaQuestionAnswers(BaseModel):
     """
     Free-text anchors. Embedded as travel_style_embedding for vector search.
     """
-    loved_destination:  str = ""
-    must_haves_text:    str = ""
-    avoid_text:         str = ""
+    small_thing:    str = ""
+    famous_person:  str = ""
 
 
 class CompatibilityAnswers(BaseModel):
