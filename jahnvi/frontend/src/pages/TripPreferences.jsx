@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Globe, Check, Users } from 'lucide-react'
+import { ArrowLeft, Globe, Check, Users, Plane } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
@@ -10,33 +10,119 @@ import WordLimitTextarea from '../components/WordLimitTextarea'
 const ORANGE = '#F97316'
 const spring = { type: 'spring', stiffness: 280, damping: 22 }
 
-const STYLES     = ['Adventure', 'Culture', 'Relaxed', 'Foodie', 'Nature', 'Wellness', 'Nightlife', 'History']
-const PACES      = [{ key: 'slow', label: 'Slow', sub: 'Linger' }, { key: 'moderate', label: 'Moderate', sub: 'Balanced' }, { key: 'fast', label: 'Fast', sub: 'Pack it in' }]
-const CURRENCIES = ['USD', 'EUR', 'JPY', 'GBP', 'CNY', 'AUD', 'CAD', 'CHF', 'HKD', 'SGD', 'SEK', 'NOK', 'NZD', 'INR', 'MXN']
-const WHO_OPTS   = [{ key: 'solo', label: 'Solo' }, { key: 'couple', label: 'Couple' }, { key: 'family', label: 'Family' }, { key: 'friends', label: 'Friends' }]
-const GROUP_SIZES = [1, 2, 3, 4, 5]
+const STYLES            = ['Adventure', 'Culture & history', 'Nature & landscape', 'City life', 'Food & wine', 'Wellness & rest', 'Nightlife', 'Arts & performance']
+const PACES             = [{ key: 'slow', label: 'Slow', sub: 'Linger' }, { key: 'moderate', label: 'Moderate', sub: 'Balanced' }, { key: 'fast', label: 'Fast', sub: 'Pack it in' }]
+const CURRENCIES        = ['USD', 'EUR', 'JPY', 'GBP', 'CNY', 'AUD', 'CAD', 'CHF', 'HKD', 'SGD', 'SEK', 'NOK', 'NZD', 'INR', 'MXN']
+const WHO_OPTS          = [{ key: 'solo', label: 'Solo' }, { key: 'couple', label: 'Couple' }, { key: 'family', label: 'Family' }, { key: 'friends', label: 'Friends' }]
+const GROUP_SIZES       = [1, 2, 3, 4, 5]
+const DESTINATION_TYPES = ['Beach', 'City', 'Mountains', 'Countryside', 'Wilderness', 'Island']
+const STAY_TYPES        = ['Hotel', 'Boutique', 'Resort', 'Rental', 'Hostel', 'B&B', 'Open to anything']
 
 const STRUCTURED_STEPS = 6
 const STEP_LABELS = ['Destination', 'Dates', 'Travel style', 'Budget', 'Your group', 'Stay & transport']
 
-const PERSONA_QUESTIONS = [
-  { key: 'travel_goal',          q: 'What do you want to feel on this trip?',                          hint: '"Alive, unplug, at peace, inspired…"' },
-  { key: 'travel_personality',   q: 'How do your friends describe you as a traveller?',                hint: '"The one who finds the hidden spots no one else knows about…"' },
-  { key: 'pace_preference',      q: 'How do you like your days to feel?',                              hint: '"Mornings packed and afternoons free to wander…"' },
-  { key: 'must_not_miss',        q: "What's the one thing that would make this trip unforgettable?",   hint: '"Eating at a place with no English menu…"' },
-  { key: 'leave_behind',         q: 'What do you want to leave behind?',                               hint: '"My inbox and the urge to document everything…"' },
-  { key: 'ideal_companion',      q: 'Describe your ideal travel companion.',                            hint: '"Someone who can sit in comfortable silence but goes deep when we talk…"' },
-  { key: 'dream_trip',           q: 'In a few words, what does your ideal trip feel like?',            hint: '"Slow, unexpected, nourishing…"' },
-  { key: 'memorable_moment',     q: "What's a travel moment you keep coming back to?",                 hint: '"Getting lost in a medina and stumbling into a family\'s courtyard…"' },
-  { key: 'natural_drift',        q: 'Where do you naturally drift when you have no plan?',             hint: '"Markets, side streets, anywhere with locals and no tourists…"' },
-  { key: 'impulsive_decision',   q: 'Tell us about a time you made an impulsive travel decision.',     hint: '"Missed my flight and ended up staying three extra days…"' },
-  { key: 'experiences_avoided',  q: 'What kinds of experiences do you usually avoid?',                 hint: '"Anything with a queue, a tour group, or a gift shop at the exit…"' },
-  { key: 'perfect_afternoon',    q: 'Describe your perfect unplanned afternoon.',                       hint: '"A good book, a slow walk, stumbling into something unexpected…"' },
-  { key: 'lose_track_of_time',   q: 'What makes you completely lose track of time?',                   hint: '"Conversations that go nowhere and everywhere at once…"' },
-  { key: 'small_special',        q: 'What small thing always makes a trip feel special?',              hint: '"A coffee drunk standing up at a bar, watching the street wake up…"' },
+const PERSONA_SCREENS = [
+  {
+    type: 'radio',
+    key: 'occasion',
+    q: "What's the occasion?",
+    options: [
+      { key: 'once_in_a_lifetime', label: 'Once-in-a-lifetime' },
+      { key: 'anniversary',        label: 'Anniversary or milestone' },
+      { key: 'escape',             label: 'Escape from a heavy chapter' },
+      { key: 'reset',              label: 'Reset & reconnect' },
+      { key: 'adventure',          label: 'Adventure between chapters' },
+      { key: 'just_because',       label: 'Just because' },
+      { key: 'work_play',          label: 'Work + play' },
+    ],
+  },
+  {
+    type: 'multi',
+    key: 'contrast_seeking',
+    q: 'What contrast are you seeking from your everyday?',
+    sub: 'Pick up to 3.',
+    max: 3,
+    options: [
+      'Stillness after intensity',
+      'Movement after stillness',
+      'Solitude after constant social',
+      'Connection after isolation',
+      'Awe at scale',
+      'Indulgence after restraint',
+      'Unfamiliar after familiar',
+      'Mastery — learn something new',
+    ],
+  },
+  {
+    type: 'radio',
+    key: 'energy_level',
+    q: 'Energy level for the days?',
+    options: [
+      { key: 'chill',    label: 'Chill — pure rest' },
+      { key: 'balanced', label: 'Balanced' },
+      { key: 'packed',   label: 'Packed' },
+    ],
+  },
+  {
+    type: 'textarea',
+    key: 'loved_destination',
+    q: "Show us a trip you've already loved.",
+    hint: '"I loved Lisbon in 2024" — anywhere that left a mark on you.',
+  },
+  {
+    type: 'dual_text',
+    keys: ['must_haves_text', 'avoid_text'],
+    q: 'Anything specific?',
+    labels: ['Must do or see', 'Want to avoid'],
+    hints: ['"Real ramen", "Sunset at the temple"', '"Big tour groups", "Anything with a queue"'],
+  },
+  {
+    type: 'multi',
+    key: 'hotel_style',
+    q: 'Where you stay.',
+    sub: 'Pick anything that fits.',
+    options: [
+      'A grand hotel where the doormen know your name',
+      'A boutique with a story',
+      'A converted somewhere — castle, monastery, villa',
+      'A resort or spa retreat',
+      'Somewhere I can disappear',
+      'Clean and well-located',
+    ],
+  },
+  {
+    type: 'multi',
+    key: 'dining_vibe',
+    q: 'How you eat.',
+    sub: 'Pick anything that fits.',
+    options: [
+      'One meal that becomes a memory',
+      'Local everyday brilliance',
+      'Where locals actually eat',
+      'Slow café mornings',
+      'Wine, snacks, long afternoons',
+      'Feed me well — surprise me',
+    ],
+  },
+  {
+    type: 'multi',
+    key: 'day_activities',
+    q: 'How your days move.',
+    sub: 'Pick anything that fits.',
+    options: [
+      'Wander cities on foot',
+      'Move through landscape',
+      'Beach, harbour, water',
+      'Old stones, museums, galleries',
+      'Gardens and slow outdoors',
+      'See something live',
+      'Late nights',
+      'With kids in mind',
+    ],
+  },
 ]
 
-const TOTAL_STEPS = STRUCTURED_STEPS + PERSONA_QUESTIONS.length
+const TOTAL_STEPS = STRUCTURED_STEPS + PERSONA_SCREENS.length
 
 function ElegantInput({ value, onChange, placeholder, type = 'text', icon: Icon }) {
   const [focused, setFocused] = useState(false)
@@ -88,82 +174,136 @@ function Toggle({ value, onChange, label }) {
   )
 }
 
+function VibeChip({ active, onClick, children, disabled = false }) {
+  return (
+    <motion.button
+      whileHover={!disabled && !active ? { scale: 1.04 } : {}}
+      whileTap={!disabled ? { scale: 0.96 } : {}}
+      onClick={disabled ? undefined : onClick}
+      style={{
+        padding: '13px 22px', borderRadius: 26, cursor: disabled ? 'default' : 'pointer',
+        fontFamily: '"Inter Tight",sans-serif', fontSize: 12.5, letterSpacing: '0.02em',
+        background: active ? `${ORANGE}18` : 'transparent',
+        border: `1px solid ${active ? `${ORANGE}66` : HAIRLINE}`,
+        color: active ? ORANGE : (disabled ? DIM : MUTE),
+        transition: 'all 0.2s',
+        boxShadow: active ? `0 0 20px ${ORANGE}22` : 'none',
+        opacity: disabled ? 0.5 : 1,
+        textAlign: 'left',
+      }}
+    >
+      {children}
+    </motion.button>
+  )
+}
+
 export default function TripPreferences() {
   const navigate = useNavigate()
 
-  // Step 0 — Destination
-  const [destination, setDest] = useState('')
+  // ── Structured steps (logistics) ──
+  const [destination, setDest]               = useState('')
+  const [flexibleDestination, setFlexibleDestination] = useState(false)
+  const [destinationType, setDestinationType] = useState('')
+  const [origin, setOrigin]                  = useState('')
+  const [departure, setDepart]               = useState('')
+  const [returnDate, setReturn]              = useState('')
+  const [flexibleDates, setFlexibleDates]    = useState(false)
+  const [styles, setStyles]                  = useState([])
+  const [pace, setPace]                      = useState('moderate')
+  const [budget, setBudget]                  = useState('')
+  const [currency, setCurrency]              = useState('USD')
+  const [budgetIncludesFlights, setBudgetIncludesFlights] = useState(true)
+  const [nationality, setNationality]        = useState('')
+  const [groupSize, setGroupSize]            = useState(1)
+  const [travelsWith, setTravelsWith]        = useState('')
+  const [mobilityNotes, setMobilityNotes]    = useState('')
+  const [accommodationTypes, setAccommodationTypes] = useState([])
+  const [hireCar, setHireCar]                = useState(false)
+  const [hasLicence, setHasLicence]          = useState(null)
+  const [dietaryNotes, setDietaryNotes]      = useState('')
 
-  // Step 1 — Dates
-  const [departure, setDepart]  = useState('')
-  const [returnDate, setReturn] = useState('')
-
-  // Step 2 — Travel style
-  const [styles, setStyles] = useState([])
-  const [pace, setPace]     = useState('moderate')
-
-  // Step 3 — Budget
-  const [budget, setBudget]     = useState('')
-  const [currency, setCurrency] = useState('USD')
-
-  // Step 4 — Your group
-  const [nationality, setNationality] = useState('')
-  const [groupSize, setGroupSize]     = useState(1)
-  const [travelsWith, setTravelsWith] = useState('')
-
-  // Step 5 — Stay & transport
-  const [accommodationPref, setAccommodationPref] = useState('')
-  const [hireCar, setHireCar]                     = useState(false)
-  const [hasLicence, setHasLicence]               = useState(null)
-
-  // Steps 6–12 — Persona questions
+  // ── Persona answers (survey + freeform mix) ──
   const [persona, setPersona] = useState({
-    travel_goal: '', travel_personality: '', pace_preference: '',
-    must_not_miss: '', leave_behind: '', ideal_companion: '', dream_trip: '',
-    memorable_moment: '', natural_drift: '', impulsive_decision: '',
-    experiences_avoided: '', perfect_afternoon: '', lose_track_of_time: '', small_special: '',
+    occasion:          '',
+    contrast_seeking:  [],
+    energy_level:      '',
+    loved_destination: '',
+    must_haves_text:   '',
+    avoid_text:        '',
+    hotel_style:       [],
+    dining_vibe:       [],
+    day_activities:    [],
   })
 
   const [step, setStep]         = useState(0)
   const [submitting, setSubmit] = useState(false)
 
   const toggleStyle = s => setStyles(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
+  const toggleStay  = s => setAccommodationTypes(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
 
   const isPersonaStep = step >= STRUCTURED_STEPS
   const personaIdx    = step - STRUCTURED_STEPS
-  const currentPersona = PERSONA_QUESTIONS[personaIdx]
+  const currentPersona = PERSONA_SCREENS[personaIdx]
 
   const canProceed = isPersonaStep
-    ? true  // persona questions are always skippable
+    ? true
     : [
-        destination.trim().length > 0,
-        departure && returnDate,
+        destination.trim().length > 0 || destinationType.length > 0,
+        origin.trim().length > 0 && departure && returnDate,
         styles.length > 0,
         budget.trim().length > 0,
-        groupSize >= 1,
-        accommodationPref.trim().length > 0,
+        groupSize >= 1 && travelsWith.length > 0 && nationality.trim().length > 0,
+        accommodationTypes.length > 0,
       ][step]
+
+  function toggleMulti(key, value, max = null) {
+    setPersona(prev => {
+      const list = prev[key] || []
+      if (list.includes(value)) return { ...prev, [key]: list.filter(v => v !== value) }
+      if (max && list.length >= max) return prev
+      return { ...prev, [key]: [...list, value] }
+    })
+  }
+
+  function setSingle(key, value) {
+    setPersona(prev => ({ ...prev, [key]: value }))
+  }
 
   function handleSubmit() {
     setSubmit(true)
     const profile = {
       constraints: {
         destination_query:        destination,
+        destination_type:         destinationType,
+        origin_query:             origin,
         nationality,
         start_date:               departure || null,
         end_date:                 returnDate || null,
-        flexible_dates:           false,
+        flexible_dates:           flexibleDates,
         budget_usd:               parseFloat(budget) || 0,
         budget_currency:          currency,
+        budget_includes_flights:  budgetIncludesFlights,
         group_size:               groupSize,
         who_travelling_with:      travelsWith || null,
-        accommodation_preference: accommodationPref,
+        accommodation_types:      accommodationTypes,
         hire_car:                 hireCar,
         has_driving_licence:      hireCar ? hasLicence : null,
+        mobility_notes:           mobilityNotes,
+        dietary_notes:            dietaryNotes,
         must_haves:               styles,
         avoid_list:               [],
+        occasion:                 persona.occasion || null,
+        contrast_seeking:         persona.contrast_seeking,
+        energy_level:             persona.energy_level || null,
+        hotel_style:              persona.hotel_style,
+        dining_vibe:              persona.dining_vibe,
+        day_activities:           persona.day_activities,
       },
-      persona_answers: persona,
+      persona_answers: {
+        loved_destination: persona.loved_destination,
+        must_haves_text:   persona.must_haves_text,
+        avoid_text:        persona.avoid_text,
+      },
     }
     sessionStorage.setItem('sonder_trip_profile', JSON.stringify(profile))
     setTimeout(() => navigate('/itinerary'), 1800)
@@ -175,8 +315,6 @@ export default function TripPreferences() {
     else if (!submitting) handleSubmit()
   }
 
-  const structuredStepNumber = `0${step + 1}`.slice(-2)
-
   const STRUCTURED_CONTENT = [
     {
       number: '01', heading: 'Where are you dreaming of?',
@@ -184,19 +322,50 @@ export default function TripPreferences() {
       content: (
         <div style={{ marginTop: 52 }}>
           <ElegantInput value={destination} onChange={setDest} placeholder="Bali, Kyoto, Patagonia…" icon={Globe}/>
+          <div style={{ marginTop: 32 }}>
+            <Toggle value={flexibleDestination} onChange={setFlexibleDestination} label="Surprise me — I'm open to ideas"/>
+          </div>
+          <AnimatePresence>
+            {flexibleDestination && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.28, ease }}
+              >
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, margin: '32px 0 14px' }}>Kind of place</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                  {DESTINATION_TYPES.map(t => {
+                    const active = destinationType === t
+                    return (
+                      <motion.button key={t} whileTap={{ scale: 0.95 }} onClick={() => setDestinationType(active ? '' : t)}
+                        style={{ padding: '11px 20px', borderRadius: 24, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 12, letterSpacing: '0.06em', background: active ? `${ORANGE}18` : 'transparent', border: `1px solid ${active ? `${ORANGE}66` : HAIRLINE}`, color: active ? ORANGE : MUTE, transition: 'all 0.2s', boxShadow: active ? `0 0 20px ${ORANGE}22` : 'none' }}>
+                        {t}
+                      </motion.button>
+                    )
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       ),
     },
     {
-      number: '02', heading: 'When do you want to go?',
-      sub: 'Give yourself something to look forward to.',
+      number: '02', heading: 'When and from where?',
+      sub: 'So we can route flights and check timing.',
       content: (
         <div style={{ marginTop: 52 }}>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Departure</p>
-          <ElegantInput value={departure} onChange={setDepart} placeholder="" type="date"/>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Leaving from</p>
+          <ElegantInput value={origin} onChange={setOrigin} placeholder="London, San Francisco, Mumbai…" icon={Plane}/>
+          <div style={{ marginTop: 44 }}>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Departure</p>
+            <ElegantInput value={departure} onChange={setDepart} placeholder="" type="date"/>
+          </div>
           <div style={{ marginTop: 44 }}>
             <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Return</p>
             <ElegantInput value={returnDate} onChange={setReturn} placeholder="" type="date"/>
+          </div>
+          <div style={{ marginTop: 32 }}>
+            <Toggle value={flexibleDates} onChange={setFlexibleDates} label="My dates are flexible by a few days"/>
           </div>
         </div>
       ),
@@ -235,7 +404,7 @@ export default function TripPreferences() {
     },
     {
       number: '04', heading: "What's your budget?",
-      sub: 'Total trip spend, including flights.',
+      sub: 'Total trip spend. We work backwards from this.',
       content: (
         <div style={{ marginTop: 52 }}>
           <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 18 }}>Currency</p>
@@ -249,6 +418,9 @@ export default function TripPreferences() {
           </div>
           <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Amount</p>
           <ElegantInput value={budget} onChange={setBudget} placeholder="2500" type="number"/>
+          <div style={{ marginTop: 32 }}>
+            <Toggle value={budgetIncludesFlights} onChange={setBudgetIncludesFlights} label="Budget includes flights"/>
+          </div>
         </div>
       ),
     },
@@ -282,19 +454,31 @@ export default function TripPreferences() {
           </div>
           <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Your nationality</p>
           <ElegantInput value={nationality} onChange={setNationality} placeholder="British, Indian, Brazilian…" icon={Users}/>
+          <div style={{ marginTop: 44 }}>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Accessibility or mobility (optional)</p>
+            <ElegantInput value={mobilityNotes} onChange={setMobilityNotes} placeholder="Step-free routes, slower pace, anything we should know…"/>
+          </div>
         </div>
       ),
     },
     {
       number: '06', heading: 'How do you want to stay and get around?',
-      sub: 'No wrong answers — this helps us find the right kind of place.',
+      sub: 'Pick anything that fits — we use this to shortlist places.',
       content: (
         <div style={{ marginTop: 52 }}>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Where would you like to stay?</p>
-          <ElegantInput value={accommodationPref} onChange={setAccommodationPref} placeholder="Boutique hotel, Airbnb, hostel…"/>
-          <div style={{ marginTop: 44 }}>
-            <Toggle value={hireCar} onChange={setHireCar} label="I'd like to hire a car at the destination"/>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Where you'd like to stay</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 44 }}>
+            {STAY_TYPES.map(t => {
+              const active = accommodationTypes.includes(t)
+              return (
+                <motion.button key={t} whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={() => toggleStay(t)}
+                  style={{ padding: '11px 20px', borderRadius: 24, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 12, letterSpacing: '0.06em', background: active ? `${ORANGE}18` : 'transparent', border: `1px solid ${active ? `${ORANGE}66` : HAIRLINE}`, color: active ? ORANGE : MUTE, transition: 'all 0.2s', boxShadow: active ? `0 0 20px ${ORANGE}22` : 'none' }}>
+                  {t}
+                </motion.button>
+              )
+            })}
           </div>
+          <Toggle value={hireCar} onChange={setHireCar} label="I'd like to hire a car at the destination"/>
           <AnimatePresence>
             {hireCar && (
               <motion.div
@@ -309,12 +493,79 @@ export default function TripPreferences() {
               </motion.div>
             )}
           </AnimatePresence>
+          <div style={{ marginTop: 44 }}>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Dietary needs (optional)</p>
+            <ElegantInput value={dietaryNotes} onChange={setDietaryNotes} placeholder="Vegetarian, kosher, nut allergy…"/>
+          </div>
         </div>
       ),
     },
   ]
 
   const current = STRUCTURED_CONTENT[Math.min(step, STRUCTURED_STEPS - 1)]
+
+  function renderPersonaScreen(screen) {
+    if (screen.type === 'radio') {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+          {screen.options.map(o => {
+            const active = persona[screen.key] === o.key
+            return (
+              <VibeChip key={o.key} active={active} onClick={() => setSingle(screen.key, o.key)}>
+                {o.label}
+              </VibeChip>
+            )
+          })}
+        </div>
+      )
+    }
+    if (screen.type === 'multi') {
+      const selected = persona[screen.key] || []
+      const atMax = screen.max && selected.length >= screen.max
+      return (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 12, justifyContent: 'center' }}>
+          {screen.options.map(o => {
+            const active = selected.includes(o)
+            return (
+              <VibeChip
+                key={o} active={active}
+                disabled={!active && atMax}
+                onClick={() => toggleMulti(screen.key, o, screen.max)}
+              >
+                {o}
+              </VibeChip>
+            )
+          })}
+        </div>
+      )
+    }
+    if (screen.type === 'textarea') {
+      return (
+        <WordLimitTextarea
+          value={persona[screen.key]}
+          onChange={val => setSingle(screen.key, val)}
+          placeholder={screen.hint}
+          rows={4}
+        />
+      )
+    }
+    if (screen.type === 'dual_text') {
+      const [k1, k2] = screen.keys
+      const [l1, l2] = screen.labels
+      const [h1, h2] = screen.hints
+      return (
+        <div style={{ marginTop: 12, textAlign: 'left' }}>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>{l1}</p>
+          <ElegantInput value={persona[k1]} onChange={v => setSingle(k1, v)} placeholder={h1}/>
+          <div style={{ marginTop: 36 }}>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>{l2}</p>
+            <ElegantInput value={persona[k2]} onChange={v => setSingle(k2, v)} placeholder={h2}/>
+          </div>
+        </div>
+      )
+    }
+    return null
+  }
 
   if (isPersonaStep) {
     return (
@@ -332,34 +583,31 @@ export default function TripPreferences() {
           <div style={{ width: 80 }}/>
         </nav>
 
-        {/* Progress dots */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 6, paddingTop: 32, position: 'relative', zIndex: 1 }}>
-          {PERSONA_QUESTIONS.map((_, i) => (
+          {PERSONA_SCREENS.map((_, i) => (
             <div key={i} style={{ width: i === personaIdx ? 20 : 6, height: 6, borderRadius: 3, background: i === personaIdx ? ORANGE : i < personaIdx ? `${ORANGE}44` : HAIRLINE, transition: 'all 0.35s ease' }}/>
           ))}
         </div>
 
-        {/* Question */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 48px', maxWidth: 720, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
           <AnimatePresence mode="wait">
             <motion.div key={step} initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -24 }} transition={{ duration: 0.42, ease }} style={{ width: '100%', textAlign: 'center' }}>
               <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 24 }}>
-                {personaIdx + 1} of {PERSONA_QUESTIONS.length}
+                {personaIdx + 1} of {PERSONA_SCREENS.length}
               </p>
-              <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 48, lineHeight: 1.2, color: BONE, marginBottom: 48 }}>
+              <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 44, lineHeight: 1.2, color: BONE, marginBottom: currentPersona.sub ? 14 : 36 }}>
                 {currentPersona.q}
               </h2>
-              <WordLimitTextarea
-                value={persona[currentPersona.key]}
-                onChange={val => setPersona(prev => ({ ...prev, [currentPersona.key]: val }))}
-                placeholder={currentPersona.hint}
-                rows={4}
-              />
+              {currentPersona.sub && (
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 12, color: MUTE, marginBottom: 36 }}>
+                  {currentPersona.sub}
+                </p>
+              )}
+              {renderPersonaScreen(currentPersona)}
             </motion.div>
           </AnimatePresence>
         </div>
 
-        {/* Actions */}
         <div style={{ padding: '32px 48px 52px', maxWidth: 720, margin: '0 auto', width: '100%', boxSizing: 'border-box', position: 'relative', zIndex: 1 }}>
           <motion.button
             whileHover={{ y: -2, boxShadow: `0 0 48px ${ORANGE}44`, transition: spring }} whileTap={{ scale: 0.98 }}
@@ -392,7 +640,6 @@ export default function TripPreferences() {
 
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', maxWidth: 1100, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
 
-        {/* left — progress track */}
         <div style={{ borderRight: `1px solid ${HAIRLINE}`, padding: '68px 60px', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: `radial-gradient(ellipse 70% 50% at 20% 30%, ${ORANGE}0C 0%, transparent 65%)`, pointerEvents: 'none' }}/>
           <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 24 }}>
@@ -421,7 +668,6 @@ export default function TripPreferences() {
 
         </div>
 
-        {/* right — form */}
         <div style={{ padding: '68px 60px', display: 'flex', flexDirection: 'column' }}>
           <AnimatePresence mode="wait">
             <motion.div key={step} initial={{ opacity: 0, x: 32 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -32 }} transition={{ duration: 0.38, ease }} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>

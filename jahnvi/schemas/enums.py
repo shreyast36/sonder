@@ -26,3 +26,19 @@ class EmotionIntent(str, Enum):
     relaxed     = "relaxed"
     curious     = "curious"
     adventurous = "adventurous"
+
+
+class Occasion(str, Enum):
+    once_in_a_lifetime = "once_in_a_lifetime"
+    anniversary        = "anniversary"
+    escape             = "escape"
+    reset              = "reset"
+    adventure          = "adventure"
+    just_because       = "just_because"
+    work_play          = "work_play"
+
+
+class EnergyLevel(str, Enum):
+    chill    = "chill"
+    balanced = "balanced"
+    packed   = "packed"
