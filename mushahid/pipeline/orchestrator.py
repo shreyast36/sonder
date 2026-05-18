@@ -190,6 +190,10 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
             "validation_score": validation.score,
         })
 
-    except Exception:
+    except Exception as e:
+        logger.error("plan-trip pipeline failed at step=%s: %s", step, e, exc_info=True)
         await write_itinerary_status(user_profile.user_id, "error")
-        yield format_event("error", {"step": step, "message": "An unexpected error occurred. Please try again."})
+        yield format_event("error", {
+            "step": step,
+            "message": f"{type(e).__name__} during {step}: {e}",
+        })
