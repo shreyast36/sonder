@@ -26,7 +26,7 @@ const PERSONA_SCREENS = [
     q: 'Your friends call you the one who:',
     options: [
       { key: 'knows_someone',      label: 'Knows someone everywhere' },
-      { key: 'bathroom_bff',       label: 'Becomes best friends with strangers in public bathrooms' },
+      { key: 'line_friends',       label: 'Makes new friends in every line they stand in' },
       { key: 'vanishes_for_story', label: 'Vanishes for an hour and comes back with a story' },
       { key: 'planner',            label: 'Has the spreadsheet, the playlist, and the backup plan' },
     ],
