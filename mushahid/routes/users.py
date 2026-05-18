@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from mushahid.auth import verify_token
@@ -6,6 +7,7 @@ from mushahid.utils.sanitize import sanitize_user_input
 from shared.config import LOCAL_MODE
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _local_profiles: dict = {}
 
@@ -24,12 +26,16 @@ async def create_profile(body: CreateProfileRequest, uid: str = Depends(verify_t
         await create_user_profile(uid, display_name)
         return {"user_id": uid, "display_name": display_name, "created": True}
 
-    db = get_db()
-    doc = db.collection("user_profiles").document(uid).get()
-    if doc.exists:
-        return {"user_id": uid, "display_name": doc.to_dict().get("display_name"), "created": False}
-    await create_user_profile(uid, display_name)
-    return {"user_id": uid, "display_name": display_name, "created": True}
+    try:
+        db = get_db()
+        doc = db.collection("user_profiles").document(uid).get()
+        if doc.exists:
+            return {"user_id": uid, "display_name": doc.to_dict().get("display_name"), "created": False}
+        await create_user_profile(uid, display_name)
+        return {"user_id": uid, "display_name": display_name, "created": True}
+    except Exception as e:
+        logger.warning("create_profile Firestore call failed: %s", e)
+        raise HTTPException(status_code=503, detail=f"Firestore unavailable: {type(e).__name__}") from e
 
 
 @router.get("/users/profile")
@@ -39,8 +45,13 @@ async def get_profile(uid: str = Depends(verify_token)):
             raise HTTPException(status_code=404, detail="Profile not found")
         return {"user_id": uid, "display_name": _local_profiles[uid]}
 
-    db = get_db()
-    doc = db.collection("user_profiles").document(uid).get()
+    try:
+        db = get_db()
+        doc = db.collection("user_profiles").document(uid).get()
+    except Exception as e:
+        logger.warning("get_profile Firestore call failed: %s", e)
+        raise HTTPException(status_code=503, detail=f"Firestore unavailable: {type(e).__name__}") from e
+
     if not doc.exists:
         raise HTTPException(status_code=404, detail="Profile not found")
     return doc.to_dict()

@@ -1,10 +1,13 @@
 import asyncio
+import logging
 import uuid
 from datetime import datetime, timezone
 from shared.config import (
     FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL, LOCAL_MODE,
 )
 from shared.schemas import Itinerary
+
+logger = logging.getLogger(__name__)
 
 # In-memory store used when LOCAL_MODE=true (no Firestore connection needed)
 _store: dict = {}
@@ -36,9 +39,12 @@ async def write_itinerary_status(user_id: str, status: str) -> None:
     if LOCAL_MODE:
         _store[f"status:{user_id}"] = status
         return
-    await asyncio.to_thread(
-        lambda: get_db().collection("itinerary_status").document(user_id).set({"status": status})
-    )
+    try:
+        await asyncio.to_thread(
+            lambda: get_db().collection("itinerary_status").document(user_id).set({"status": status})
+        )
+    except Exception as e:
+        logger.warning("write_itinerary_status failed (Firestore unavailable?): %s", e)
 
 
 async def write_itinerary(itinerary: Itinerary) -> None:
@@ -46,9 +52,12 @@ async def write_itinerary(itinerary: Itinerary) -> None:
         _store[f"itinerary:{itinerary.itinerary_id}"] = itinerary.model_dump()
         return
     data = itinerary.model_dump(mode="json")
-    await asyncio.to_thread(
-        lambda: get_db().collection("itineraries").document(itinerary.itinerary_id).set(data)
-    )
+    try:
+        await asyncio.to_thread(
+            lambda: get_db().collection("itineraries").document(itinerary.itinerary_id).set(data)
+        )
+    except Exception as e:
+        logger.warning("write_itinerary failed (Firestore unavailable?): %s", e)
 
 
 async def get_itinerary(itinerary_id: str) -> Itinerary | None:
@@ -82,10 +91,14 @@ async def create_user_profile(user_id: str, display_name: str) -> None:
 async def get_user_profile(user_id: str) -> dict | None:
     if LOCAL_MODE:
         return _store.get(f"profile:{user_id}")
-    doc = await asyncio.to_thread(
-        lambda: get_db().collection("user_profiles").document(user_id).get()
-    )
-    return doc.to_dict() if doc.exists else None
+    try:
+        doc = await asyncio.to_thread(
+            lambda: get_db().collection("user_profiles").document(user_id).get()
+        )
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        logger.warning("get_user_profile failed (Firestore unavailable?): %s", e)
+        return None
 
 
 async def update_user_profile(user_id: str, updates: dict) -> None:
