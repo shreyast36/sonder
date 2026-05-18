@@ -35,15 +35,6 @@ async def lifespan(app: FastAPI):
             "Firebase authentication is DISABLED. "
             "Never run this configuration in production."
         )
-    # Pre-load the HF persona embedder + prototypes so the first /persona-infer
-    # request doesn't pay the ~1-2s cold start.
-    import asyncio
-    try:
-        from jahnvi.data.convert_to_embeddings import warm_up
-        await asyncio.to_thread(warm_up)
-        logger.info("Persona embedder warmed up.")
-    except Exception as e:
-        logger.warning("Persona embedder warm-up failed: %s — first request will be slow.", e)
     yield
 
 

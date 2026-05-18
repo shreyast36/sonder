@@ -216,9 +216,9 @@ async def persona_infer(
     })
     constraints = body.constraints
 
-    # HF embedding and LLM persona call run in parallel — they don't depend on each other.
+    # Embedding and LLM persona call run in parallel — they don't depend on each other.
     user_prompt = _user_prompt(constraints, answers)
-    embed_task = asyncio.to_thread(embed_persona, constraints, answers)
+    embed_task = embed_persona(constraints, answers)
     llm_task   = route_request("persona_label", user_prompt, _system_prompt())
 
     try:

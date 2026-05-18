@@ -32,16 +32,17 @@ def _resolve_pace(pace: PacePreference | str | None) -> str:
 
 # ── Public functions ──────────────────────────────────────────────────────────
 
-def infer_persona(
+async def infer_persona(
     constraints: TripConstraints | None = None,
     answers: PersonaQuestionAnswers | None = None,
     pace: PacePreference | str | None = None,
 ) -> dict:
     """
-    Embed persona text → user_vector. Dimension labels (top_push,
-    top_interests) and reveal copy come from the LLM downstream of this
-    call; this function returns empty lists for them so the result shape
-    stays compatible with legacy callers.
+    Embed persona text → user_vector via the configured provider
+    (OpenAI text-embedding-3-small by default, same as the Pinecone corpus).
+    Dimension labels (top_push, top_interests) and reveal copy come from
+    the LLM downstream of this call; this function returns empty lists for
+    them so the result shape stays compatible with legacy callers.
 
     Expected output:
         {
@@ -50,11 +51,11 @@ def infer_persona(
             "top_push":      [],
             "top_interests": [],
             "pace":          "relaxed",
-            "user_vector":   [0.012, -0.034, ...],   # 768-dim, normalized
+            "user_vector":   [0.012, -0.034, ...],   # 1536-dim
         }
     """
     text = build_persona_text(constraints, answers)
-    user_vector = embed_text(text) if text else []
+    user_vector = await embed_text(text) if text else []
 
     resolved_pace = pace if pace is not None else (constraints.pace if constraints else None)
     pace_value = _resolve_pace(resolved_pace)

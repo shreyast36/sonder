@@ -1,35 +1,22 @@
 """
-HF embedding utilities for persona inference.
+Persona text builder + embedding wrapper.
 
-Lazy-loads sentence-transformers/all-mpnet-base-v2 (768-dim) and produces a
-durable user persona vector for downstream Pinecone retrieval / co-traveller
-matching. Dimension labeling and reveal copy come from the LLM (Haiku via
-the persona-infer endpoint), so cosine-vs-prototypes scoring is no longer
-performed here.
-
-For production, FastAPI's lifespan should call `warm_up()` at startup so
-the first request doesn't pay the ~1-2s model load.
+Embedding is delegated to ali.vector.embeddings.embed_text, which reads
+EMBED_MODEL_PROVIDER from .env (currently openai → text-embedding-3-small,
+1536-dim — same model + space as the seeded Pinecone corpus). No local
+HF model is loaded, so this module has no startup cost and zero memory
+footprint beyond the OpenAI client.
 """
 
-from functools import lru_cache
-
-from sentence_transformers import SentenceTransformer
+from ali.vector.embeddings import embed_text as _provider_embed_text
 
 from jahnvi.data.persona_labels import label_for
 from jahnvi.schemas.user import TripConstraints, PersonaQuestionAnswers
 
-MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
 
-
-@lru_cache(maxsize=1)
-def get_model() -> SentenceTransformer:
-    """Lazy singleton. Call warm_up() at app startup to avoid cold-start latency."""
-    return SentenceTransformer(MODEL_NAME)
-
-
-def embed_text(text: str) -> list[float]:
-    """Embed arbitrary text. Returns 768-dim L2-normalized vector."""
-    return get_model().encode(text or "", normalize_embeddings=True).tolist()
+async def embed_text(text: str) -> list[float]:
+    """Embed arbitrary text. Returns the configured provider's vector (1536-dim for OpenAI)."""
+    return await _provider_embed_text(text or "")
 
 
 def build_persona_text(
@@ -57,14 +44,9 @@ def build_persona_text(
     return ". ".join(p.strip() for p in parts if p and p.strip())
 
 
-def embed_persona(
+async def embed_persona(
     constraints: TripConstraints | None,
     answers: PersonaQuestionAnswers | None,
 ) -> list[float]:
-    """Build persona text from form payload and embed. Returns 768-dim normalized vector."""
-    return embed_text(build_persona_text(constraints, answers))
-
-
-def warm_up() -> None:
-    """Load the encoder. Call at FastAPI startup to avoid first-request latency."""
-    get_model()
+    """Build persona text from form payload and embed via the configured provider."""
+    return await embed_text(build_persona_text(constraints, answers))

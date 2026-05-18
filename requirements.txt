@@ -17,9 +17,6 @@ mistralai>=0.4.0
 # ── Vector database ────────────────────────────────────────────────────────────
 pinecone>=3.2.0
 
-# ── Persona embeddings (HF sentence-transformers — all-mpnet-base-v2) ──────────
-sentence-transformers>=3.0.0
-numpy>=1.26.0
 
 # ── Firebase ───────────────────────────────────────────────────────────────────
 firebase-admin>=6.5.0
