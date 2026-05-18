@@ -100,7 +100,7 @@ Return ONLY a JSON object with these keys:
 - "top_interests": list of 3 strings, each one of the allowed PULL IDs above.
 - "descriptor": one short observational phrase, 4-9 words, no period.
 - "paragraph": 2-3 sentences. How this person travels. Concrete. No archetype labels.
-- "bullets": exactly 3 phrases (5-12 words each), no period, lowercase start. Each phrase paraphrases ONE of the user's actual answers.
+- "bullets": exactly 3 phrases (5-12 words each), no period, lowercase start. Each phrase paraphrases ONE of the user's actual answers AND must be a NOUN PHRASE that completes the sentence "You're drawn to ___" grammatically. Do not start a bullet with a verb. Bad: "vanishes into new places and returns with stories" (verb phrase). Good: "the kind of night that ends with a story you didn't plan" (noun phrase). Bad: "drawn to neon and music" (starts with past participle). Good: "rooms where the bass hits you in the ribs" (noun phrase).
 
 No preamble. No code fences. No markdown. Just the JSON object."""
 
