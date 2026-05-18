@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
+import { onAuthStateChanged } from 'firebase/auth'
 import { BG, BONE, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
+import { auth } from '../lib/firebase'
 import { inferPersona } from '../lib/api'
 
 const ORANGE = '#F97316'
@@ -22,12 +24,21 @@ export default function PersonaReveal() {
     let profile
     try { profile = JSON.parse(raw) } catch { navigate('/preferences'); return }
 
-    inferPersona(profile)
-      .then(persona => {
-        sessionStorage.setItem('sonder_persona', JSON.stringify(persona))
-        setState({ status: 'ready', persona, error: null })
-      })
-      .catch(err => setState({ status: 'error', persona: null, error: err.message || 'Could not read your persona' }))
+    // Wait for Firebase to restore the auth state before calling the endpoint.
+    // `auth.currentUser` is null on first mount until onAuthStateChanged fires.
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        navigate('/signin')
+        return
+      }
+      inferPersona(profile)
+        .then(persona => {
+          sessionStorage.setItem('sonder_persona', JSON.stringify(persona))
+          setState({ status: 'ready', persona, error: null })
+        })
+        .catch(err => setState({ status: 'error', persona: null, error: err.message || 'Could not read your persona' }))
+    })
+    return () => unsub()
   }, [navigate])
 
   function handleConfirm() {

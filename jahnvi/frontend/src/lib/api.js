@@ -7,9 +7,23 @@ async function authHeaders() {
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 }
 
+async function _readError(res) {
+  try {
+    const ct = res.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      const data = await res.json()
+      return (data && (data.detail || data.message || data.error)) || res.statusText
+    }
+    const text = await res.text()
+    return text.slice(0, 300) || res.statusText
+  } catch {
+    return res.statusText
+  }
+}
+
 async function get(path) {
   const res = await fetch(`${BASE}${path}`, { headers: await authHeaders() })
-  if (!res.ok) throw Object.assign(new Error(res.statusText), { status: res.status })
+  if (!res.ok) throw Object.assign(new Error(await _readError(res)), { status: res.status })
   return res.json()
 }
 
@@ -19,7 +33,7 @@ async function post(path, body) {
     headers: await authHeaders(),
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw Object.assign(new Error(res.statusText), { status: res.status })
+  if (!res.ok) throw Object.assign(new Error(await _readError(res)), { status: res.status })
   return res.json()
 }
 
