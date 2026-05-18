@@ -18,6 +18,7 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
 # LLM model selection — Ali decides Small + Large; Mushahid decides validators
 SMALL_MODEL_PROVIDER = os.getenv("SMALL_MODEL_PROVIDER")

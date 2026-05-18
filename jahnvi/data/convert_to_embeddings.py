@@ -1,21 +1,20 @@
 """
 HF embedding utilities for persona inference.
 
-Lazy-loads sentence-transformers/all-mpnet-base-v2 (768-dim) and pre-computes
-prototype embeddings for each PUSH/PULL dimension by embedding its keyword
-list. module3_persona scores user persona text against these prototypes via
-cosine similarity to produce dimension scores.
+Lazy-loads sentence-transformers/all-mpnet-base-v2 (768-dim) and produces a
+durable user persona vector for downstream Pinecone retrieval / co-traveller
+matching. Dimension labeling and reveal copy come from the LLM (Haiku via
+the persona-infer endpoint), so cosine-vs-prototypes scoring is no longer
+performed here.
 
-The model and prototypes are computed once and cached. For production,
-FastAPI's lifespan should call `warm_up()` at startup so the first request
-doesn't pay the ~1-2s model load.
+For production, FastAPI's lifespan should call `warm_up()` at startup so
+the first request doesn't pay the ~1-2s model load.
 """
 
 from functools import lru_cache
 
 from sentence_transformers import SentenceTransformer
 
-from jahnvi.data.dimensions import ALL_DIMENSIONS
 from jahnvi.data.persona_labels import label_for
 from jahnvi.schemas.user import TripConstraints, PersonaQuestionAnswers
 
@@ -26,16 +25,6 @@ MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
 def get_model() -> SentenceTransformer:
     """Lazy singleton. Call warm_up() at app startup to avoid cold-start latency."""
     return SentenceTransformer(MODEL_NAME)
-
-
-@lru_cache(maxsize=1)
-def dimension_prototypes() -> dict[str, list[float]]:
-    """Pre-compute one prototype embedding per dimension from its keyword list."""
-    model = get_model()
-    return {
-        dim: model.encode(" ".join(keywords), normalize_embeddings=True).tolist()
-        for dim, keywords in ALL_DIMENSIONS.items()
-    }
 
 
 def embed_text(text: str) -> list[float]:
@@ -77,6 +66,5 @@ def embed_persona(
 
 
 def warm_up() -> None:
-    """Load the model and pre-compute prototypes. Call at FastAPI startup."""
+    """Load the encoder. Call at FastAPI startup to avoid first-request latency."""
     get_model()
-    dimension_prototypes()

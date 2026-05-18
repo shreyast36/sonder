@@ -1,4 +1,5 @@
 import json
+import logging
 import openai
 import anthropic
 from ali.generation.output_parser import _strip_fences
@@ -6,10 +7,13 @@ from shared.schemas import Itinerary, UserProfile, ValidationResult, ValidationS
 from shared.config import (
     SMALL_VALIDATOR_PROVIDER, SMALL_VALIDATOR_MODEL_NAME,
     LARGE_VALIDATOR_PROVIDER, LARGE_VALIDATOR_MODEL_NAME,
-    OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY,
+    OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, NVIDIA_API_KEY,
 )
 
+logger = logging.getLogger(__name__)
+
 _DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+_NVIDIA_BASE_URL   = "https://integrate.api.nvidia.com/v1"
 
 _small_client = None
 _large_client = None
@@ -18,6 +22,8 @@ _large_client = None
 def _make_client(provider: str):
     if provider == "deepseek":
         return openai.AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url=_DEEPSEEK_BASE_URL)
+    if provider == "nvidia":
+        return openai.AsyncOpenAI(api_key=NVIDIA_API_KEY, base_url=_NVIDIA_BASE_URL)
     if provider == "openai":
         return openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
     if provider == "anthropic":
@@ -145,3 +151,55 @@ async def validate_large_output(itinerary: Itinerary, user_profile: UserProfile)
     model = LARGE_VALIDATOR_MODEL_NAME or "deepseek-chat"
     raw = await _call_llm(_get_large_client(), provider, model, _critic_prompt(itinerary, user_profile), _CRITIC_SYSTEM)
     return _parse_validation_result(itinerary.itinerary_id, raw)
+
+
+# ── Persona reveal validator (small tier, cross-provider) ─────────────────────
+
+_PERSONA_VALIDATOR_SYSTEM = (
+    "You are a strict quality reviewer for an app's persona-reveal output. "
+    "You receive the original user signals and the LLM-generated persona reveal. "
+    "Your job is to check three things and ONLY these three things:\n"
+    "  1. Tone — the descriptor/paragraph/bullets must NOT sound like a horoscope, "
+    "MBTI label, or psychometric report. They must read as concrete observation.\n"
+    "  2. Echo — the bullets must paraphrase the user's actual selections, not "
+    "invent details the user never said.\n"
+    "  3. No itinerary — the output must contain zero trip/itinerary suggestions "
+    "(no destinations, days, activities, restaurants, hotels).\n\n"
+    "Respond with valid JSON ONLY:\n"
+    '{"valid": true | false, "issues": ["short reason", ...]}\n'
+    "issues is empty when valid is true. No preamble, no markdown."
+)
+
+
+def _persona_validator_prompt(user_signals: str, persona_output: dict) -> str:
+    return (
+        f"USER SIGNALS:\n{user_signals}\n\n"
+        f"PERSONA OUTPUT:\n{json.dumps(persona_output, ensure_ascii=False)}\n\n"
+        "Apply the three checks. Return JSON."
+    )
+
+
+async def validate_persona(user_signals: str, persona_output: dict) -> tuple[bool, list[str]]:
+    """
+    Cross-provider semantic check on the persona reveal output.
+    Runs the small validator (NVIDIA Nemotron Nano by default). Returns
+    (valid, issues). Structural checks (dim IDs, counts) live in
+    mushahid/routes/persona.py — this only catches tone + echo + scope drift.
+
+    Fails OPEN: on any validator error, returns (True, []) — the validator
+    is a quality gate, not a correctness gate, so we don't want to break the
+    user flow if it's unavailable.
+    """
+    provider = SMALL_VALIDATOR_PROVIDER or "nvidia"
+    model    = SMALL_VALIDATOR_MODEL_NAME or "nvidia/llama-3.1-nemotron-nano-8b-v1"
+    try:
+        raw = await _call_llm(
+            _get_small_client(), provider, model,
+            _persona_validator_prompt(user_signals, persona_output),
+            _PERSONA_VALIDATOR_SYSTEM,
+        )
+        data = json.loads(_strip_fences(raw))
+        return bool(data.get("valid", True)), [str(x) for x in data.get("issues", [])]
+    except Exception as e:
+        logger.warning("persona validator failed open: %s", e)
+        return True, []

@@ -1,44 +1,27 @@
 """
 Module 3 — Persona inference.
 
-Scores users on Push-Pull motivation dimensions (see jahnvi/data/dimensions.py)
-via HF sentence-embedding similarity (see jahnvi/data/convert_to_embeddings.py).
-  PUSH → why they travel → feeds travel_style_embedding and co-traveller matching
-  PULL → what they want  → feeds destination and activity search in Pinecone
+Persona dimension labels (top_push, top_interests) and reveal copy now
+come from the LLM via mushahid/routes/persona.py. This module only:
+  - Embeds the user persona text via HF (durable user_vector).
+  - Maintains build_travel_style_embedding / build_compatibility_embedding
+    for downstream Pinecone retrieval + co-traveller matching.
 
-Pace is structured on TripConstraints, not inferred.
-
-NOTE — infer_emotion() is a stub. Wire in your chosen emotion model (e.g. GoEmotions)
-and map its output to EmotionIntent before this module is used in production.
+NOTE — infer_emotion() is a stub. Wire in your chosen emotion model
+(e.g. GoEmotions) and map its output to EmotionIntent before this module
+is used in production.
 """
 
 import logging
 
-import numpy as np
-
 from jahnvi.schemas.user import UserProfile, TripConstraints, PersonaQuestionAnswers
 from jahnvi.schemas.enums import EmotionIntent, PacePreference
 from jahnvi.data.dimensions import PUSH_DIMENSIONS, PULL_DIMENSIONS
-from jahnvi.data.convert_to_embeddings import (
-    build_persona_text, dimension_prototypes, embed_text,
-)
+from jahnvi.data.convert_to_embeddings import build_persona_text, embed_text
 
 logger = logging.getLogger(__name__)
 
 _BUDGET_CEILING_USD = 15_000.0
-
-
-def _score_against_prototypes(text: str) -> dict[str, float]:
-    """Cosine similarity between user text embedding and each dimension prototype."""
-    if not text or not text.strip():
-        return {dim: 0.0 for dim in {**PUSH_DIMENSIONS, **PULL_DIMENSIONS}}
-
-    user_vec = np.asarray(embed_text(text))
-    protos = dimension_prototypes()
-    return {
-        dim: round(float(np.dot(user_vec, np.asarray(proto))), 3)
-        for dim, proto in protos.items()
-    }
 
 
 def _resolve_pace(pace: PacePreference | str | None) -> str:
@@ -55,39 +38,32 @@ def infer_persona(
     pace: PacePreference | str | None = None,
 ) -> dict:
     """
-    Score push motivations + pull preferences via HF embedding + cosine vs
-    pre-computed dimension prototypes. pace is structured (from constraints
-    or passed in); falls back to 'moderate'.
+    Embed persona text → user_vector. Dimension labels (top_push,
+    top_interests) and reveal copy come from the LLM downstream of this
+    call; this function returns empty lists for them so the result shape
+    stays compatible with legacy callers.
 
     Expected output:
         {
-            "push": {"escape_reset": 0.32, "connection": 0.11, ...},
-            "pull": {"food_drink": 0.41, "culture_history": 0.18, ...},
-            "top_push":      ["escape_reset", "connection"],
-            "top_interests": ["food_drink", "culture_history", "exploration_local"],
+            "push":          {},        # populated by LLM, not here
+            "pull":          {},
+            "top_push":      [],
+            "top_interests": [],
             "pace":          "relaxed",
             "user_vector":   [0.012, -0.034, ...],   # 768-dim, normalized
         }
     """
     text = build_persona_text(constraints, answers)
-    scores = _score_against_prototypes(text)
-
-    push = {d: scores[d] for d in PUSH_DIMENSIONS}
-    pull = {d: scores[d] for d in PULL_DIMENSIONS}
+    user_vector = embed_text(text) if text else []
 
     resolved_pace = pace if pace is not None else (constraints.pace if constraints else None)
     pace_value = _resolve_pace(resolved_pace)
 
-    top_push      = sorted(push, key=push.get, reverse=True)[:2]
-    top_interests = sorted(pull, key=pull.get, reverse=True)[:3]
-
-    user_vector = embed_text(text) if text else []
-
     return {
-        "push":          push,
-        "pull":          pull,
-        "top_push":      top_push,
-        "top_interests": top_interests,
+        "push":          {},
+        "pull":          {},
+        "top_push":      [],
+        "top_interests": [],
         "pace":          pace_value,
         "user_vector":   user_vector,
     }
@@ -105,37 +81,30 @@ def infer_emotion(answers: PersonaQuestionAnswers) -> EmotionIntent:
 
 def build_compatibility_signals(profile: UserProfile) -> dict:
     """
-    Extract structured signals for Shreyas's co-traveller matching algorithm.
+    Extract structured signals for co-traveller matching.
 
-    PUSH signals drive matching — two people travelling for the same reason
-    are more compatible than two people who want the same destination.
+    push/pull dimension scores now come from the LLM at /persona-infer time
+    and are expected to live on profile.compatibility_signals already. This
+    function only fills in budget + travel_style + pace from constraints.
     """
-    signals: dict = {}
+    signals: dict = dict(profile.compatibility_signals or {})
 
-    # Budget — continuous score, not tiered
     budget_usd = (profile.constraints.budget_usd if profile.constraints else 0) or 0
     signals["budget_score"] = round(min(budget_usd / _BUDGET_CEILING_USD, 1.0), 3)
 
-    # Travel style — from constraints
     if profile.constraints and profile.constraints.who_travelling_with:
         signals["travel_style"] = profile.constraints.who_travelling_with.value
     else:
-        signals["travel_style"] = "solo"
+        signals.setdefault("travel_style", "solo")
 
-    # Push/pull dimensions + pace (pace is structured from constraints)
-    if profile.constraints or profile.persona_answers:
-        persona = infer_persona(profile.constraints, profile.persona_answers)
-        signals["push"]          = persona["push"]
-        signals["pull"]          = persona["pull"]
-        signals["top_push"]      = persona["top_push"]
-        signals["top_interests"] = persona["top_interests"]
-        signals["pace"]          = persona["pace"]
-    else:
-        signals["push"]          = {dim: 0.0 for dim in PUSH_DIMENSIONS}
-        signals["pull"]          = {dim: 0.0 for dim in PULL_DIMENSIONS}
-        signals["top_push"]      = []
-        signals["top_interests"] = []
-        signals["pace"]          = "moderate"
+    pace = profile.constraints.pace if profile.constraints else None
+    signals.setdefault("pace", _resolve_pace(pace))
+
+    # Fill these with empty defaults if the LLM stage hasn't run yet.
+    signals.setdefault("push", {dim: 0.0 for dim in PUSH_DIMENSIONS})
+    signals.setdefault("pull", {dim: 0.0 for dim in PULL_DIMENSIONS})
+    signals.setdefault("top_push", [])
+    signals.setdefault("top_interests", [])
 
     return signals
 
@@ -200,40 +169,23 @@ async def build_compatibility_embedding(profile: UserProfile) -> list[float]:
 
 async def update_profile_from_feedback(profile: UserProfile, feedback: str) -> UserProfile:
     """
-    Re-score push/pull dimensions incorporating refinement feedback, then re-embed.
-    Called by the refinement loop before each re-ranking pass.
-
-    Feedback is concatenated with the persona text and re-embedded so explicit
-    signals shift the cosine scores accordingly.
+    Refinement feedback path. Appends the feedback to the persona text and
+    re-embeds for travel_style_embedding. Dimension re-scoring is handled
+    by re-calling /persona-infer (LLM-side), not here.
     """
-    base_text = build_persona_text(
-        profile.constraints if profile.constraints else None,
-        profile.persona_answers if profile.persona_answers else None,
-    )
-    merged_text = f"{base_text}. {feedback}".strip(". ").strip()
+    feedback_clean = (feedback or "").strip()
+    if feedback_clean:
+        existing_pa = profile.persona_answers
+        merged_small = (existing_pa.small_thing if existing_pa else "") or ""
+        if merged_small:
+            merged_small = f"{merged_small}. {feedback_clean}"
+        else:
+            merged_small = feedback_clean
+        new_pa = (existing_pa.model_copy(update={"small_thing": merged_small})
+                  if existing_pa else PersonaQuestionAnswers(small_thing=merged_small))
+        profile = profile.model_copy(update={"persona_answers": new_pa})
 
-    scores = _score_against_prototypes(merged_text)
-    push = {d: scores[d] for d in PUSH_DIMENSIONS}
-    pull = {d: scores[d] for d in PULL_DIMENSIONS}
-
-    pace = profile.constraints.pace if profile.constraints else None
-    pace_value = _resolve_pace(pace)
-
-    top_push      = sorted(push, key=push.get, reverse=True)[:2]
-    top_interests = sorted(pull, key=pull.get, reverse=True)[:3]
-
-    updated_signals = {
-        **(profile.compatibility_signals or {}),
-        "push":            push,
-        "pull":            pull,
-        "top_push":        top_push,
-        "top_interests":   top_interests,
-        "pace":            pace_value,
-        "feedback_weight": 0.4,
-    }
-
-    updated = profile.model_copy(update={"compatibility_signals": updated_signals})
-    updated = updated.model_copy(update={
-        "travel_style_embedding": await build_travel_style_embedding(updated),
+    updated = profile.model_copy(update={
+        "travel_style_embedding": await build_travel_style_embedding(profile),
     })
     return updated
