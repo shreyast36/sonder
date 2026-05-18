@@ -11,7 +11,7 @@ const ORANGE = '#F97316'
 const spring = { type: 'spring', stiffness: 280, damping: 22 }
 
 const STYLES      = ['Adventure', 'Culture & history', 'Nature & landscape', 'City life', 'Food & wine', 'Wellness & rest', 'Nightlife', 'Arts & performance']
-const PACES       = [{ key: 'slow', label: 'Slow', sub: 'Linger' }, { key: 'moderate', label: 'Moderate', sub: 'Balanced' }, { key: 'fast', label: 'Fast', sub: 'Pack it in' }]
+const PACES       = [{ key: 'relaxed', label: 'Slow', sub: 'Linger' }, { key: 'moderate', label: 'Moderate', sub: 'Balanced' }, { key: 'packed', label: 'Fast', sub: 'Pack it in' }]
 const CURRENCIES  = ['USD', 'EUR', 'JPY', 'GBP', 'CNY', 'AUD', 'CAD', 'CHF', 'HKD', 'SGD', 'SEK', 'NOK', 'NZD', 'INR', 'MXN']
 const WHO_OPTS    = [{ key: 'solo', label: 'Solo' }, { key: 'couple', label: 'Couple' }, { key: 'family', label: 'Family' }, { key: 'friends', label: 'Friends' }]
 const GROUP_SIZES = [1, 2, 3, 4, 5]
@@ -215,6 +215,7 @@ export default function TripPreferences() {
         budget_currency:     currency,
         group_size:          groupSize,
         who_travelling_with: travelsWith || null,
+        pace,
         must_haves:          styles,
         avoid_list:          [],
         friends_would_say:   persona.friends_would_say || null,

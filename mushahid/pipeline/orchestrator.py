@@ -72,7 +72,8 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
         yield format_event("persona_inferring", {})
         try:
             from jahnvi.pipeline.module3_persona import infer_persona, infer_emotion
-            persona = infer_persona(user_profile.persona_answers)
+            pace = user_profile.constraints.pace if user_profile.constraints else None
+            persona = infer_persona(user_profile.persona_answers, pace=pace)
             emotion = infer_emotion(user_profile.compatibility_signals or {})
             yield format_event("persona_inferred", {"archetype": persona, "emotion": emotion})
         except Exception:

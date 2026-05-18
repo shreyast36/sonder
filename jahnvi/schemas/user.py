@@ -12,7 +12,7 @@ class TripConstraints(BaseModel):
     Personality probes (friends_would_say, restaurant_order, what_you_notice,
     ideal_atmosphere) are non-travel single-select reveals that shape
     ranking; the embedding from PersonaQuestionAnswers handles vibe-level
-    matching.
+    matching. pace is structured (not inferred from text).
     """
     destination_query:    str = ""
     destination_type:     str = ""
@@ -24,6 +24,7 @@ class TripConstraints(BaseModel):
     budget_currency:      str = "USD"
     group_size:           int = 1
     who_travelling_with:  Optional[TravelStyle] = None
+    pace:                 Optional[PacePreference] = None
     must_haves:           list[str] = Field(default_factory=list)
     avoid_list:           list[str] = Field(default_factory=list)
 

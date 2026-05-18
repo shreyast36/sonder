@@ -14,8 +14,8 @@ and map its output to EmotionIntent before this module is used in production.
 import logging
 
 from jahnvi.schemas.user import UserProfile, PersonaQuestionAnswers
-from jahnvi.schemas.enums import EmotionIntent
-from jahnvi.data.dimensions import PUSH_DIMENSIONS, PULL_DIMENSIONS, PACE_SIGNALS, ALL_DIMENSIONS
+from jahnvi.schemas.enums import EmotionIntent, PacePreference
+from jahnvi.data.dimensions import PUSH_DIMENSIONS, PULL_DIMENSIONS, ALL_DIMENSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -43,33 +43,28 @@ def _score_dimension_set(text: str, dimensions: dict[str, list[str]]) -> dict[st
     return scores
 
 
-def _infer_pace(text: str) -> str:
-    for pace, keywords in PACE_SIGNALS.items():
-        if any(kw in text for kw in keywords):
-            return pace
-    return "moderate"
-
-
 # ── Public functions ──────────────────────────────────────────────────────────
 
-def infer_persona(answers: PersonaQuestionAnswers) -> dict:
+def infer_persona(answers: PersonaQuestionAnswers, pace: PacePreference | str | None = None) -> dict:
     """
-    Score the user's push motivations, pull preferences, pace, and top interests.
-    No archetype buckets — downstream systems use the scores directly.
+    Score push motivations + pull preferences from free-text persona answers.
+    pace is now a structured TripConstraints field — pass it through; falls
+    back to 'moderate' when absent.
 
     Expected output:
         {
-            "push": {"escape": 0.8, "rest": 0.6, "adventure_seeking": 0.2, ...},
-            "pull": {"food": 0.9, "culture": 0.5, "nature": 0.3, ...},
-            "top_push":      ["escape", "rest"],
-            "top_interests": ["food", "culture", "exploration"],
+            "push": {"escape_reset": 0.8, "connection": 0.2, ...},
+            "pull": {"food_drink": 0.9, "culture_history": 0.5, ...},
+            "top_push":      ["escape_reset", "connection"],
+            "top_interests": ["food_drink", "culture_history", "exploration_local"],
             "pace":          "relaxed",
         }
     """
     text = _combined_text(answers)
     push = _score_dimension_set(text, PUSH_DIMENSIONS)
     pull = _score_dimension_set(text, PULL_DIMENSIONS)
-    pace = _infer_pace(text)
+
+    pace_value = pace.value if isinstance(pace, PacePreference) else (pace or "moderate")
 
     top_push      = sorted(push, key=push.get, reverse=True)[:2]
     top_interests = sorted(pull, key=pull.get, reverse=True)[:3]
@@ -79,7 +74,7 @@ def infer_persona(answers: PersonaQuestionAnswers) -> dict:
         "pull":          pull,
         "top_push":      top_push,
         "top_interests": top_interests,
-        "pace":          pace,
+        "pace":          pace_value,
     }
 
 
@@ -123,9 +118,10 @@ def build_compatibility_signals(profile: UserProfile) -> dict:
     else:
         signals["travel_style"] = "solo"
 
-    # Push/pull dimensions + pace
+    # Push/pull dimensions + pace (pace is structured from constraints)
+    pace = profile.constraints.pace if profile.constraints else None
     if profile.persona_answers:
-        persona = infer_persona(profile.persona_answers)
+        persona = infer_persona(profile.persona_answers, pace=pace)
         signals["push"]          = persona["push"]
         signals["pull"]          = persona["pull"]
         signals["top_push"]      = persona["top_push"]
@@ -136,7 +132,7 @@ def build_compatibility_signals(profile: UserProfile) -> dict:
         signals["pull"]          = {dim: 0.0 for dim in PULL_DIMENSIONS}
         signals["top_push"]      = []
         signals["top_interests"] = []
-        signals["pace"]          = "moderate"
+        signals["pace"]          = pace.value if isinstance(pace, PacePreference) else (pace or "moderate")
 
     return signals
 
@@ -211,7 +207,8 @@ async def update_profile_from_feedback(profile: UserProfile, feedback: str) -> U
 
     push          = _score_dimension_set(merged, PUSH_DIMENSIONS)
     pull          = _score_dimension_set(merged, PULL_DIMENSIONS)
-    pace          = _infer_pace(merged)
+    constraint_pace = profile.constraints.pace if profile.constraints else None
+    pace_value    = constraint_pace.value if isinstance(constraint_pace, PacePreference) else (constraint_pace or "moderate")
     top_push      = sorted(push, key=push.get, reverse=True)[:2]
     top_interests = sorted(pull, key=pull.get, reverse=True)[:3]
 
@@ -221,7 +218,7 @@ async def update_profile_from_feedback(profile: UserProfile, feedback: str) -> U
         "pull":            pull,
         "top_push":        top_push,
         "top_interests":   top_interests,
-        "pace":            pace,
+        "pace":            pace_value,
         "feedback_weight": 0.4,
     }
 
