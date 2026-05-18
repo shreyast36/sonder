@@ -32,16 +32,12 @@ class VisaInfo(BaseModel):
 class PlanTripRequest(BaseModel):
     """
     Request body for POST /plan-trip.
-    user_id is also extracted from the auth token — include in body for convenience.
 
-    Example:
-        PlanTripRequest(
-            user_id         = "firebase_uid_abc123",
-            constraints     = TripConstraints(destination_type="beach", budget_usd=2000, ...),
-            persona_answers = PersonaQuestionAnswers(food_interest=5, culture_interest=4, ...)
-        )
+    user_id is authoritatively derived from the auth token by the route
+    handler — never trust a client-supplied value. Kept optional here so
+    older clients that still include it in the body don't fail validation.
     """
-    user_id:         str
+    user_id:         Optional[str] = None
     constraints:     TripConstraints
     persona_answers: PersonaQuestionAnswers
 
