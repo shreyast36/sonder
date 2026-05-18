@@ -76,7 +76,7 @@ class OpenAILargeClient(BaseLLMClient):
     def cost_per_1k_input_tokens(self) -> float:
         return 0.002500  # gpt-4o: $2.50 per 1M input tokens
 
-    async def complete(self, prompt: str, system: str = "", max_tokens: int = 4096) -> str:
+    async def complete(self, prompt: str, system: str = "", max_tokens: int = 16384) -> str:
         response = await _get_client().chat.completions.create(
             model=self.model_name,
             messages=[

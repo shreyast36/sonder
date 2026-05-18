@@ -71,7 +71,7 @@ class AnthropicLargeClient(BaseLLMClient):
     def cost_per_1k_input_tokens(self) -> float:
         return 0.003000  # claude-sonnet-4-5: $3.00 per 1M input tokens
 
-    async def complete(self, prompt: str, system: str = "", max_tokens: int = 4096) -> str:
+    async def complete(self, prompt: str, system: str = "", max_tokens: int = 16384) -> str:
         response = await _get_client().messages.create(
             model=self.model_name,
             system=system,
@@ -81,11 +81,13 @@ class AnthropicLargeClient(BaseLLMClient):
         return response.content[0].text
 
     async def stream(self, prompt: str, system: str = ""):
+        # Itinerary JSON for a 7-14 day trip easily exceeds 4k tokens.
+        # Sonnet 4.6 supports up to 64k output; 16k is a safe ceiling for itineraries.
         async with _get_client().messages.stream(
             model=self.model_name,
             system=system,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=4096,
+            max_tokens=16384,
         ) as stream:
             async for text in stream.text_stream:
                 yield text
