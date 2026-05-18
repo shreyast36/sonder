@@ -97,7 +97,7 @@ def divider(title=""):
 
 async def demo_routing():
     divider("1. LLM ROUTING ENGINE")
-    print("Task: 'short_explanation' -> SMALL tier (DeepSeek)")
+    print("Task: 'short_explanation' -> SMALL tier")
     print("Prompt: 'Name one famous dish from Bali in 5 words.'")
     print()
     response = await route_request(
@@ -115,7 +115,7 @@ async def demo_generation():
           f"${USER.constraints.budget_usd:.0f} budget | "
           f"{(USER.constraints.end_date - USER.constraints.start_date).days} days")
     print("Must-have: snorkeling | Avoid: nightclubs")
-    print("\nStreaming from DeepSeek...\n")
+    print("\nStreaming itinerary...\n")
 
     chunks = []
     async for chunk in generate_itinerary(USER, DESTINATION, ACTIVITIES):
@@ -170,7 +170,7 @@ async def main():
 
     print()
     divider("DEMO COMPLETE")
-    print("  Routing engine    - DeepSeek small/large tier")
+    print("  Routing engine    - small/large tier")
     print("  Itinerary stream  - token-by-token SSE-ready output")
     print("  Output parser     - JSON extraction + schema validation")
     print("  Chat AI           - personalised topics + icebreaker")

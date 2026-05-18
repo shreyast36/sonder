@@ -7,21 +7,18 @@ from shared.schemas import Itinerary, UserProfile, ValidationResult, ValidationS
 from shared.config import (
     SMALL_VALIDATOR_PROVIDER, SMALL_VALIDATOR_MODEL_NAME,
     LARGE_VALIDATOR_PROVIDER, LARGE_VALIDATOR_MODEL_NAME,
-    OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, NVIDIA_API_KEY,
+    OPENAI_API_KEY, ANTHROPIC_API_KEY, NVIDIA_API_KEY,
 )
 
 logger = logging.getLogger(__name__)
 
-_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-_NVIDIA_BASE_URL   = "https://integrate.api.nvidia.com/v1"
+_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 _small_client = None
 _large_client = None
 
 
 def _make_client(provider: str):
-    if provider == "deepseek":
-        return openai.AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url=_DEEPSEEK_BASE_URL)
     if provider == "nvidia":
         return openai.AsyncOpenAI(api_key=NVIDIA_API_KEY, base_url=_NVIDIA_BASE_URL)
     if provider == "openai":
@@ -34,14 +31,18 @@ def _make_client(provider: str):
 def _get_small_client():
     global _small_client
     if _small_client is None:
-        _small_client = _make_client(SMALL_VALIDATOR_PROVIDER or "deepseek")
+        if not SMALL_VALIDATOR_PROVIDER:
+            raise RuntimeError("SMALL_VALIDATOR_PROVIDER is not set (nvidia | openai | anthropic)")
+        _small_client = _make_client(SMALL_VALIDATOR_PROVIDER)
     return _small_client
 
 
 def _get_large_client():
     global _large_client
     if _large_client is None:
-        _large_client = _make_client(LARGE_VALIDATOR_PROVIDER or "deepseek")
+        if not LARGE_VALIDATOR_PROVIDER:
+            raise RuntimeError("LARGE_VALIDATOR_PROVIDER is not set (nvidia | openai | anthropic)")
+        _large_client = _make_client(LARGE_VALIDATOR_PROVIDER)
     return _large_client
 
 
@@ -136,9 +137,12 @@ async def validate_small_output(itinerary: Itinerary, user_profile: UserProfile)
     Quick LLM sanity check using the small validator model.
     Use for mid-refinement checks where speed matters more than depth.
     """
-    provider = SMALL_VALIDATOR_PROVIDER or "deepseek"
-    model = SMALL_VALIDATOR_MODEL_NAME or "deepseek-chat"
-    raw = await _call_llm(_get_small_client(), provider, model, _critic_prompt(itinerary, user_profile), _CRITIC_SYSTEM)
+    if not SMALL_VALIDATOR_PROVIDER or not SMALL_VALIDATOR_MODEL_NAME:
+        raise RuntimeError("SMALL_VALIDATOR_PROVIDER and SMALL_VALIDATOR_MODEL_NAME must be set")
+    raw = await _call_llm(
+        _get_small_client(), SMALL_VALIDATOR_PROVIDER, SMALL_VALIDATOR_MODEL_NAME,
+        _critic_prompt(itinerary, user_profile), _CRITIC_SYSTEM,
+    )
     return _parse_validation_result(itinerary.itinerary_id, raw)
 
 
@@ -147,9 +151,12 @@ async def validate_large_output(itinerary: Itinerary, user_profile: UserProfile)
     Thorough LLM review using the large validator model.
     Use for final approval before returning the itinerary to the user.
     """
-    provider = LARGE_VALIDATOR_PROVIDER or "deepseek"
-    model = LARGE_VALIDATOR_MODEL_NAME or "deepseek-chat"
-    raw = await _call_llm(_get_large_client(), provider, model, _critic_prompt(itinerary, user_profile), _CRITIC_SYSTEM)
+    if not LARGE_VALIDATOR_PROVIDER or not LARGE_VALIDATOR_MODEL_NAME:
+        raise RuntimeError("LARGE_VALIDATOR_PROVIDER and LARGE_VALIDATOR_MODEL_NAME must be set")
+    raw = await _call_llm(
+        _get_large_client(), LARGE_VALIDATOR_PROVIDER, LARGE_VALIDATOR_MODEL_NAME,
+        _critic_prompt(itinerary, user_profile), _CRITIC_SYSTEM,
+    )
     return _parse_validation_result(itinerary.itinerary_id, raw)
 
 
@@ -190,11 +197,11 @@ async def validate_persona(user_signals: str, persona_output: dict) -> tuple[boo
     is a quality gate, not a correctness gate, so we don't want to break the
     user flow if it's unavailable.
     """
-    provider = SMALL_VALIDATOR_PROVIDER or "nvidia"
-    model    = SMALL_VALIDATOR_MODEL_NAME or "nvidia/llama-3.1-nemotron-nano-8b-v1"
     try:
+        if not SMALL_VALIDATOR_PROVIDER or not SMALL_VALIDATOR_MODEL_NAME:
+            raise RuntimeError("SMALL_VALIDATOR_PROVIDER / SMALL_VALIDATOR_MODEL_NAME not configured")
         raw = await _call_llm(
-            _get_small_client(), provider, model,
+            _get_small_client(), SMALL_VALIDATOR_PROVIDER, SMALL_VALIDATOR_MODEL_NAME,
             _persona_validator_prompt(user_signals, persona_output),
             _PERSONA_VALIDATOR_SYSTEM,
         )

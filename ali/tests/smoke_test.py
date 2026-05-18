@@ -4,9 +4,9 @@ Smoke test -run manually to verify Ali's live API integrations.
     python -m ali.tests.smoke_test
 
 Requires .env with at minimum:
-    DEEPSEEK_API_KEY, OPENAI_API_KEY
-    SMALL_MODEL_PROVIDER=deepseek  SMALL_MODEL_NAME=deepseek-chat
-    LARGE_MODEL_PROVIDER=deepseek  LARGE_MODEL_NAME=deepseek-chat
+    ANTHROPIC_API_KEY, OPENAI_API_KEY
+    SMALL_MODEL_PROVIDER=anthropic SMALL_MODEL_NAME=claude-haiku-4-5
+    LARGE_MODEL_PROVIDER=anthropic LARGE_MODEL_NAME=claude-sonnet-4-6
     EMBED_MODEL_PROVIDER=openai    EMBED_MODEL=text-embedding-3-small
 
 For Pinecone tests (optional -skip if index not seeded):
@@ -117,7 +117,7 @@ async def test_embeddings():
 
 
 async def test_routing():
-    print("\n[2] Routing engine (DeepSeek)")
+    print("\n[2] Routing engine")
     try:
         from ali.routing.engine import route_request
         response = await route_request(
