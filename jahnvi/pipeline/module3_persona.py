@@ -23,13 +23,7 @@ _BUDGET_CEILING_USD = 15_000.0
 
 
 def _combined_text(answers: PersonaQuestionAnswers) -> str:
-    return " ".join([
-        answers.travel_goal, answers.travel_personality, answers.pace_preference,
-        answers.must_not_miss, answers.leave_behind, answers.ideal_companion,
-        answers.dream_trip, answers.memorable_moment, answers.natural_drift,
-        answers.impulsive_decision, answers.experiences_avoided,
-        answers.perfect_afternoon, answers.lose_track_of_time, answers.small_special,
-    ]).lower()
+    return (answers.small_thing or "").lower()
 
 
 def _score_dimension_set(text: str, dimensions: dict[str, list[str]]) -> dict[str, float]:
@@ -68,7 +62,7 @@ def infer_persona(answers: PersonaQuestionAnswers) -> dict:
             "push": {"escape": 0.8, "rest": 0.6, "adventure_seeking": 0.2, ...},
             "pull": {"food": 0.9, "culture": 0.5, "nature": 0.3, ...},
             "top_push":      ["escape", "rest"],
-            "top_interests": ["food", "culture", "discovery"],
+            "top_interests": ["food", "culture", "exploration"],
             "pace":          "relaxed",
         }
     """
@@ -111,7 +105,7 @@ def build_compatibility_signals(profile: UserProfile) -> dict:
             "push":          {"escape": 0.8, "rest": 0.6, ...},
             "pull":          {"food": 0.9, "culture": 0.5, ...},
             "top_push":      ["escape", "rest"],
-            "top_interests": ["food", "culture", "discovery"],
+            "top_interests": ["food", "culture", "exploration"],
             "pace":          "relaxed",
             "budget_score":  0.35,
             "travel_style":  "couple",
@@ -166,12 +160,8 @@ async def build_travel_style_embedding(profile: UserProfile) -> list[float]:
         if c.must_haves:
             parts.extend(c.must_haves)
 
-    if profile.persona_answers:
-        pa = profile.persona_answers
-        for field in [pa.travel_goal, pa.travel_personality, pa.pace_preference,
-                      pa.must_not_miss, pa.dream_trip, pa.leave_behind]:
-            if field:
-                parts.append(field)
+    if profile.persona_answers and profile.persona_answers.small_thing:
+        parts.append(profile.persona_answers.small_thing)
 
     if profile.emotion_intent:
         parts.append(profile.emotion_intent.value)
