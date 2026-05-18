@@ -59,27 +59,40 @@ class PersonaInferResponse(BaseModel):
 
 # ── Prompt scaffolding ────────────────────────────────────────────────────────
 
+def _format_dimension_vocab(dims: dict[str, list[str]]) -> str:
+    """Render dim IDs + their keyword lists as the LLM's ground-truth vocabulary."""
+    lines = []
+    for dim_id, keywords in dims.items():
+        kw_str = ", ".join(keywords)
+        lines.append(f"- {dim_id}: {kw_str}")
+    return "\n".join(lines)
+
+
 def _system_prompt() -> str:
-    push_ids = ", ".join(_ALLOWED_PUSH)
-    pull_ids = ", ".join(_ALLOWED_PULL)
+    push_vocab = _format_dimension_vocab(PUSH_DIMENSIONS)
+    pull_vocab = _format_dimension_vocab(PULL_DIMENSIONS)
     return f"""You read travel personas for an app's "here's who you are" reveal screen.
 
 You are given the user's answers and must return BOTH the inferred dimension labels AND the reveal copy in one JSON object.
+
+DIMENSION VOCABULARY — use these keyword lists as the source of truth for what each dimension means. Pick the dimension whose keywords best match the user's actual answers and free text. Never invent a label that isn't in this list.
+
+PUSH dimensions (pick exactly 2 for top_push, ordered strongest first):
+
+{push_vocab}
+
+PULL dimensions (pick exactly 3 for top_interests, ordered strongest first):
+
+{pull_vocab}
 
 Voice rules for the reveal copy:
 - Low-ego, concrete nouns, slightly self-aware. Not horoscope, not MBTI, not psychometric.
 - Echo the user's actual answer choices — never invent specifics they didn't say.
 - Editorial register — a travel magazine writer noticing something true about a person.
 
-Allowed PUSH dimension IDs (pick exactly 2 for top_push, ordered strongest first):
-{push_ids}
-
-Allowed PULL dimension IDs (pick exactly 3 for top_interests, ordered strongest first):
-{pull_ids}
-
 Return ONLY a JSON object with these keys:
-- "top_push": list of 2 strings, each one of the allowed PUSH IDs.
-- "top_interests": list of 3 strings, each one of the allowed PULL IDs.
+- "top_push": list of 2 strings, each one of the allowed PUSH IDs above.
+- "top_interests": list of 3 strings, each one of the allowed PULL IDs above.
 - "descriptor": one short observational phrase, 4-9 words, no period.
 - "paragraph": 2-3 sentences. How this person travels. Concrete. No archetype labels.
 - "bullets": exactly 3 phrases (5-12 words each), no period, lowercase start. Each phrase paraphrases ONE of the user's actual answers.
