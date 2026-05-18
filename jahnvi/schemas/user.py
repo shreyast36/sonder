@@ -16,21 +16,14 @@ class TripConstraints(BaseModel):
     """
     destination_query:          str = ""
     destination_type:           str = ""
-    origin_query:               str = ""
     nationality:                str = ""
     start_date:                 Optional[date] = None
     end_date:                   Optional[date] = None
     flexible_dates:             bool = False
     budget_usd:                 float = 0.0
     budget_currency:            str = "USD"
-    budget_includes_flights:    bool = True
     group_size:                 int = 1
     who_travelling_with:        Optional[TravelStyle] = None
-    accommodation_types:        list[str] = Field(default_factory=list)
-    hire_car:                   bool = False
-    has_driving_licence:        Optional[bool] = None
-    mobility_notes:             str = ""
-    dietary_notes:              str = ""
     must_haves:                 list[str] = Field(default_factory=list)
     avoid_list:                 list[str] = Field(default_factory=list)
 

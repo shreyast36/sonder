@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Globe, Check, Users, Plane } from 'lucide-react'
+import { ArrowLeft, Globe, Check, Users } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
@@ -10,16 +10,14 @@ import WordLimitTextarea from '../components/WordLimitTextarea'
 const ORANGE = '#F97316'
 const spring = { type: 'spring', stiffness: 280, damping: 22 }
 
-const STYLES            = ['Adventure', 'Culture & history', 'Nature & landscape', 'City life', 'Food & wine', 'Wellness & rest', 'Nightlife', 'Arts & performance']
-const PACES             = [{ key: 'slow', label: 'Slow', sub: 'Linger' }, { key: 'moderate', label: 'Moderate', sub: 'Balanced' }, { key: 'fast', label: 'Fast', sub: 'Pack it in' }]
-const CURRENCIES        = ['USD', 'EUR', 'JPY', 'GBP', 'CNY', 'AUD', 'CAD', 'CHF', 'HKD', 'SGD', 'SEK', 'NOK', 'NZD', 'INR', 'MXN']
-const WHO_OPTS          = [{ key: 'solo', label: 'Solo' }, { key: 'couple', label: 'Couple' }, { key: 'family', label: 'Family' }, { key: 'friends', label: 'Friends' }]
-const GROUP_SIZES       = [1, 2, 3, 4, 5]
-const DESTINATION_TYPES = ['Beach', 'City', 'Mountains', 'Countryside', 'Wilderness', 'Island']
-const STAY_TYPES        = ['Hotel', 'Boutique', 'Resort', 'Rental', 'Hostel', 'B&B', 'Open to anything']
+const STYLES      = ['Adventure', 'Culture & history', 'Nature & landscape', 'City life', 'Food & wine', 'Wellness & rest', 'Nightlife', 'Arts & performance']
+const PACES       = [{ key: 'slow', label: 'Slow', sub: 'Linger' }, { key: 'moderate', label: 'Moderate', sub: 'Balanced' }, { key: 'fast', label: 'Fast', sub: 'Pack it in' }]
+const CURRENCIES  = ['USD', 'EUR', 'JPY', 'GBP', 'CNY', 'AUD', 'CAD', 'CHF', 'HKD', 'SGD', 'SEK', 'NOK', 'NZD', 'INR', 'MXN']
+const WHO_OPTS    = [{ key: 'solo', label: 'Solo' }, { key: 'couple', label: 'Couple' }, { key: 'family', label: 'Family' }, { key: 'friends', label: 'Friends' }]
+const GROUP_SIZES = [1, 2, 3, 4, 5]
 
-const STRUCTURED_STEPS = 6
-const STEP_LABELS = ['Destination', 'Dates', 'Travel style', 'Budget', 'Your group', 'Stay & transport']
+const STRUCTURED_STEPS = 5
+const STEP_LABELS = ['Destination', 'Dates', 'Travel style', 'Budget', 'Your group']
 
 const PERSONA_SCREENS = [
   {
@@ -201,26 +199,16 @@ export default function TripPreferences() {
   const navigate = useNavigate()
 
   // ── Structured steps (logistics) ──
-  const [destination, setDest]               = useState('')
-  const [flexibleDestination, setFlexibleDestination] = useState(false)
-  const [destinationType, setDestinationType] = useState('')
-  const [origin, setOrigin]                  = useState('')
-  const [departure, setDepart]               = useState('')
-  const [returnDate, setReturn]              = useState('')
-  const [flexibleDates, setFlexibleDates]    = useState(false)
-  const [styles, setStyles]                  = useState([])
-  const [pace, setPace]                      = useState('moderate')
-  const [budget, setBudget]                  = useState('')
-  const [currency, setCurrency]              = useState('USD')
-  const [budgetIncludesFlights, setBudgetIncludesFlights] = useState(true)
-  const [nationality, setNationality]        = useState('')
-  const [groupSize, setGroupSize]            = useState(1)
-  const [travelsWith, setTravelsWith]        = useState('')
-  const [mobilityNotes, setMobilityNotes]    = useState('')
-  const [accommodationTypes, setAccommodationTypes] = useState([])
-  const [hireCar, setHireCar]                = useState(false)
-  const [hasLicence, setHasLicence]          = useState(null)
-  const [dietaryNotes, setDietaryNotes]      = useState('')
+  const [destination, setDest]        = useState('')
+  const [departure, setDepart]        = useState('')
+  const [returnDate, setReturn]       = useState('')
+  const [styles, setStyles]           = useState([])
+  const [pace, setPace]               = useState('moderate')
+  const [budget, setBudget]           = useState('')
+  const [currency, setCurrency]       = useState('USD')
+  const [nationality, setNationality] = useState('')
+  const [groupSize, setGroupSize]     = useState(1)
+  const [travelsWith, setTravelsWith] = useState('')
 
   // ── Persona answers (survey + freeform mix) ──
   const [persona, setPersona] = useState({
@@ -239,7 +227,6 @@ export default function TripPreferences() {
   const [submitting, setSubmit] = useState(false)
 
   const toggleStyle = s => setStyles(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
-  const toggleStay  = s => setAccommodationTypes(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
 
   const isPersonaStep = step >= STRUCTURED_STEPS
   const personaIdx    = step - STRUCTURED_STEPS
@@ -248,12 +235,11 @@ export default function TripPreferences() {
   const canProceed = isPersonaStep
     ? true
     : [
-        destination.trim().length > 0 || destinationType.length > 0,
-        origin.trim().length > 0 && departure && returnDate,
+        destination.trim().length > 0,
+        departure && returnDate,
         styles.length > 0,
         budget.trim().length > 0,
         groupSize >= 1 && travelsWith.length > 0 && nationality.trim().length > 0,
-        accommodationTypes.length > 0,
       ][step]
 
   function toggleMulti(key, value, max = null) {
@@ -273,31 +259,22 @@ export default function TripPreferences() {
     setSubmit(true)
     const profile = {
       constraints: {
-        destination_query:        destination,
-        destination_type:         destinationType,
-        origin_query:             origin,
+        destination_query:   destination,
         nationality,
-        start_date:               departure || null,
-        end_date:                 returnDate || null,
-        flexible_dates:           flexibleDates,
-        budget_usd:               parseFloat(budget) || 0,
-        budget_currency:          currency,
-        budget_includes_flights:  budgetIncludesFlights,
-        group_size:               groupSize,
-        who_travelling_with:      travelsWith || null,
-        accommodation_types:      accommodationTypes,
-        hire_car:                 hireCar,
-        has_driving_licence:      hireCar ? hasLicence : null,
-        mobility_notes:           mobilityNotes,
-        dietary_notes:            dietaryNotes,
-        must_haves:               styles,
-        avoid_list:               [],
-        occasion:                 persona.occasion || null,
-        contrast_seeking:         persona.contrast_seeking,
-        energy_level:             persona.energy_level || null,
-        hotel_style:              persona.hotel_style,
-        dining_vibe:              persona.dining_vibe,
-        day_activities:           persona.day_activities,
+        start_date:          departure || null,
+        end_date:            returnDate || null,
+        budget_usd:          parseFloat(budget) || 0,
+        budget_currency:     currency,
+        group_size:          groupSize,
+        who_travelling_with: travelsWith || null,
+        must_haves:          styles,
+        avoid_list:          [],
+        occasion:            persona.occasion || null,
+        contrast_seeking:    persona.contrast_seeking,
+        energy_level:        persona.energy_level || null,
+        hotel_style:         persona.hotel_style,
+        dining_vibe:         persona.dining_vibe,
+        day_activities:      persona.day_activities,
       },
       persona_answers: {
         loved_destination: persona.loved_destination,
@@ -322,50 +299,19 @@ export default function TripPreferences() {
       content: (
         <div style={{ marginTop: 52 }}>
           <ElegantInput value={destination} onChange={setDest} placeholder="Bali, Kyoto, Patagonia…" icon={Globe}/>
-          <div style={{ marginTop: 32 }}>
-            <Toggle value={flexibleDestination} onChange={setFlexibleDestination} label="Surprise me — I'm open to ideas"/>
-          </div>
-          <AnimatePresence>
-            {flexibleDestination && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.28, ease }}
-              >
-                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, margin: '32px 0 14px' }}>Kind of place</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                  {DESTINATION_TYPES.map(t => {
-                    const active = destinationType === t
-                    return (
-                      <motion.button key={t} whileTap={{ scale: 0.95 }} onClick={() => setDestinationType(active ? '' : t)}
-                        style={{ padding: '11px 20px', borderRadius: 24, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 12, letterSpacing: '0.06em', background: active ? `${ORANGE}18` : 'transparent', border: `1px solid ${active ? `${ORANGE}66` : HAIRLINE}`, color: active ? ORANGE : MUTE, transition: 'all 0.2s', boxShadow: active ? `0 0 20px ${ORANGE}22` : 'none' }}>
-                        {t}
-                      </motion.button>
-                    )
-                  })}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
       ),
     },
     {
-      number: '02', heading: 'When and from where?',
-      sub: 'So we can route flights and check timing.',
+      number: '02', heading: 'When do you want to go?',
+      sub: 'Give yourself something to look forward to.',
       content: (
         <div style={{ marginTop: 52 }}>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Leaving from</p>
-          <ElegantInput value={origin} onChange={setOrigin} placeholder="London, San Francisco, Mumbai…" icon={Plane}/>
-          <div style={{ marginTop: 44 }}>
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Departure</p>
-            <ElegantInput value={departure} onChange={setDepart} placeholder="" type="date"/>
-          </div>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Departure</p>
+          <ElegantInput value={departure} onChange={setDepart} placeholder="" type="date"/>
           <div style={{ marginTop: 44 }}>
             <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Return</p>
             <ElegantInput value={returnDate} onChange={setReturn} placeholder="" type="date"/>
-          </div>
-          <div style={{ marginTop: 32 }}>
-            <Toggle value={flexibleDates} onChange={setFlexibleDates} label="My dates are flexible by a few days"/>
           </div>
         </div>
       ),
@@ -404,7 +350,7 @@ export default function TripPreferences() {
     },
     {
       number: '04', heading: "What's your budget?",
-      sub: 'Total trip spend. We work backwards from this.',
+      sub: 'Total trip spend, including flights.',
       content: (
         <div style={{ marginTop: 52 }}>
           <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 18 }}>Currency</p>
@@ -418,9 +364,6 @@ export default function TripPreferences() {
           </div>
           <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Amount</p>
           <ElegantInput value={budget} onChange={setBudget} placeholder="2500" type="number"/>
-          <div style={{ marginTop: 32 }}>
-            <Toggle value={budgetIncludesFlights} onChange={setBudgetIncludesFlights} label="Budget includes flights"/>
-          </div>
         </div>
       ),
     },
@@ -454,49 +397,6 @@ export default function TripPreferences() {
           </div>
           <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Your nationality</p>
           <ElegantInput value={nationality} onChange={setNationality} placeholder="British, Indian, Brazilian…" icon={Users}/>
-          <div style={{ marginTop: 44 }}>
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Accessibility or mobility (optional)</p>
-            <ElegantInput value={mobilityNotes} onChange={setMobilityNotes} placeholder="Step-free routes, slower pace, anything we should know…"/>
-          </div>
-        </div>
-      ),
-    },
-    {
-      number: '06', heading: 'How do you want to stay and get around?',
-      sub: 'Pick anything that fits — we use this to shortlist places.',
-      content: (
-        <div style={{ marginTop: 52 }}>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Where you'd like to stay</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 44 }}>
-            {STAY_TYPES.map(t => {
-              const active = accommodationTypes.includes(t)
-              return (
-                <motion.button key={t} whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.94 }} onClick={() => toggleStay(t)}
-                  style={{ padding: '11px 20px', borderRadius: 24, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 12, letterSpacing: '0.06em', background: active ? `${ORANGE}18` : 'transparent', border: `1px solid ${active ? `${ORANGE}66` : HAIRLINE}`, color: active ? ORANGE : MUTE, transition: 'all 0.2s', boxShadow: active ? `0 0 20px ${ORANGE}22` : 'none' }}>
-                  {t}
-                </motion.button>
-              )
-            })}
-          </div>
-          <Toggle value={hireCar} onChange={setHireCar} label="I'd like to hire a car at the destination"/>
-          <AnimatePresence>
-            {hireCar && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.28, ease }}
-              >
-                <Toggle
-                  value={hasLicence === true}
-                  onChange={v => setHasLicence(v ? true : false)}
-                  label="I have a valid driving licence"
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <div style={{ marginTop: 44 }}>
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Dietary needs (optional)</p>
-            <ElegantInput value={dietaryNotes} onChange={setDietaryNotes} placeholder="Vegetarian, kosher, nut allergy…"/>
-          </div>
         </div>
       ),
     },
