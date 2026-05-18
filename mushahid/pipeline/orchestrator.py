@@ -1,3 +1,5 @@
+import logging
+import uuid
 from typing import AsyncIterator
 
 from shared.schemas import (
@@ -12,34 +14,42 @@ from ali.generation.itinerary_generator import generate_itinerary
 from ali.generation.output_parser import parse_itinerary
 from ali.rag.explainer import explain_itinerary
 
+logger = logging.getLogger(__name__)
 
-# Fallback demo data used when Shreyas's retrieval stubs raise NotImplementedError
-_FALLBACK_DESTINATION = Destination(
-    destination_id="bali_001", city="Bali", country="Indonesia",
-    avg_daily_cost_usd=120.0, tags=["beach", "culture", "food", "nature"],
-    description="Tropical island known for temples, rice terraces, and surf.",
-)
 
-_FALLBACK_ACTIVITIES = [
-    Activity(activity_id="act_001", name="Uluwatu Temple Sunset", category="culture",
-             cost_usd=10.0, duration_hours=2.0, tags=["culture", "sunset", "temple"],
-             description="Clifftop sea temple with sweeping Indian Ocean views."),
-    Activity(activity_id="act_002", name="Seminyak Beach Morning", category="beach",
-             cost_usd=0.0, duration_hours=3.0, tags=["beach", "relaxed", "swimming"],
-             description="Relaxed morning swim on one of Bali's most popular beaches."),
-    Activity(activity_id="act_003", name="Ubud Cooking Class", category="food",
-             cost_usd=45.0, duration_hours=4.0, tags=["food", "cooking", "culture"],
-             description="Learn to cook traditional Balinese dishes with a local chef."),
-    Activity(activity_id="act_004", name="Snorkeling at Amed", category="adventure",
-             cost_usd=35.0, duration_hours=3.0, tags=["snorkeling", "ocean", "adventure"],
-             description="Crystal-clear waters with vibrant coral reefs and tropical fish."),
-    Activity(activity_id="act_005", name="Tirta Empul Temple", category="culture",
-             cost_usd=5.0, duration_hours=1.5, tags=["culture", "spiritual", "history"],
-             description="Sacred Hindu temple with holy spring water purification pools."),
-]
+def _destination_from_query(user_profile: UserProfile) -> Destination:
+    """
+    Build a Destination from the user's typed destination_query.
+    Used until Shreyas's Pinecone retrieval wires in a real candidate list.
+    The LLM generator can produce real activities for any city/country pair.
+    """
+    c = user_profile.constraints
+    query = (c.destination_query if c else "").strip()
+    if not query:
+        query = (c.destination_type if c else "").strip() or "your destination"
+
+    # Heuristic city/country split: "Tokyo, Japan" → city=Tokyo country=Japan.
+    if "," in query:
+        city, country = [p.strip() for p in query.split(",", 1)]
+    else:
+        city, country = query, ""
+
+    return Destination(
+        destination_id=f"user_dest_{uuid.uuid4().hex[:6]}",
+        city=city or "your destination",
+        country=country or "",
+        avg_daily_cost_usd=0.0,
+        tags=[],
+        description=f"Trip destination as entered by the user: {query}",
+    )
 
 
 def _get_destination_and_activities(user_profile: UserProfile):
+    """
+    Try Shreyas's Pinecone retrieval. If it isn't wired yet, fall back to the
+    user's typed destination + an empty activities list — the LLM will invent
+    plausible local activities for that destination.
+    """
     try:
         from shreyas.retrieval.search import search_destinations, search_activities
         from shreyas.ranking.destination_ranker import rank_destinations
@@ -50,8 +60,9 @@ def _get_destination_and_activities(user_profile: UserProfile):
         act_raw = search_activities(dest.destination_id, user_profile)
         activities = [Activity.model_validate(a["metadata"]) for a in act_raw]
         return dest, activities
-    except Exception:
-        return _FALLBACK_DESTINATION, _FALLBACK_ACTIVITIES
+    except Exception as e:
+        logger.warning("retrieval not available (%s) — using user destination_query with LLM-invented activities", e)
+        return _destination_from_query(user_profile), []
 
 
 def _get_cotraveller_matches(user_profile: UserProfile):

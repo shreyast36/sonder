@@ -28,12 +28,13 @@ Output ONLY valid JSON matching this exact schema — no markdown fences, no ext
 }
 
 Rules:
-- Only use activities from the provided list — do not invent new ones.
-- Respect must_haves exactly — every item must appear at least once.
+- If a list of available activities is provided, prefer those. When the list is sparse or empty, you may invent plausible local activities that fit the destination — use real venues and accurate descriptions.
+- Respect must_haves exactly — every item must appear at least once across the trip.
 - Exclude anything in avoid_list entirely.
 - Keep daily_cost_usd within the daily budget.
-- Match the pace: relaxed = 2-3 activities/day, moderate = 3-4, fast = 4-5.
-- Leave why_this as null — it will be populated separately.
+- Match the pace: relaxed = 2-3 activities/day, moderate = 3-4, packed = 4-5.
+- Each Activity object needs name, category, cost_usd (float), duration_hours (float), tags (list of strings), and a short description. activity_id can be omitted; the parser fills it in.
+- Leave why_this as null — it will be populated by a separate explainer pass.
 """
 
 REFINEMENT_SYSTEM_PROMPT = """You are revising a trip itinerary based on user feedback and validation issues.
@@ -43,7 +44,7 @@ Output ONLY valid JSON matching the same Itinerary schema — no markdown fences
 
 Rules:
 - Preserve the itinerary_id and user_id exactly.
-- If budget was exceeded: replace expensive activities with cheaper alternatives from the available list.
+- If budget was exceeded: replace expensive activities with cheaper alternatives.
 - If pace was wrong: add or remove activities per day to match the target pace.
 - If must_haves are missing: insert them, displacing lower-priority activities if needed.
 - If avoid_list items appear: remove them and fill the slot with a suitable alternative.
@@ -56,45 +57,61 @@ def build_itinerary_prompt(
     activities: list[Activity],
 ) -> str:
     c = user_profile.constraints
-    trip_days = (c.end_date - c.start_date).days or 1
-    daily_budget = round(c.budget_usd / trip_days, 2)
 
-    persona = user_profile.compatibility_signals.get("top_interests", [])
-    persona_str = ", ".join(persona) if persona else "general traveller"
-    mood = user_profile.emotion_intent.value if user_profile.emotion_intent else "excited"
+    trip_days = 1
+    if c and c.start_date and c.end_date:
+        trip_days = max((c.end_date - c.start_date).days, 1)
 
-    interests = []
-    if user_profile.persona_answers:
-        pa = user_profile.persona_answers
-        scored = [
-            ("food", pa.food_interest),
-            ("adventure", pa.adventure_interest),
-            ("culture", pa.culture_interest),
-            ("nature", pa.nature_interest),
-            ("nightlife", pa.nightlife_interest),
-        ]
-        interests = [f"{k} ({v}/5)" for k, v in sorted(scored, key=lambda x: -x[1])]
+    budget_usd   = (c.budget_usd if c else 0) or 0
+    daily_budget = round(budget_usd / trip_days, 2) if trip_days else 0
+    pace         = c.pace.value if (c and c.pace) else "moderate"
+    must_haves   = (c.must_haves if c else []) or []
+    avoid_list   = (c.avoid_list if c else []) or []
+    group_size   = c.group_size if c else 1
+    start_date   = c.start_date if c else None
+    end_date     = c.end_date if c else None
 
-    activity_list = "\n".join(
-        f"- id:{a.activity_id} | {a.name} | {a.category} | ${a.cost_usd:.0f} | {a.duration_hours}h"
-        f" | tags: {', '.join(a.tags)} | desc: {a.description}"
-        for a in activities
-    )
+    # Persona signals come from the LLM-inferred top dimensions stored on the profile.
+    cs = user_profile.compatibility_signals or {}
+    top_push      = cs.get("top_push") or []
+    top_interests = cs.get("top_interests") or []
+    push_str      = ", ".join(top_push) if top_push else "—"
+    interest_str  = ", ".join(top_interests) if top_interests else "—"
 
-    return f"""Plan a {trip_days}-day trip to {destination.city}, {destination.country} for {c.group_size} person(s).
+    # The free-text persona anchor the user wrote.
+    small_thing = ""
+    if user_profile.persona_answers and user_profile.persona_answers.small_thing:
+        small_thing = user_profile.persona_answers.small_thing.strip()
+
+    mood = user_profile.emotion_intent.value if user_profile.emotion_intent else "—"
+
+    if activities:
+        activity_list = "\n".join(
+            f"- id:{a.activity_id} | {a.name} | {a.category} | ${a.cost_usd:.0f} | {a.duration_hours}h"
+            f" | tags: {', '.join(a.tags)} | desc: {a.description}"
+            for a in activities
+        )
+        activity_block = f"Available activities (prefer these):\n{activity_list}"
+    else:
+        activity_block = (
+            "No pre-fetched activities. Invent plausible, real-feeling activities "
+            f"for {destination.city}, {destination.country}. Use real venues where you can."
+        )
+
+    return f"""Plan a {trip_days}-day trip to {destination.city}, {destination.country} for {group_size} person(s).
 
 User ID: {user_profile.user_id}
-Dates: {c.start_date} to {c.end_date}
-Total budget: ${c.budget_usd:.0f} USD (${daily_budget:.0f}/day)
-Pace: {c.pace_preference.value}
-Must include: {", ".join(c.must_haves) if c.must_haves else "none"}
-Avoid: {", ".join(c.avoid_list) if c.avoid_list else "none"}
-Persona interests: {persona_str}
-Interest scores: {", ".join(interests)}
+Dates: {start_date} to {end_date}
+Total budget: ${budget_usd:.0f} USD (${daily_budget:.0f}/day)
+Pace: {pace}
+Must include: {", ".join(must_haves) if must_haves else "none"}
+Avoid: {", ".join(avoid_list) if avoid_list else "none"}
+Push motivations: {push_str}
+Pull interests: {interest_str}
 Mood: {mood}
+Something they said: {small_thing or "—"}
 
-Available activities:
-{activity_list}
+{activity_block}
 
 Output the full itinerary as JSON."""
 
@@ -104,8 +121,12 @@ def build_refinement_prompt(
     feedback: str,
     validation_result: ValidationResult,
 ) -> str:
-    suggestions = "\n".join(f"- {s}" for s in validation_result.improvement_suggestions)
-    issues_str = f"{validation_result.feedback}\n{suggestions}".strip() if validation_result.improvement_suggestions else validation_result.feedback
+    suggestions = "\n".join(f"- {s}" for s in (validation_result.improvement_suggestions or []))
+    issues_str = (
+        f"{validation_result.feedback}\n{suggestions}".strip()
+        if validation_result.improvement_suggestions
+        else validation_result.feedback
+    )
 
     return f"""Here is the current itinerary:
 {itinerary.model_dump_json(indent=2)}
