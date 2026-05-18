@@ -228,7 +228,7 @@ export default function TripPreferences() {
       },
     }
     sessionStorage.setItem('sonder_trip_profile', JSON.stringify(profile))
-    setTimeout(() => navigate('/itinerary'), 1800)
+    setTimeout(() => navigate('/persona-reveal'), 1800)
   }
 
   function advance() {

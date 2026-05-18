@@ -44,6 +44,10 @@ export async function getUserProfile() {
   return get('/api/users/profile')
 }
 
+export async function inferPersona(profile) {
+  return post('/api/persona-infer', profile)
+}
+
 // Returns a raw fetch Response with a ReadableStream body — pass to useSSE.
 export async function planTrip(userProfile) {
   const token = await auth.currentUser.getIdToken()

@@ -35,6 +35,15 @@ async def lifespan(app: FastAPI):
             "Firebase authentication is DISABLED. "
             "Never run this configuration in production."
         )
+    # Pre-load the HF persona embedder + prototypes so the first /persona-infer
+    # request doesn't pay the ~1-2s cold start.
+    import asyncio
+    try:
+        from jahnvi.data.convert_to_embeddings import warm_up
+        await asyncio.to_thread(warm_up)
+        logger.info("Persona embedder warmed up.")
+    except Exception as e:
+        logger.warning("Persona embedder warm-up failed: %s — first request will be slow.", e)
     yield
 
 
@@ -56,7 +65,7 @@ app.add_middleware(
 async def trigger_error():
     raise Exception("This is a test exception, sentry should capture this!")
 
-from mushahid.routes import plan_trip, update_trip, cotraveller, chat, users, visa, export, health, auth as auth_routes
+from mushahid.routes import plan_trip, update_trip, cotraveller, chat, users, visa, export, health, persona, auth as auth_routes
 
 app.include_router(health.router)
 app.include_router(visa.router,         prefix="/api")
@@ -64,6 +73,7 @@ app.include_router(users.router,        prefix="/api")
 app.include_router(auth_routes.router,  prefix="/api")
 app.include_router(plan_trip.router,    prefix="/api")
 app.include_router(update_trip.router,  prefix="/api")
+app.include_router(persona.router,      prefix="/api")
 app.include_router(cotraveller.router,  prefix="/api")
 app.include_router(chat.router,         prefix="/api")
 app.include_router(export.router,       prefix="/api")

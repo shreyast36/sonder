@@ -6,6 +6,7 @@ import SignUp          from './pages/SignUp'
 import AuthAction      from './pages/AuthAction'
 import Dashboard       from './pages/Dashboard'
 import TripPreferences from './pages/TripPreferences'
+import PersonaReveal   from './pages/PersonaReveal'
 import Itinerary       from './pages/Itinerary'
 import MatchDetail     from './pages/MatchDetail'
 import Chat            from './pages/Chat'
@@ -51,6 +52,7 @@ export default function App() {
           <Route path="/auth/action"        element={<Page><AuthAction/></Page>}/>
           <Route path="/dashboard"          element={<Page><Dashboard/></Page>}/>
           <Route path="/preferences"        element={<Page><TripPreferences/></Page>}/>
+          <Route path="/persona-reveal"     element={<Page><PersonaReveal/></Page>}/>
           <Route path="/itinerary"          element={<Page><Itinerary/></Page>}/>
           <Route path="/match/:id"          element={<Page><MatchDetail/></Page>}/>
           <Route path="/chat/:sessionId"    element={<Page><Chat/></Page>}/>
