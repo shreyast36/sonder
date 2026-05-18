@@ -3,7 +3,8 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from shared.config import (
-    FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL, LOCAL_MODE,
+    FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL,
+    FIRESTORE_DATABASE_ID, LOCAL_MODE,
 )
 from shared.schemas import Itinerary
 
@@ -31,7 +32,9 @@ def get_db():
             "token_uri": "https://oauth2.googleapis.com/token",
         })
         firebase_admin.initialize_app(cred)
-    _db = firestore.client()
+    # If FIRESTORE_DATABASE_ID is set (e.g. "sonder-db1"), point the client at the
+    # named database; otherwise the SDK uses the project's "(default)" database.
+    _db = firestore.client(database_id=FIRESTORE_DATABASE_ID) if FIRESTORE_DATABASE_ID else firestore.client()
     return _db
 
 

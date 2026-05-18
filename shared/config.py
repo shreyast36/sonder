@@ -10,6 +10,7 @@ load_dotenv()
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
 FIREBASE_PRIVATE_KEY = os.getenv("FIREBASE_PRIVATE_KEY", "").replace("\\n", "\n")
 FIREBASE_CLIENT_EMAIL = os.getenv("FIREBASE_CLIENT_EMAIL")
+FIRESTORE_DATABASE_ID = os.getenv("FIRESTORE_DATABASE_ID")  # None → "(default)"; set if using a named DB
 
 # LLM providers
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
