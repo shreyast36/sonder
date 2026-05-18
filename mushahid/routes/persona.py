@@ -5,8 +5,7 @@ Two-stage inference:
   1. HF embedding + cosine vs the 12 dimension prototypes → top_push, top_interests, pace.
   2. Small LLM (Haiku via `persona_label` task type) generates the reveal copy
      (descriptor + paragraph + bullets), conditioned on top dims + the user's
-     own answer labels. Falls back to deterministic copy in jahnvi/data/persona_copy.py
-     if the LLM call or JSON parse fails.
+     own answer labels.
 
 The LLM never sees Pinecone, never plans a trip. Itinerary generation only
 fires after the user confirms the reveal on the frontend.
@@ -17,7 +16,7 @@ import json
 import logging
 import re
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from mushahid.auth import verify_token
@@ -25,16 +24,12 @@ from mushahid.utils.sanitize import sanitize_user_input
 from shared.schemas import TripConstraints, PersonaQuestionAnswers
 from jahnvi.pipeline.module3_persona import infer_persona
 from jahnvi.data.persona_labels import label_for
-from jahnvi.data.persona_copy import (
-    descriptor as fallback_descriptor,
-    paragraph as fallback_paragraph,
-    bullets_from_keys,
-    SOFTENER,
-)
 from ali.routing.engine import route_request
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_SOFTENER = "Our read on you"
 
 
 # ── Request / response ────────────────────────────────────────────────────────
@@ -170,30 +165,15 @@ async def persona_infer(
 
     # 2. LLM-generated reveal copy via small-tier (persona_label).
     user_prompt = _build_user_prompt(top_push, top_interests, pace, constraints, answers)
-    copy: dict | None = None
     try:
         raw = await route_request("persona_label", user_prompt, _SYSTEM_PROMPT)
         copy = _parse_llm_json(raw)
     except Exception as e:
-        logger.warning("persona LLM failed (%s) — falling back to deterministic copy", e)
-
-    # Fallback to deterministic tables if the LLM call or parse failed.
-    if copy is None:
-        bullet_keys = [
-            constraints.friends_would_say,
-            constraints.restaurant_order,
-            constraints.what_you_notice,
-            constraints.ideal_atmosphere,
-        ]
-        copy = {
-            "descriptor": fallback_descriptor(top_push[0] if top_push else None,
-                                              top_interests[0] if top_interests else None),
-            "paragraph":  fallback_paragraph(top_push[0] if top_push else None),
-            "bullets":    bullets_from_keys(bullet_keys)[:3],
-        }
+        logger.error("persona LLM failed: %s", e)
+        raise HTTPException(status_code=502, detail="persona inference failed") from e
 
     return PersonaInferResponse(
-        softener      = SOFTENER,
+        softener      = _SOFTENER,
         descriptor    = copy["descriptor"],
         paragraph     = copy["paragraph"],
         bullets       = copy["bullets"],
