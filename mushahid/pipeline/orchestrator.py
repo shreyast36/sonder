@@ -44,25 +44,26 @@ def _destination_from_query(user_profile: UserProfile) -> Destination:
     )
 
 
-def _get_destination_and_activities(user_profile: UserProfile):
+async def _get_destination_and_activities(user_profile: UserProfile):
     """
-    Try Shreyas's Pinecone retrieval. If it isn't wired yet, fall back to the
-    user's typed destination + an empty activities list — the LLM will invent
-    plausible local activities for that destination.
+    Use the user's typed destination as the authoritative city/country, then
+    query Pinecone's seeded 'activities' namespace for corpus-grounded
+    candidates at that destination. If retrieval fails or returns nothing,
+    fall back to an empty activities list — the LLM prompt is permissive
+    enough to invent plausible activities in that case.
     """
+    destination = _destination_from_query(user_profile)
+    activities: list[Activity] = []
     try:
-        from shreyas.retrieval.search import search_destinations, search_activities
-        from shreyas.ranking.destination_ranker import rank_destinations
-        dest_candidates = search_destinations(user_profile)
-        ranked = rank_destinations(dest_candidates, user_profile)
-        top = ranked[0]
-        dest = Destination.model_validate(top["metadata"])
-        act_raw = search_activities(dest.destination_id, user_profile)
-        activities = [Activity.model_validate(a["metadata"]) for a in act_raw]
-        return dest, activities
+        from shreyas.retrieval.search import search_activities
+        activities = await search_activities(
+            destination.city, destination.country or None, user_profile, top_k=25,
+        )
+        logger.info("Pinecone returned %d activities for %s, %s",
+                    len(activities), destination.city, destination.country or "—")
     except Exception as e:
-        logger.warning("retrieval not available (%s) — using user destination_query with LLM-invented activities", e)
-        return _destination_from_query(user_profile), []
+        logger.warning("Pinecone activity retrieval failed (%s) — LLM will invent activities", e)
+    return destination, activities
 
 
 def _get_cotraveller_matches(user_profile: UserProfile):
@@ -95,7 +96,7 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
         # Step 2 — Retrieval (Shreyas — falls back to demo data if stubs)
         step = "retrieving"
         yield format_event("retrieving", {})
-        destination, activities = _get_destination_and_activities(user_profile)
+        destination, activities = await _get_destination_and_activities(user_profile)
         yield format_event("retrieval_done", {
             "destination_count": 1,
             "activity_count": len(activities),
