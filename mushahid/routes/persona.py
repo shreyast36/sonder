@@ -77,11 +77,16 @@ You are given the user's answers and must return BOTH the inferred dimension lab
 
 DIMENSION VOCABULARY — use these keyword lists as the source of truth for what each dimension means. Pick the dimension whose keywords best match the user's actual answers and free text. Never invent a label that isn't in this list.
 
-PUSH dimensions (pick exactly 2 for top_push, ordered strongest first):
+PUSH dimensions are MOTIVATIONS — why someone travels. Pick exactly 2 for top_push.
+PULL dimensions are DESTINATION ATTRIBUTES — what they want at the place. Pick exactly 3 for top_interests.
+
+These two pools are STRICTLY SEPARATE. Never put a PULL id into top_push, never put a PUSH id into top_interests. If unsure, re-read which pool a label belongs to before placing it.
+
+PUSH ids (use ONLY these in top_push):
 
 {push_vocab}
 
-PULL dimensions (pick exactly 3 for top_interests, ordered strongest first):
+PULL ids (use ONLY these in top_interests):
 
 {pull_vocab}
 
@@ -235,10 +240,25 @@ async def persona_infer(
         raise HTTPException(status_code=502, detail=f"persona LLM unparseable: {type(e).__name__}: {e}") from e
 
     # Structural validation — schema, allowed dimension IDs, counts, no itinerary leakage.
+    # On failure, do ONE corrective retry with the errors fed back to the LLM.
     issues = _structural_validate(obj)
     if issues:
-        logger.error("persona structural validation failed: %s", issues)
-        raise HTTPException(status_code=502, detail=f"persona output invalid: {'; '.join(issues)}")
+        logger.warning("persona structural validation failed on first try: %s — retrying with correction", issues)
+        correction = (
+            f"\n\nYour previous JSON had these errors:\n- "
+            + "\n- ".join(issues)
+            + "\n\nReturn ONLY the corrected JSON object. Re-check that top_push uses ONLY PUSH ids and top_interests uses ONLY PULL ids."
+        )
+        try:
+            raw_retry = await route_request("persona_label", user_prompt + correction, _system_prompt())
+            obj = json.loads(_extract_json_object(_strip_fences(raw_retry)))
+        except Exception as e:
+            logger.error("persona retry failed: %s", e)
+            raise HTTPException(status_code=502, detail=f"persona retry failed: {type(e).__name__}: {e}") from e
+        issues = _structural_validate(obj)
+        if issues:
+            logger.error("persona structural validation failed after retry: %s", issues)
+            raise HTTPException(status_code=502, detail=f"persona output invalid: {'; '.join(issues)}")
 
     # Semantic validation — tone, echo, scope drift. Fails open on validator outage.
     valid, sem_issues = await validate_persona(user_prompt, obj)

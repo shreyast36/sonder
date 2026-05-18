@@ -35,6 +35,25 @@ async def lifespan(app: FastAPI):
             "Firebase authentication is DISABLED. "
             "Never run this configuration in production."
         )
+
+    # Env audit — log which critical vars are present (presence only, no values).
+    from shared import config as cfg
+    critical = [
+        "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "NVIDIA_API_KEY",
+        "SMALL_MODEL_PROVIDER", "SMALL_MODEL_NAME",
+        "LARGE_MODEL_PROVIDER", "LARGE_MODEL_NAME",
+        "SMALL_VALIDATOR_PROVIDER", "SMALL_VALIDATOR_MODEL_NAME",
+        "LARGE_VALIDATOR_PROVIDER", "LARGE_VALIDATOR_MODEL_NAME",
+        "EMBED_MODEL_PROVIDER", "EMBED_MODEL",
+    ]
+    present, missing = [], []
+    for name in critical:
+        val = getattr(cfg, name, None)
+        (present if val else missing).append(name)
+    logger.warning("ENV AUDIT — present: %s", ", ".join(present) or "(none)")
+    if missing:
+        logger.warning("ENV AUDIT — MISSING: %s", ", ".join(missing))
+
     yield
 
 
