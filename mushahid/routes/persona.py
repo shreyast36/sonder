@@ -224,15 +224,15 @@ async def persona_infer(
     try:
         user_vector, raw = await asyncio.gather(embed_task, llm_task)
     except Exception as e:
-        logger.error("persona inference failed: %s", e)
-        raise HTTPException(status_code=502, detail="persona inference failed") from e
+        logger.error("persona inference failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=502, detail=f"persona inference failed: {type(e).__name__}: {e}") from e
 
     # Parse the LLM JSON.
     try:
         obj = json.loads(_extract_json_object(_strip_fences(raw)))
     except Exception as e:
-        logger.error("persona LLM returned unparseable output: %s", e)
-        raise HTTPException(status_code=502, detail="persona inference failed") from e
+        logger.error("persona LLM returned unparseable output: %s | raw=%r", e, raw[:500] if isinstance(raw, str) else raw)
+        raise HTTPException(status_code=502, detail=f"persona LLM unparseable: {type(e).__name__}: {e}") from e
 
     # Structural validation — schema, allowed dimension IDs, counts, no itinerary leakage.
     issues = _structural_validate(obj)
