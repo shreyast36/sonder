@@ -55,13 +55,18 @@ async def _call_llm(client, provider: str, model: str, prompt: str, system: str)
             max_tokens=512,
         )
         return response.content[0].text
+
+    # NVIDIA NIM's OpenAI-compatible endpoint rejects max_completion_tokens
+    # as an unknown field — it only accepts max_tokens. OpenAI proper
+    # supports both, but max_completion_tokens is the post-o1 spelling.
+    token_kwargs = {"max_tokens": 512} if provider == "nvidia" else {"max_completion_tokens": 512}
     response = await client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ],
-        max_completion_tokens=512,
+        **token_kwargs,
     )
     return response.choices[0].message.content
 
