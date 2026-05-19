@@ -90,6 +90,12 @@ def _extra_text_from_prefs(prefs: dict | None) -> str:
 
 class MatchesRequest(BaseModel):
     itinerary_id: str | None = None
+    # Optional client-side fallback: persona signals from the user's cached
+    # persona-infer response. Used when the Firestore user_profile has no
+    # signals (e.g. user inferred their persona before we started persisting
+    # them server-side). Server-persisted signals always take precedence.
+    top_push:      list[str] | None = None
+    top_interests: list[str] | None = None
 
 
 @router.post("/cotraveller", response_model=list[CoTravellerMatch])
@@ -103,6 +109,15 @@ async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verif
     from mushahid.monitoring import capture
     try:
         profile = await _load_user_profile(uid, body.itinerary_id)
+        # Backfill missing signals from the request if Firestore didn't have
+        # them (older persona inferences predate server-side persistence).
+        cs = dict(profile.compatibility_signals or {})
+        if not cs.get("top_interests") and body.top_interests:
+            cs["top_interests"] = body.top_interests
+        if not cs.get("top_push") and body.top_push:
+            cs["top_push"] = body.top_push
+        if cs != (profile.compatibility_signals or {}):
+            profile = profile.model_copy(update={"compatibility_signals": cs})
         prefs = None
         if body.itinerary_id:
             try:

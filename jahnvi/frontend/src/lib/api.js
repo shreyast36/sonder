@@ -110,8 +110,21 @@ export async function updateTrip(request) {
 }
 
 // uid is read from the Auth token on the backend — do not send it in the body.
+// Falls back to passing the cached persona signals so older users whose
+// signals never got persisted server-side still get differentiated matches
+// instead of the neutral 28% baseline.
 export async function getCotravellers(itineraryId) {
-  return post('/api/cotraveller', { itinerary_id: itineraryId })
+  let top_push, top_interests
+  try {
+    const cached = JSON.parse(localStorage.getItem('sonder_persona_v1') || 'null')
+    top_push      = cached?.persona?.top_push
+    top_interests = cached?.persona?.top_interests
+  } catch { /* noop */ }
+  return post('/api/cotraveller', {
+    itinerary_id: itineraryId,
+    ...(top_push      ? { top_push }      : {}),
+    ...(top_interests ? { top_interests } : {}),
+  })
 }
 
 export async function regenerateCotravellers(excludedProfileIds, feedback) {

@@ -349,6 +349,25 @@ async def persona_infer(
     # land in logs for observability; the user flow isn't gated on it.
     background_tasks.add_task(_bg_validate_persona, user_prompt, obj)
 
+    # Persist the inferred persona + this trip's constraints back to the user
+    # profile so downstream matching (/api/cotraveller) has real signals to
+    # score against instead of falling back to the neutral 0.5 baseline
+    # (which made every match score the same ~28%).
+    try:
+        from mushahid.realtime.firestore import update_user_profile
+        await update_user_profile(uid, {
+            "compatibility_signals": {
+                "top_push":      obj["top_push"],
+                "top_interests": obj["top_interests"],
+                "pace":          _resolve_pace(constraints.pace),
+            },
+            "travel_style_embedding": user_vector,
+            "constraints":            constraints.model_dump(mode="json"),
+            "persona_answers":        answers.model_dump(mode="json"),
+        })
+    except Exception as e:
+        logger.warning("persist persona to user_profile failed: %s", e)
+
     return PersonaInferResponse(
         softener      = _SOFTENER,
         descriptor    = obj["descriptor"].strip(),
