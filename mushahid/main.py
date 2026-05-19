@@ -1,4 +1,5 @@
 import logging
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -15,10 +16,16 @@ from sentry_sdk.integrations.starlette import StarletteIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 if SENTRY_DSN:
+    # Render exposes the deploy commit as RENDER_GIT_COMMIT — use it for release
+    # tracking so we can tell when a fix actually shipped vs. is still pending.
+    _release = os.getenv("RENDER_GIT_COMMIT") or os.getenv("GIT_COMMIT_SHA")
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         integrations=[StarletteIntegration(), FastApiIntegration()],
+        environment="development" if LOCAL_MODE else "production",
+        release=_release,
         traces_sample_rate=0.2,
+        profiles_sample_rate=0.1,
         send_default_pii=False,
     )
 
@@ -69,11 +76,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-## temporary test route for sentry
-@app.get("/debug-sentry")
-async def trigger_error():
-    raise Exception("This is a test exception, sentry should capture this!")
 
 from mushahid.routes import plan_trip, update_trip, cotraveller, chat, users, visa, export, health, persona, auth as auth_routes
 

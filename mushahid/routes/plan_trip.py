@@ -1,3 +1,4 @@
+import sentry_sdk
 from fastapi import APIRouter, Depends, Request
 from shared.schemas import PlanTripRequest, UserProfile
 from shared.config import PLAN_TRIP_RATE_LIMIT
@@ -21,6 +22,7 @@ def _uid_rate_key(request: Request) -> str:
 @router.post("/plan-trip")
 @limiter.limit(PLAN_TRIP_RATE_LIMIT, key_func=_uid_rate_key)
 async def plan_trip(request: Request, body: PlanTripRequest, uid: str = Depends(verify_token)):
+    sentry_sdk.set_user({"id": uid})
     profile_doc = await get_user_profile(uid)
     display_name = profile_doc.get("display_name", "") if profile_doc else ""
 

@@ -18,6 +18,7 @@ import json
 import logging
 import re
 
+import sentry_sdk
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -265,6 +266,7 @@ async def persona_infer(
     background_tasks: BackgroundTasks,
     uid: str = Depends(verify_token),
 ) -> PersonaInferResponse:
+    sentry_sdk.set_user({"id": uid})
     # Sanitize free-text before it hits the embedder or any LLM.
     answers = body.persona_answers.model_copy(update={
         "small_thing": sanitize_user_input(body.persona_answers.small_thing or ""),

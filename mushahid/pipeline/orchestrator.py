@@ -2,6 +2,8 @@ import logging
 import uuid
 from typing import AsyncIterator
 
+import sentry_sdk
+
 from shared.schemas import (
     UserProfile, Destination, Activity,
     PlanTripResponse, ValidationStatus,
@@ -78,6 +80,7 @@ def _get_cotraveller_matches(user_profile: UserProfile):
 
 async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str]:
     step = "init"
+    sentry_sdk.set_user({"id": user_profile.user_id})
     try:
         # Step 1 — Persona inference (Jahnvi's module — use profile as-is if not ready)
         step = "persona_inferring"
@@ -191,6 +194,8 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
         })
 
     except Exception as e:
+        sentry_sdk.set_tag("pipeline_step", step)
+        sentry_sdk.capture_exception(e)
         logger.error("plan-trip pipeline failed at step=%s: %s", step, e, exc_info=True)
         await write_itinerary_status(user_profile.user_id, "error")
         yield format_event("error", {
