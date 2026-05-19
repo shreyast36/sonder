@@ -12,9 +12,10 @@ from mushahid.realtime.sse import format_event
 from mushahid.realtime.firestore import write_itinerary, write_itinerary_status
 from mushahid.validation.rules import run_all_checks
 from mushahid.validation.critic import validate_large_output
-from ali.generation.itinerary_generator import generate_itinerary
+from ali.generation.itinerary_generator import generate_itinerary, generate_itinerary_by_day
 from ali.generation.output_parser import parse_itinerary
 from ali.rag.explainer import explain_itinerary
+from shared.schemas import Itinerary
 
 logger = logging.getLogger(__name__)
 
@@ -113,15 +114,27 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
         # Step 4 — Itinerary generation (token streaming) + per-day explanation queued
         step = "generating"
         yield format_event("generating", {})
-        raw_chunks = []
+        days = []
 
-        async for chunk in generate_itinerary(user_profile, destination, activities):
-            yield format_event("generating", {"chunk": chunk})
-            raw_chunks.append(chunk)
+        # Day-by-day streaming: emit each day to the frontend as soon as its
+        # JSON closes, so the user sees Day 1 within ~15s instead of waiting
+        # for the full ~6-8k token JSON blob to finish streaming.
+        async for day in generate_itinerary_by_day(user_profile, destination, activities):
+            days.append(day)
+            yield format_event("day_ready", {"day": day.model_dump(mode="json")})
 
-        raw = "".join(raw_chunks)
-        itinerary = parse_itinerary(raw, user_profile, destination=destination, activities=activities)
-        itinerary = itinerary.model_copy(update={"user_id": user_profile.user_id})
+        if not days:
+            raise RuntimeError("generator produced no days")
+
+        itinerary = Itinerary(
+            itinerary_id=f"itin_{uuid.uuid4().hex[:8]}",
+            user_id=user_profile.user_id,
+            destination=destination,
+            days=days,
+            total_budget_usd=sum((d.daily_cost_usd or 0) for d in days),
+            notes=[],
+            co_traveller_ids=[],
+        )
 
         yield format_event("itinerary_generated", {"days": len(itinerary.days)})
 

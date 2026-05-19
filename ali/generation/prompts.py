@@ -33,7 +33,8 @@ Rules:
 - Exclude anything in avoid_list entirely.
 - Keep daily_cost_usd within the daily budget.
 - Match the pace: relaxed = 2-3 activities/day, moderate = 3-4, packed = 4-5.
-- Each Activity object needs name, category, cost_usd (float), duration_hours (float), tags (list of strings), and a short description. activity_id can be omitted; the parser fills it in.
+- Each Activity object needs name, category, cost_usd (float), duration_hours (float), tags (list of strings), and description.
+- KEEP OUTPUT TIGHT: description max 100 characters per activity; tags max 3 items; theme max 5 words. activity_id can be omitted; the parser fills it in.
 - Leave why_this as null — it will be populated by a separate explainer pass.
 """
 

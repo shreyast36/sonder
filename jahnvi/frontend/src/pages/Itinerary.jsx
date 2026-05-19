@@ -28,6 +28,7 @@ const PHASE_COPY = {
   ranking:                null,
   ranked:                 null,
   generating:             'Designing your days',
+  day_ready:              null,                     // handled separately — renders progressively
   itinerary_generated:    'Adding the details',
   explaining:             null,
   validating:             'Polishing',
@@ -58,12 +59,26 @@ export default function Itinerary() {
 
   const [phase, setPhase]         = useState('Reading your persona')
   const [itinerary, setItinerary] = useState(null)
+  const [partialDays, setPartialDays] = useState([])  // days as they stream in
+  const [destination, setDestination] = useState(null)
   const [error, setError]         = useState(null)
   const startedRef                = useRef(false)
 
   const handlers = useMemo(() => {
     const base = {
       error: (data) => setError(data?.message || 'Something went wrong'),
+      ranked: (data) => {
+        // Pick up the destination string for the header before days stream in.
+        if (data?.top_destination) setDestination(data.top_destination)
+      },
+      day_ready: (data) => {
+        if (!data?.day) return
+        // Append the new day; dedupe by day_number in case the LLM re-emits.
+        setPartialDays(prev => {
+          const without = prev.filter(d => d.day_number !== data.day.day_number)
+          return [...without, data.day].sort((a, b) => a.day_number - b.day_number)
+        })
+      },
       done:  (data) => {
         if (data?.itinerary) setItinerary(data.itinerary)
         else setError('No itinerary returned')
@@ -126,7 +141,24 @@ export default function Itinerary() {
     )
   }
 
-  if (!itinerary) {
+  // Build a render target that combines the final itinerary (when ready) with
+  // partial days as they stream in. User sees Day 1 within ~15s of submitting
+  // rather than waiting for the full ~6-8k token JSON to finish.
+  const tripProfileRaw = sessionStorage.getItem('sonder_trip_profile')
+  let tripProfile = {}
+  try { tripProfile = JSON.parse(tripProfileRaw || '{}') } catch { /* noop */ }
+
+  const renderTarget = itinerary || (partialDays.length > 0 ? {
+    destination: (() => {
+      const q = tripProfile?.constraints?.destination_query || destination || ''
+      const [city, country] = q.includes(',') ? q.split(',').map(s => s.trim()) : [q, '']
+      return { city: city || 'Your trip', country: country || '' }
+    })(),
+    days: partialDays,
+    total_budget_usd: 0,
+  } : null)
+
+  if (!renderTarget) {
     return (
       <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48, textAlign: 'center' }}>
         <AppBackground accent={SKY}/>
@@ -152,19 +184,16 @@ export default function Itinerary() {
   }
 
   // ── Real itinerary rendering ───────────────────────────────────────────────
-  const days = itinerary.days || []
-  const day  = days[activeDay]
+  const days = renderTarget.days || []
+  const safeActiveDay = Math.min(activeDay, Math.max(days.length - 1, 0))
+  const day  = days[safeActiveDay]
   if (!day) {
     return <div style={{ minHeight: '100vh', background: BG }}/>
   }
 
-  const dest = itinerary.destination || {}
-  const tripProfileRaw = sessionStorage.getItem('sonder_trip_profile')
-  let dateRange = ''
-  try {
-    const tp = JSON.parse(tripProfileRaw || '{}')
-    dateRange = formatDateRange(tp?.constraints?.start_date, tp?.constraints?.end_date)
-  } catch { /* noop */ }
+  const isStreaming = !itinerary && partialDays.length > 0
+  const dest = renderTarget.destination || {}
+  const dateRange = formatDateRange(tripProfile?.constraints?.start_date, tripProfile?.constraints?.end_date)
 
   return (
     <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
@@ -225,28 +254,38 @@ export default function Itinerary() {
           {days.map((d, i) => (
             <motion.button
               key={d.day_number}
-              whileHover={activeDay !== i ? { color: BONE, transition: { duration: 0.15 } } : {}}
+              whileHover={safeActiveDay !== i ? { color: BONE, transition: { duration: 0.15 } } : {}}
               whileTap={{ scale: 0.97 }}
               onClick={() => setDay(i)}
               style={{
-                padding: '18px 28px', background: activeDay === i ? `${SKY}0F` : 'none',
+                padding: '18px 28px', background: safeActiveDay === i ? `${SKY}0F` : 'none',
                 border: 'none', cursor: 'pointer',
-                borderBottom: `2px solid ${activeDay === i ? SKY : 'transparent'}`,
+                borderBottom: `2px solid ${safeActiveDay === i ? SKY : 'transparent'}`,
                 fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.14em',
-                color: activeDay === i ? SKY : MUTE, whiteSpace: 'nowrap', transition: 'all 0.2s',
-                boxShadow: activeDay === i ? `inset 0 1px 0 ${SKY}1A` : 'none',
+                color: safeActiveDay === i ? SKY : MUTE, whiteSpace: 'nowrap', transition: 'all 0.2s',
+                boxShadow: safeActiveDay === i ? `inset 0 1px 0 ${SKY}1A` : 'none',
               }}
             >
               Day {d.day_number}{d.theme ? ` — ${d.theme}` : ''}
             </motion.button>
           ))}
+          {isStreaming && (
+            <motion.div
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 22px', fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: `${SKY}cc`, whiteSpace: 'nowrap' }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: SKY, boxShadow: `0 0 12px ${SKY}` }}/>
+              more days coming
+            </motion.div>
+          )}
         </div>
       </div>
 
       {/* content */}
       <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '0 48px', position: 'relative', zIndex: 1 }}>
         <AnimatePresence mode="wait">
-          <motion.div key={activeDay} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -14 }} transition={{ duration: 0.32, ease }}>
+          <motion.div key={safeActiveDay} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -14 }} transition={{ duration: 0.32, ease }}>
             <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 0 }}>
 
               {/* sidebar */}

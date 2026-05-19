@@ -13,12 +13,15 @@ TASK_TIER_MAP: dict[str, ModelTier] = {
     "quick_edit":           ModelTier.small,
     "notification_message": ModelTier.small,
     "short_explanation":    ModelTier.small,
+    # rag_explanation produces one short sentence per activity — Haiku is plenty
+    # and 4x faster than Sonnet. With 20+ concurrent per-activity calls in
+    # explain_itinerary, the speedup compounds.
+    "rag_explanation":      ModelTier.small,
 
     # Large tier — complex, high-context
     "itinerary_generation": ModelTier.large,
     "complex_refinement":   ModelTier.large,
     "conflict_resolution":  ModelTier.large,
-    "rag_explanation":      ModelTier.large,
     "what_if":              ModelTier.large,
 }
 
