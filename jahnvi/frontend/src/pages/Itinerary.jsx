@@ -250,14 +250,24 @@ export default function Itinerary() {
   const dest = renderTarget?.destination || {}
   const dateRange = formatDateRange(tripProfile?.constraints?.start_date, tripProfile?.constraints?.end_date)
 
-  // Side panels collapse on narrow viewports so the phone stays the focal
-  // point rather than getting squeezed by columns.
-  const [isWide, setIsWide] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1180)
+  // Viewport tracking. Three buckets:
+  //   isWide    ≥1180 → side marginalia + edition marks render
+  //   isCompact <720  → nav buttons collapse to icons, logo to the mark only
+  // Plus a JS-measured viewport height so iOS Safari's 100vh "URL bar"
+  // miscalculation doesn't cut the phone off.
+  const [vw, setVw] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1280)
+  const [vh, setVh] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 800)
   useEffect(() => {
-    const onResize = () => setIsWide(window.innerWidth >= 1180)
+    const onResize = () => { setVw(window.innerWidth); setVh(window.innerHeight) }
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+    }
   }, [])
+  const isWide    = vw >= 1180
+  const isCompact = vw < 720
 
   const firstName = (() => {
     if (user?.displayName) return user.displayName.split(' ')[0]
@@ -298,21 +308,17 @@ export default function Itinerary() {
   // Tapping the dark screen only wakes — never powers off.
   const powerOn = () => { if (!booted && !booting) togglePower() }
 
-  // Scale the phone down on short viewports so it always fits without a page
-  // scrollbar. The page itself is locked to 100vh — the phone is the only
-  // scroll surface, just like a real device.
-  const [phoneScale, setPhoneScale] = useState(1)
-  useEffect(() => {
-    const compute = () => {
-      const navH = 68
-      const verticalPadding = 64
-      const avail = window.innerHeight - navH - verticalPadding
-      setPhoneScale(Math.min(1, avail / (PHONE_H + 24)))
-    }
-    compute()
-    window.addEventListener('resize', compute)
-    return () => window.removeEventListener('resize', compute)
-  }, [])
+  // Scale the phone to fit BOTH dimensions so it never gets cut off. We
+  // budget the visible area, then take the smaller of horizontal/vertical
+  // fit. Page is locked at vh (JS-measured) so iOS Safari URL-bar collapse
+  // doesn't change the canvas under the user.
+  const phoneScale = (() => {
+    const navH = 60
+    const pad  = 28
+    const availH = vh - navH - pad * 2
+    const availW = vw - pad * 2
+    return Math.max(0.4, Math.min(1, availH / (PHONE_H + 24), availW / (PHONE_W + 16)))
+  })()
 
   // Route every wheel event into the phone's inner scroll, so the user can
   // mousewheel anywhere on the page and the phone scrolls — like they're
@@ -347,36 +353,58 @@ export default function Itinerary() {
   }, [])
 
   return (
-    <div style={{ height: '100vh', overflow: 'hidden', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: vh, overflow: 'hidden', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
       <AppBackground accent={SKY}/>
 
-      {/* nav */}
-      <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
+      {/* nav — responsive: compact icons-only at <720px */}
+      <nav style={{
+        position: 'sticky', top: 0, zIndex: 50,
+        borderBottom: `1px solid ${HAIRLINE}`,
+        background: 'rgba(10,8,5,0.88)',
+        backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+        padding: isCompact ? '0 16px' : '0 48px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        height: isCompact ? 56 : 68, flexShrink: 0,
+      }}>
         <motion.button
           whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
           onClick={() => navigate('/dashboard')}
+          title="Dashboard"
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTE, padding: 0, lineHeight: 0, display: 'flex', alignItems: 'center', gap: 8, transition: 'color 0.2s' }}
           onMouseEnter={e => { e.currentTarget.style.color = BONE }}
           onMouseLeave={e => { e.currentTarget.style.color = MUTE }}
         >
-          <ArrowLeft size={18}/>
-          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Dashboard</span>
+          <ArrowLeft size={isCompact ? 16 : 18}/>
+          {!isCompact && (
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Dashboard</span>
+          )}
         </motion.button>
-        <SonderNav3D markSize={32}/>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {isCompact ? <SonderMark3D size={30}/> : <SonderNav3D markSize={32}/>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: isCompact ? 6 : 10 }}>
           {itinerary && (
             <motion.button
               whileHover={!saved && !saving ? { borderColor: `${SKY}55`, boxShadow: `0 0 24px ${SKY}22`, scale: 1.04, transition: spring } : {}}
               whileTap={!saved && !saving ? { scale: 0.96 } : {}}
               onClick={handleSave}
               disabled={saved || saving}
-              title={saveError || ''}
-              style={{ background: saved ? `${SKY}14` : 'none', border: `1px solid ${saved ? `${SKY}66` : HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: saved ? 'default' : saving ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.25s', opacity: saving ? 0.6 : 1 }}
+              title={saveError || (saved ? 'Saved to dashboard' : saving ? 'Saving…' : 'Save itinerary')}
+              style={{
+                background: saved ? `${SKY}14` : 'none',
+                border: `1px solid ${saved ? `${SKY}66` : HAIRLINE}`,
+                borderRadius: isCompact ? '50%' : 20,
+                padding: isCompact ? 0 : '8px 18px',
+                width: isCompact ? 36 : 'auto', height: isCompact ? 36 : 'auto',
+                cursor: saved ? 'default' : saving ? 'wait' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                transition: 'all 0.25s', opacity: saving ? 0.6 : 1,
+              }}
             >
-              {saved ? <Check size={11} style={{ color: SKY }}/> : <Bookmark size={11} style={{ color: GOLD }}/>}
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: saved ? SKY : saveError ? '#E89B7C' : GOLD }}>
-                {saving ? 'Saving…' : saved ? 'Saved to dashboard' : saveError ? 'Try again' : 'Save itinerary'}
-              </span>
+              {saved ? <Check size={isCompact ? 14 : 11} style={{ color: SKY }}/> : <Bookmark size={isCompact ? 14 : 11} style={{ color: GOLD }}/>}
+              {!isCompact && (
+                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: saved ? SKY : saveError ? '#E89B7C' : GOLD }}>
+                  {saving ? 'Saving…' : saved ? 'Saved to dashboard' : saveError ? 'Try again' : 'Save itinerary'}
+                </span>
+              )}
             </motion.button>
           )}
           <motion.button
@@ -384,13 +412,24 @@ export default function Itinerary() {
             whileTap={{ scale: 0.96 }}
             onClick={handleEmailExport}
             disabled={emailing || !itinerary}
-            title={emailError || ''}
-            style={{ background: 'none', border: `1px solid ${emailError ? '#E89B7C66' : HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.2s', opacity: emailing || !itinerary ? 0.6 : 1 }}
+            title={emailError || (emailSent ? 'Sent!' : emailing ? 'Sending…' : 'Email itinerary')}
+            style={{
+              background: 'none',
+              border: `1px solid ${emailError ? '#E89B7C66' : HAIRLINE}`,
+              borderRadius: isCompact ? '50%' : 20,
+              padding: isCompact ? 0 : '8px 18px',
+              width: isCompact ? 36 : 'auto', height: isCompact ? 36 : 'auto',
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+              transition: 'all 0.2s', opacity: emailing || !itinerary ? 0.6 : 1,
+            }}
           >
-            <Mail size={11} style={{ color: emailError ? '#E89B7C' : GOLD }}/>
-            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: emailError ? '#E89B7C' : GOLD }}>
-              {emailing ? 'Sending…' : emailSent ? 'Sent!' : emailError ? 'Email failed' : 'Email itinerary'}
-            </span>
+            <Mail size={isCompact ? 14 : 11} style={{ color: emailError ? '#E89B7C' : GOLD }}/>
+            {!isCompact && (
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: emailError ? '#E89B7C' : GOLD }}>
+                {emailing ? 'Sending…' : emailSent ? 'Sent!' : emailError ? 'Email failed' : 'Email itinerary'}
+              </span>
+            )}
           </motion.button>
         </div>
       </nav>
