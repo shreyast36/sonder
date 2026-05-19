@@ -708,10 +708,54 @@ function PhoneFrame({ children }) {
   )
 }
 
+function _formatPhoneTime(date) {
+  const h = date.getHours() % 12 || 12
+  const m = String(date.getMinutes()).padStart(2, '0')
+  return `${h}:${m}`
+}
+
 function PhoneStatusBar() {
+  // Live clock — updates each minute on the actual minute boundary.
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const align = 60_000 - (Date.now() % 60_000)
+    let interval
+    const timeout = setTimeout(() => {
+      setNow(new Date())
+      interval = setInterval(() => setNow(new Date()), 60_000)
+    }, align)
+    return () => { clearTimeout(timeout); if (interval) clearInterval(interval) }
+  }, [])
+
+  // Battery: real reading when the browser supports it, otherwise a stable 1.0.
+  const [batteryLevel, setBatteryLevel] = useState(1)
+  const [charging, setCharging] = useState(false)
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.getBattery) return
+    let bat
+    let cancelled = false
+    navigator.getBattery().then(b => {
+      if (cancelled) return
+      bat = b
+      const sync = () => { setBatteryLevel(b.level); setCharging(b.charging) }
+      sync()
+      b.addEventListener('levelchange', sync)
+      b.addEventListener('chargingchange', sync)
+    }).catch(() => {})
+    return () => {
+      cancelled = true
+      if (bat) { try { bat.removeEventListener('levelchange', () => {}); bat.removeEventListener('chargingchange', () => {}) } catch {} }
+    }
+  }, [])
+
+  const fillWidth = Math.max(2, Math.round(17 * batteryLevel))
+  const fillColor = batteryLevel <= 0.18 ? '#E89B7C' : BONE
+
   return (
     <div style={{ height: 50, padding: '14px 28px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative', zIndex: 3 }}>
-      <span style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 600, fontSize: 14, color: BONE, letterSpacing: '-0.01em' }}>9:41</span>
+      <span style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 600, fontSize: 14, color: BONE, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }}>
+        {_formatPhoneTime(now)}
+      </span>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: BONE }}>
         {/* Signal bars */}
         <svg width="16" height="11" viewBox="0 0 16 11" fill="none">
@@ -726,11 +770,14 @@ function PhoneStatusBar() {
           <path d="M7.5 5.6 C5.5 5.6 4 6.4 3 7.4 L4.3 8.7 C4.9 8 6 7.6 7.5 7.6 C9 7.6 10.1 8 10.7 8.7 L12 7.4 C11 6.4 9.5 5.6 7.5 5.6 Z" fill="currentColor"/>
           <circle cx="7.5" cy="9.6" r="1" fill="currentColor"/>
         </svg>
-        {/* Battery */}
+        {/* Battery — real fill level */}
         <div style={{ position: 'relative', width: 24, height: 11 }}>
           <div style={{ position: 'absolute', inset: 0, border: `1px solid ${BONE}`, opacity: 0.45, borderRadius: 3 }}/>
           <div style={{ position: 'absolute', right: -2.5, top: 3.5, width: 1.5, height: 4, background: BONE, opacity: 0.45, borderRadius: 1 }}/>
-          <div style={{ position: 'absolute', left: 1.5, top: 1.5, bottom: 1.5, width: 17, background: BONE, borderRadius: 1.5 }}/>
+          <div style={{ position: 'absolute', left: 1.5, top: 1.5, bottom: 1.5, width: fillWidth, background: fillColor, borderRadius: 1.5, transition: 'width 0.5s ease, background 0.3s' }}/>
+          {charging && (
+            <span style={{ position: 'absolute', top: -1, left: 8, fontSize: 9, color: '#FFD166', textShadow: '0 0 4px rgba(255,209,102,0.8)' }}>⚡</span>
+          )}
         </div>
       </div>
     </div>
@@ -769,6 +816,35 @@ function PhoneLoading({ phase }) {
 }
 
 function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isStreaming }) {
+  // Auto-scroll the active day pill into the center of the strip when the
+  // selected day changes (e.g. swipe gesture, or click from the Index).
+  const stripRef = useRef(null)
+  useEffect(() => {
+    const strip = stripRef.current
+    if (!strip) return
+    const target = strip.children[safeActiveDay]
+    if (!target) return
+    const rect = strip.getBoundingClientRect()
+    const tRect = target.getBoundingClientRect()
+    const offset = (tRect.left - rect.left) - (rect.width / 2) + (tRect.width / 2)
+    strip.scrollTo({ left: strip.scrollLeft + offset, behavior: 'smooth' })
+  }, [safeActiveDay])
+
+  // Swipe to change day. Combine offset + velocity into "swipe power" so a
+  // quick flick counts even with little distance, like real iOS scrolling.
+  function handleDragEnd(_e, info) {
+    if (!days || days.length <= 1) return
+    const power = info.offset.x + info.velocity.x * 0.25
+    if (power < -90 && safeActiveDay < days.length - 1) {
+      setDay(safeActiveDay + 1)
+    } else if (power > 90 && safeActiveDay > 0) {
+      setDay(safeActiveDay - 1)
+    }
+  }
+
+  const canSwipeLeft  = safeActiveDay > 0
+  const canSwipeRight = safeActiveDay < (days?.length ?? 1) - 1
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
       {/* Header */}
@@ -788,13 +864,14 @@ function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isS
       </div>
 
       {/* Day pill strip */}
-      <div style={{ flexShrink: 0, borderBottom: `1px solid ${HAIRLINE}`, padding: '12px 16px', display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none' }}>
+      <div ref={stripRef} style={{ flexShrink: 0, borderBottom: `1px solid ${HAIRLINE}`, padding: '12px 16px', display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
         {days.map((d, i) => {
           const active = safeActiveDay === i
           return (
             <motion.button
               key={d.day_number}
-              whileTap={{ scale: 0.95 }}
+              whileTap={{ scale: 0.94 }}
+              whileHover={!active ? { scale: 1.03 } : {}}
               onClick={() => setDay(i)}
               style={{
                 padding: '8px 14px', borderRadius: 16,
@@ -803,6 +880,7 @@ function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isS
                 cursor: 'pointer', flexShrink: 0,
                 fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.12em',
                 color: active ? SKY : MUTE, whiteSpace: 'nowrap', transition: 'all 0.2s',
+                boxShadow: active ? `0 0 16px ${SKY}33` : 'none',
               }}
             >
               Day {d.day_number}
@@ -821,21 +899,28 @@ function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isS
         )}
       </div>
 
-      {/* Scrollable content */}
-      <AnimatePresence mode="wait">
+      {/* Swipeable scrollable content. drag handles the day swipe; AnimatePresence
+          cross-fades the day content when key changes. */}
+      <AnimatePresence mode="wait" custom={{ canSwipeLeft, canSwipeRight }}>
         <motion.div
           key={safeActiveDay}
-          initial={{ opacity: 0, x: 16 }}
+          drag={(days?.length ?? 1) > 1 ? 'x' : false}
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={0.22}
+          onDragEnd={handleDragEnd}
+          initial={{ opacity: 0, x: 28 }}
           animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -16 }}
-          transition={{ duration: 0.28, ease }}
-          style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0 24px 40px', scrollbarWidth: 'thin' }}
+          exit={{ opacity: 0, x: -28 }}
+          transition={{ duration: 0.32, ease }}
+          style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0 24px 40px', scrollbarWidth: 'thin', cursor: (days?.length ?? 1) > 1 ? 'grab' : 'auto', touchAction: 'pan-y' }}
         >
           {day && (
             <>
               {/* Day intro */}
               <div style={{ padding: '22px 0 18px', borderBottom: `1px solid ${HAIRLINE}` }}>
-                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, marginBottom: 6 }}>Day {day.day_number}</p>
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, marginBottom: 6 }}>
+                  Day {day.day_number}{day.trip_date ? ` · ${_fmtDay(day.trip_date)}` : ''}
+                </p>
                 {day.theme && (
                   <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 24, color: BONE, lineHeight: 1.15, margin: 0 }}>{day.theme}</h2>
                 )}
@@ -861,6 +946,20 @@ function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isS
                   />
                 ))}
               </motion.div>
+
+              {/* Subtle swipe hint at the bottom on the first day */}
+              {(days?.length ?? 1) > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, padding: '12px 0 4px', opacity: 0.55 }}>
+                  <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.32em', textTransform: 'uppercase', color: MUTE }}>
+                    Swipe
+                  </span>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {days.map((_, i) => (
+                      <span key={i} style={{ width: i === safeActiveDay ? 14 : 4, height: 4, borderRadius: 2, background: i === safeActiveDay ? SKY : 'rgba(232,212,168,0.25)', transition: 'all 0.3s' }}/>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </motion.div>
@@ -869,13 +968,23 @@ function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isS
   )
 }
 
+function _fmtDay(v) {
+  try {
+    const d = new Date(typeof v === 'string' ? v.slice(0, 10) : v)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  } catch { return '' }
+}
+
 function PhoneActivityRow({ ia, last }) {
   const a = ia?.activity || {}
   const why = ia?.why_this
   return (
     <motion.div
       variants={cardReveal}
-      style={{ padding: '20px 0', borderBottom: last ? 'none' : `1px solid ${HAIRLINE}` }}
+      whileHover={{ x: 2, transition: { duration: 0.2 } }}
+      whileTap={{ scale: 0.985 }}
+      style={{ padding: '20px 0', borderBottom: last ? 'none' : `1px solid ${HAIRLINE}`, cursor: 'pointer' }}
     >
       <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.20em', textTransform: 'uppercase', color: GOLD, marginBottom: 6 }}>
         {ia?.time || ''}
