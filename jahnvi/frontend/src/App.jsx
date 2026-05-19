@@ -8,7 +8,6 @@ import Dashboard       from './pages/Dashboard'
 import TripPreferences from './pages/TripPreferences'
 import PersonaReveal   from './pages/PersonaReveal'
 import Itinerary       from './pages/Itinerary'
-import DebugSentry     from './pages/DebugSentry'
 import MatchDetail     from './pages/MatchDetail'
 import Chat            from './pages/Chat'
 import ApproveDeny     from './pages/ApproveDeny'
@@ -62,7 +61,6 @@ export default function App() {
           <Route path="/notes/:id"          element={<Page><Notes/></Page>}/>
           <Route path="/discover"           element={<Page><Discover/></Page>}/>
           <Route path="/compatibility"      element={<Page><TravellerCompatibility/></Page>}/>
-          <Route path="/debug/sentry"       element={<Page><DebugSentry/></Page>}/>
           <Route path="*"                   element={<Navigate to="/" replace/>}/>
         </Routes>
       </AnimatePresence>
