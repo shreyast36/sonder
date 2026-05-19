@@ -1,4 +1,5 @@
 import { auth } from './firebase'
+import { Sentry } from './sentry'
 
 const BASE = import.meta.env.VITE_API_BASE_URL || ''
 
@@ -21,19 +22,51 @@ async function _readError(res) {
   }
 }
 
+// Report 5xx + network failures to Sentry while preserving the throw for callers.
+// 4xx is left uncaptured: 401/403 are auth state, 404 from /users/profile is a
+// normal first-login signal, 422 is client-side input — all expected behavior.
+function _reportIfServerError(err, method, path) {
+  const status = err?.status
+  if (typeof status !== 'number' || status >= 500) {
+    Sentry.captureException(err, {
+      tags: { api_method: method, api_path: path, http_status: status ?? 'network' },
+    })
+  }
+}
+
 async function get(path) {
-  const res = await fetch(`${BASE}${path}`, { headers: await authHeaders() })
-  if (!res.ok) throw Object.assign(new Error(await _readError(res)), { status: res.status })
+  let res
+  try {
+    res = await fetch(`${BASE}${path}`, { headers: await authHeaders() })
+  } catch (networkErr) {
+    _reportIfServerError(networkErr, 'GET', path)
+    throw networkErr
+  }
+  if (!res.ok) {
+    const err = Object.assign(new Error(await _readError(res)), { status: res.status })
+    _reportIfServerError(err, 'GET', path)
+    throw err
+  }
   return res.json()
 }
 
 async function post(path, body) {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) throw Object.assign(new Error(await _readError(res)), { status: res.status })
+  let res
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify(body),
+    })
+  } catch (networkErr) {
+    _reportIfServerError(networkErr, 'POST', path)
+    throw networkErr
+  }
+  if (!res.ok) {
+    const err = Object.assign(new Error(await _readError(res)), { status: res.status })
+    _reportIfServerError(err, 'POST', path)
+    throw err
+  }
   return res.json()
 }
 
