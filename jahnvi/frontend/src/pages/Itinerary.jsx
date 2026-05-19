@@ -7,7 +7,7 @@ import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tok
 import ActivityCard from '../components/ActivityCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
-import { emailItinerary, saveItineraryAsCurrent } from '../lib/api'
+import { emailItinerary, saveItineraryAsCurrent, getCurrentItinerary } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
 import { useSSE } from '../hooks/useSSE'
 import { auth } from '../lib/firebase'
@@ -54,8 +54,9 @@ export default function Itinerary() {
   const { user }          = useAuth()
   const [activeDay, setDay]       = useState(0)
   const [feedback, setFb]         = useState([])
-  const [emailing, setEmailing]   = useState(false)
-  const [emailSent, setEmailSent] = useState(false)
+  const [emailing, setEmailing]     = useState(false)
+  const [emailSent, setEmailSent]   = useState(false)
+  const [emailError, setEmailError] = useState(null)
 
   const [phase, setPhase]         = useState('Reading your persona')
   const [itinerary, setItinerary] = useState(null)
@@ -126,15 +127,42 @@ export default function Itinerary() {
   useEffect(() => {
     if (startedRef.current) return
 
-    const raw = sessionStorage.getItem('sonder_trip_profile')
-    if (!raw) { navigate('/preferences'); return }
-    let profile
-    try { profile = JSON.parse(raw) } catch { navigate('/preferences'); return }
+    // One-shot intent flag set by PersonaReveal.handleConfirm. Present →
+    // user just confirmed a fresh persona, so we generate. Absent → user
+    // is just viewing (e.g. clicked "View itinerary" from Dashboard), so
+    // we load the saved trip from Firestore.
+    const shouldGenerate = sessionStorage.getItem('sonder_generate_now') === '1'
+    if (shouldGenerate) sessionStorage.removeItem('sonder_generate_now')
 
-    const unsub = onAuthStateChanged(auth, (u) => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
       if (!u) { navigate('/signin'); return }
       if (startedRef.current) return
       startedRef.current = true
+
+      if (!shouldGenerate) {
+        // View mode — pull the saved itinerary from Firestore.
+        try {
+          const res = await getCurrentItinerary()
+          if (res?.itinerary) {
+            setItinerary(res.itinerary)
+            setStreamingDone(true)
+            setSaved(true)        // already on the dashboard
+            try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(res.itinerary)) } catch {}
+            return
+          }
+        } catch (err) {
+          console.warn('Could not load saved itinerary:', err?.message || err)
+        }
+        // No saved trip — kick the user back to plan one.
+        navigate('/preferences')
+        return
+      }
+
+      // Generation mode — need the trip profile from PersonaReveal.
+      const raw = sessionStorage.getItem('sonder_trip_profile')
+      if (!raw) { navigate('/preferences'); return }
+      let profile
+      try { profile = JSON.parse(raw) } catch { navigate('/preferences'); return }
       start(profile)
     })
     return () => unsub()
@@ -143,12 +171,15 @@ export default function Itinerary() {
   async function handleEmailExport() {
     if (!user?.email || !itinerary?.itinerary_id) return
     setEmailing(true)
+    setEmailError(null)
     try {
       await emailItinerary(itinerary.itinerary_id, [user.email])
       setEmailSent(true)
       setTimeout(() => setEmailSent(false), 3000)
     } catch (err) {
       console.error('Email export failed:', err)
+      setEmailError(err?.message || 'Email failed')
+      setTimeout(() => setEmailError(null), 5000)
     } finally {
       setEmailing(false)
     }
@@ -266,11 +297,12 @@ export default function Itinerary() {
             whileTap={{ scale: 0.96 }}
             onClick={handleEmailExport}
             disabled={emailing || !itinerary}
-            style={{ background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.2s', opacity: emailing || !itinerary ? 0.6 : 1 }}
+            title={emailError || ''}
+            style={{ background: 'none', border: `1px solid ${emailError ? '#E89B7C66' : HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.2s', opacity: emailing || !itinerary ? 0.6 : 1 }}
           >
-            <Mail size={11} style={{ color: GOLD }}/>
-            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD }}>
-              {emailing ? 'Sending…' : emailSent ? 'Sent!' : 'Email itinerary'}
+            <Mail size={11} style={{ color: emailError ? '#E89B7C' : GOLD }}/>
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: emailError ? '#E89B7C' : GOLD }}>
+              {emailing ? 'Sending…' : emailSent ? 'Sent!' : emailError ? 'Email failed' : 'Email itinerary'}
             </span>
           </motion.button>
         </div>

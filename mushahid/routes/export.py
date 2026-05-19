@@ -240,7 +240,6 @@ async def email_itinerary(body: EmailItineraryRequest, uid: str = Depends(verify
     if itinerary.user_id != uid:
         raise HTTPException(status_code=403, detail="Not authorised to export this itinerary")
 
-    warning = None
     try:
         from shared.email import send_itinerary_email
         from mushahid.monitoring import capture
@@ -251,13 +250,15 @@ async def email_itinerary(body: EmailItineraryRequest, uid: str = Depends(verify
             "recipient_count": len(body.recipients),
         })
     except Exception as exc:
-        logger.error("Failed to send itinerary email for %s: %s", body.itinerary_id, exc)
-        warning = "Email delivery failed — itinerary was not sent."
+        # Bubble the real failure to the user instead of pretending success.
+        # Most common cause: EMAIL_PROVIDER / EMAIL_API_KEY not configured on Render.
+        logger.error("Failed to send itinerary email for %s: %s", body.itinerary_id, exc, exc_info=True)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Email delivery failed: {type(exc).__name__}: {exc}",
+        ) from exc
 
-    response = {"sent_to": body.recipients}
-    if warning:
-        response["warning"] = warning
-    return response
+    return {"sent_to": body.recipients}
 
 
 @router.get("/export/pdf/{itinerary_id}")

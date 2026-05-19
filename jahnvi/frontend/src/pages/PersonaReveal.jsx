@@ -70,6 +70,9 @@ export default function PersonaReveal() {
   }, [navigate])
 
   function handleConfirm() {
+    // One-shot flag so /itinerary knows to generate. Without it, /itinerary
+    // shows the user's last saved trip (no regeneration loop on navigation).
+    sessionStorage.setItem('sonder_generate_now', '1')
     navigate('/itinerary')
   }
 
