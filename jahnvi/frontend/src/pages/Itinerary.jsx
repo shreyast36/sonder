@@ -492,11 +492,11 @@ function QuietBackdrop() {
   return (
     <>
       <div style={{
-        position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
+        position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
         background: 'radial-gradient(ellipse 110% 90% at 50% 45%, #14110b 0%, #0c0a07 55%, #050402 100%)',
       }}/>
       <div style={{
-        position: 'absolute', top: '48%', left: '50%',
+        position: 'fixed', top: '48%', left: '50%',
         transform: 'translate(-50%, -50%)',
         width: 'min(960px, 86vw)', height: 'min(720px, 72vh)',
         background: 'radial-gradient(ellipse, rgba(212,182,134,0.09) 0%, rgba(184,150,104,0.035) 38%, transparent 72%)',
@@ -510,7 +510,7 @@ function QuietBackdrop() {
 function PaperGrain() {
   return (
     <div style={{
-      position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0,
+      position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0,
       opacity: 0.05, backgroundImage: _grainBg, backgroundSize: '200px 200px',
       mixBlendMode: 'overlay',
     }}/>
@@ -545,7 +545,7 @@ function DestinationBackdrop({ city, visible }) {
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, transition: { duration: 0.8, ease } }}
           transition={{ duration: 2.4, ease }}
-          style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}
+          style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0 }}
         >
           {/* The photograph */}
           <div style={{
@@ -676,7 +676,7 @@ function GhostDestination({ dest, showingItinerary }) {
 // One breathing centred glow + a centred floor pool. That's it.
 function AtmosphericScene() {
   return (
-    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
+    <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
       {/* Centred warm glow, breathing slowly */}
       <motion.div
         animate={{ opacity: [0.7, 0.95, 0.7], scale: [1, 1.03, 1] }}
@@ -996,7 +996,7 @@ function GoldDust({ count = 28 }) {
   })), [count])
 
   return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
       {particles.map(p => (
         <motion.div
           key={p.id}
@@ -1089,9 +1089,9 @@ function EditionMark({ itinerary }) {
       animate={{ opacity: 0.7, y: 0 }}
       transition={{ duration: 0.9, ease, delay: 0.4 }}
       style={{
-        position: 'absolute', top: 28, right: 32,
+        position: 'fixed', top: 28, right: 32,
         display: 'flex', alignItems: 'baseline', gap: 4,
-        zIndex: 2, pointerEvents: 'none',
+        zIndex: 51, pointerEvents: 'none',
         fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
         backgroundImage: 'linear-gradient(180deg, #f0dcb0 0%, #d4b686 50%, #8a6f4a 100%)',
         WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
