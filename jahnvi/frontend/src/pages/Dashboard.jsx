@@ -7,7 +7,7 @@ import MatchCard from '../components/MatchCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
-import { getCurrentItinerary, getCotravellers } from '../lib/api'
+import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
 import { storage } from '../lib/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -96,6 +96,75 @@ const DIM_TAG = {
 }
 const _PACE_TAG = { relaxed: 'Relaxed', moderate: 'Moderate', packed: 'Packed' }
 const _BUDGET_TAG = { budget: 'Budget', mid_range: 'Mid-range', luxury: 'Luxury' }
+
+// ── Past trips carousel ────────────────────────────────────────────────────
+
+function _fmtTripDate(v) {
+  if (!v) return ''
+  try {
+    const d = new Date(typeof v === 'string' ? v.slice(0, 10) : v)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  } catch { return '' }
+}
+
+function PastTripsRow({ trips, onSelect, switching }) {
+  return (
+    <div style={{ marginTop: 36 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+          Past Trips
+        </p>
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: DIM, margin: 0 }}>
+          {trips.length} saved
+        </p>
+      </div>
+      <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'thin' }}>
+        {trips.map((t, i) => (
+          <motion.button
+            key={t.itinerary_id}
+            whileHover={!switching ? { y: -3, borderColor: 'rgba(245,158,11,0.30)' } : {}}
+            whileTap={!switching ? { scale: 0.98 } : {}}
+            onClick={() => onSelect(t.itinerary_id)}
+            disabled={switching}
+            initial={{ opacity: 0, x: 18 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.4, delay: 0.05 + i * 0.06, ease }}
+            style={{
+              flex: '0 0 auto', width: 200, padding: '18px 18px 16px',
+              background: 'rgba(232,212,168,0.04)',
+              border: `1px solid ${HAIRLINE}`,
+              borderRadius: 14, cursor: switching ? 'wait' : 'pointer',
+              transition: 'all 0.25s', textAlign: 'left',
+              opacity: switching ? 0.5 : 1,
+            }}
+          >
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: '0 0 6px' }}>
+              Destination
+            </p>
+            <h3 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 24, color: BONE, lineHeight: 1, margin: 0, letterSpacing: '-0.01em' }}>
+              {t.city}
+            </h3>
+            {t.country && (
+              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, margin: '4px 0 12px' }}>
+                {t.country}
+              </p>
+            )}
+            <div style={{ height: 1, background: HAIRLINE, margin: '10px 0' }}/>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE }}>
+                {t.day_count ? `${t.day_count} day${t.day_count === 1 ? '' : 's'}` : '—'}
+              </span>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: DIM }}>
+                {_fmtTripDate(t.trip_start) || ''}
+              </span>
+            </div>
+          </motion.button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 // ── Members card — oxblood + cream + a single gilded seal, no chip ────────
 
@@ -268,6 +337,8 @@ export default function Dashboard() {
   const [storedItinerary, setStoredItinerary] = useState(() => loadStoredItinerary())
   const [matches, setMatches] = useState([])
   const [matchesLoading, setMatchesLoading] = useState(false)
+  const [pastTrips, setPastTrips] = useState([])
+  const [switchingTrip, setSwitchingTrip] = useState(false)
 
   const refresh = async () => {
     try {
@@ -283,6 +354,25 @@ export default function Dashboard() {
       // until they explicitly save a different one (or sign out).
     } catch (err) {
       console.warn('getCurrentItinerary failed (keeping cache):', err?.message || err)
+    }
+    try {
+      const res = await listSavedItineraries()
+      setPastTrips(Array.isArray(res?.trips) ? res.trips : [])
+    } catch (err) {
+      console.warn('listSavedItineraries failed:', err?.message || err)
+    }
+  }
+
+  async function handleSwitchTrip(itineraryId) {
+    if (switchingTrip) return
+    setSwitchingTrip(true)
+    try {
+      await setCurrentItinerary(itineraryId)
+      await refresh()
+    } catch (err) {
+      console.error('set current failed:', err)
+    } finally {
+      setSwitchingTrip(false)
     }
   }
 
@@ -650,6 +740,15 @@ export default function Dashboard() {
                 <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: AMBER }}>Plan your first trip</span>
               </div>
             </motion.div>
+          )}
+
+          {/* Past trips carousel — shown when the user has more than one saved trip */}
+          {pastTrips.filter(t => !t.is_current).length > 0 && (
+            <PastTripsRow
+              trips={pastTrips.filter(t => !t.is_current)}
+              onSelect={handleSwitchTrip}
+              switching={switchingTrip}
+            />
           )}
         </motion.div>
 

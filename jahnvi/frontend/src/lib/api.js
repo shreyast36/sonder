@@ -152,6 +152,14 @@ export async function getCurrentItinerary() {
   return get('/api/itineraries/current')
 }
 
+export async function listSavedItineraries() {
+  return get('/api/itineraries/list')
+}
+
+export async function setCurrentItinerary(itineraryId) {
+  return post('/api/itineraries/set-current', { itinerary_id: itineraryId })
+}
+
 export async function getCompanionPrefs(itineraryId) {
   return get(`/api/itineraries/${encodeURIComponent(itineraryId)}/companion-prefs`)
 }
