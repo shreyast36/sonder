@@ -142,11 +142,23 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
             co_traveller_ids=[],
         )
 
-        # itinerary_generated signals the frontend that the day stream is
-        # complete (so the "more days coming" indicator can be turned off).
-        yield format_event("itinerary_generated", {"days": len(itinerary.days)})
+        # Persist BEFORE validation/matching so the user can save it from the
+        # UI as soon as the days are visible. If anything downstream fails or
+        # hangs, the itinerary is still recoverable from Firestore.
+        try:
+            await write_itinerary(itinerary)
+        except Exception as e:
+            logger.warning("early write_itinerary failed: %s", e)
 
-        # Step 6 — Validation
+        # itinerary_generated carries the full payload now — the frontend uses
+        # this to expose the Save button without waiting for the validation /
+        # matching / done events at the end of the pipeline.
+        yield format_event("itinerary_generated", {
+            "itinerary": itinerary.model_dump(mode="json"),
+            "days": len(itinerary.days),
+        })
+
+        # Step 6 — Validation (best-effort enhancement past this point)
         step = "validating"
         yield format_event("validating", {})
 
@@ -178,8 +190,12 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
                 yield event
                 # After loop, best result is in the last UpdateTripResponse
                 # (loop yields SSE strings, final return value is ignored here)
+            # Refinement may have modified the itinerary — rewrite to Firestore.
+            try:
+                await write_itinerary(itinerary)
+            except Exception as e:
+                logger.warning("post-refinement write_itinerary failed: %s", e)
 
-        await write_itinerary(itinerary)
         await write_itinerary_status(user_profile.user_id, "ready")
         yield format_event("validated", {"score": validation.score})
 

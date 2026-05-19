@@ -82,13 +82,25 @@ export default function Itinerary() {
           return [...without, data.day].sort((a, b) => a.day_number - b.day_number)
         })
       },
-      itinerary_generated: () => setStreamingDone(true),
-      done:  (data) => {
+      itinerary_generated: (data) => {
+        // Fires as soon as day streaming completes — well before validation
+        // and matching run. Surfacing the itinerary here lets the Save
+        // button appear immediately even if the rest of the pipeline hangs.
         setStreamingDone(true)
         if (data?.itinerary) {
           setItinerary(data.itinerary)
-        } else {
-          setError('No itinerary returned')
+          // Cache so the user can navigate to /dashboard → "View itinerary"
+          // and still see this trip even if they haven't clicked Save yet.
+          try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(data.itinerary)) } catch {}
+        }
+      },
+      done:  (data) => {
+        setStreamingDone(true)
+        // Refinement may have produced a different final itinerary — prefer
+        // that over the one emitted at itinerary_generated.
+        if (data?.itinerary) {
+          setItinerary(data.itinerary)
+          try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(data.itinerary)) } catch {}
         }
       },
     }
@@ -153,7 +165,17 @@ export default function Itinerary() {
         } catch (err) {
           console.warn('Could not load saved itinerary:', err?.message || err)
         }
-        // No saved trip — kick the user back to plan one.
+        // No saved trip yet. If the user generated something earlier this
+        // session but didn't click Save, the cache still has it — show that
+        // so they can save from here instead of starting over.
+        try {
+          const cached = JSON.parse(localStorage.getItem('sonder_last_itinerary') || 'null')
+          if (cached?.itinerary_id) {
+            setItinerary(cached)
+            setStreamingDone(true)
+            return
+          }
+        } catch { /* invalid JSON in cache */ }
         navigate('/preferences')
         return
       }

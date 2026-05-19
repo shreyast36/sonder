@@ -101,14 +101,12 @@ export default function Dashboard() {
       if (it) {
         setStoredItinerary(it)
         try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(it)) } catch { /* noop */ }
-      } else if (loadStoredItinerary()) {
-        // Server says no current trip but cache has one → user discarded it
-        // or it never made it to Firestore. Clear the stale local copy.
-        localStorage.removeItem('sonder_last_itinerary')
-        setStoredItinerary(null)
       }
+      // If the server returns null we intentionally DO NOT wipe localStorage:
+      // the user may have just generated a trip and not clicked Save yet, or
+      // Firestore might be having a brief moment. Cached card stays visible
+      // until they explicitly save a different one (or sign out).
     } catch (err) {
-      // 401/network → keep the cached card so the dashboard isn't blank.
       console.warn('getCurrentItinerary failed (keeping cache):', err?.message || err)
     }
   }
