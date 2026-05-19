@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, Plus, Zap } from 'lucide-react'
@@ -95,6 +95,127 @@ const DIM_TAG = {
 }
 const _PACE_TAG = { relaxed: 'Relaxed', moderate: 'Moderate', packed: 'Packed' }
 const _BUDGET_TAG = { budget: 'Budget', mid_range: 'Mid-range', luxury: 'Luxury' }
+
+// ── Travel card — luxury membership-style object showing the user's name ──
+
+function TravelCard({ firstName, displayName, uid }) {
+  // Stable 4-digit member number derived from uid, so it never changes.
+  const num = useMemo(() => {
+    const id = uid || ''
+    if (!id) return '0001'
+    let n = 0
+    for (let i = 0; i < id.length; i++) n = (n * 31 + id.charCodeAt(i)) >>> 0
+    return String((n % 9899) + 100).padStart(4, '0')   // 0100-9999
+  }, [uid])
+
+  const fullName = (displayName || firstName || 'Traveller').trim()
+  const initials = fullName.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 18, rotateX: -8 }}
+      animate={{ opacity: 1, y: 0, rotateX: 0 }}
+      transition={{ duration: 0.85, delay: 0.45, ease }}
+      style={{
+        width: 460, maxWidth: 'calc(100vw - 64px)',
+        margin: '36px auto 16px',
+        padding: 1.5, borderRadius: 18,
+        // Gilt edge sandwich, same finish as the phone bezel.
+        background: 'linear-gradient(135deg, #3a2d18 0%, #8a6f4a 22%, #f0dcb0 48%, #b89968 60%, #6a5028 80%, #2a1f12 100%)',
+        boxShadow:
+          '0 32px 80px rgba(0,0,0,0.55), ' +
+          '0 0 32px rgba(212,182,134,0.16), ' +
+          'inset 0 0 0 1px rgba(240,220,176,0.40)',
+        perspective: 1000,
+      }}
+    >
+      <div style={{
+        position: 'relative', overflow: 'hidden',
+        borderRadius: 17, padding: '22px 26px',
+        aspectRatio: '1.586 / 1',           // ISO 7810 ID-1 (credit card)
+        background: 'radial-gradient(ellipse at 25% 15%, #1a140b 0%, #0a0807 78%)',
+        display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+      }}>
+        {/* Warm corner glow */}
+        <div style={{ position: 'absolute', top: -60, right: -60, width: 260, height: 260,
+          background: 'radial-gradient(ellipse, rgba(240,220,176,0.18) 0%, transparent 65%)', pointerEvents: 'none' }}/>
+        {/* Faint diagonal sheen */}
+        <div style={{ position: 'absolute', inset: 0, background:
+          'linear-gradient(135deg, transparent 40%, rgba(240,220,176,0.06) 50%, transparent 60%)',
+          pointerEvents: 'none' }}/>
+
+        {/* Header row */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', position: 'relative' }}>
+          <span style={{
+            fontFamily: '"Inter Tight",sans-serif', fontWeight: 500, fontSize: 12,
+            letterSpacing: '0.46em', textIndent: '0.46em', textTransform: 'uppercase',
+            background: 'linear-gradient(180deg, #F0DCB0 0%, #D4B686 55%, #8A6F4A 100%)',
+            WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+            WebkitTextFillColor: 'transparent',
+          }}>SONDER</span>
+          <span style={{
+            fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 12,
+            color: GOLD, letterSpacing: '0.04em',
+          }}>Travel Card</span>
+        </div>
+
+        {/* Gilt EMV-style chip */}
+        <div style={{
+          position: 'absolute', left: 26, top: '38%',
+          width: 44, height: 32, borderRadius: 5,
+          background: 'linear-gradient(135deg, #f4dfb0 0%, #d4b686 45%, #8a6f4a 100%)',
+          boxShadow: '0 3px 10px rgba(0,0,0,0.55), inset 0 0 0 0.5px rgba(58,45,24,0.6)',
+        }}>
+          {/* chip etching */}
+          <div style={{ position: 'absolute', inset: 5, border: '0.5px solid rgba(58,45,24,0.5)', borderRadius: 3 }}/>
+          <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 0.5, background: 'rgba(58,45,24,0.45)' }}/>
+          <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 0.5, background: 'rgba(58,45,24,0.45)' }}/>
+        </div>
+
+        {/* Initials embossed at right of chip (subtle) */}
+        <span style={{
+          position: 'absolute', right: 26, top: '32%',
+          fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 18,
+          color: 'rgba(240,220,176,0.25)', letterSpacing: '0.04em', userSelect: 'none',
+        }}>{initials}</span>
+
+        {/* Name block */}
+        <div style={{ position: 'relative' }}>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.36em',
+            textTransform: 'uppercase', color: MUTE, marginBottom: 4 }}>
+            Member
+          </p>
+          <h2 style={{
+            fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
+            fontSize: 'clamp(26px, 4vw, 34px)', color: BONE, margin: 0,
+            letterSpacing: '-0.01em', lineHeight: 1,
+            filter: 'drop-shadow(0 0 18px rgba(240,220,176,0.18))',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {fullName}
+          </h2>
+        </div>
+
+        {/* Bottom row: member number + edition */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', position: 'relative' }}>
+          <span style={{
+            fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 22, lineHeight: 1,
+            letterSpacing: '0.02em',
+            background: 'linear-gradient(180deg, #f0dcb0 0%, #b89968 100%)',
+            WebkitBackgroundClip: 'text', backgroundClip: 'text',
+            color: 'transparent', WebkitTextFillColor: 'transparent',
+          }}>
+            N°&nbsp;{num}
+          </span>
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8,
+            letterSpacing: '0.40em', textIndent: '0.40em', textTransform: 'uppercase', color: MUTE }}>
+            Est. {new Date().getFullYear()}
+          </span>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
 
 function matchToCard(m) {
   // Backend returns CoTravellerMatch: { profile: {profile_id, display_name,
@@ -380,6 +501,12 @@ export default function Dashboard() {
             {firstName}
           </motion.h1>
         </motion.div>
+
+        <TravelCard
+          firstName={firstName}
+          displayName={effectiveDisplayName || user?.displayName}
+          uid={user?.uid}
+        />
       </div>
 
       {/* main grid */}
