@@ -28,11 +28,15 @@ Output ONLY valid JSON matching this exact schema — no markdown fences, no ext
 }
 
 Rules:
-- If a list of available activities is provided, prefer those. When the list is sparse or empty, you may invent plausible local activities that fit the destination — use real venues and accurate descriptions.
+- The available pool below mixes three kinds of records (tagged in `category` and `tags`): hotels, restaurants, and activities. Use them appropriately:
+  • Pick ONE hotel and use it as the first item on day 1 ("Check in at <hotel>") and the last on the final day ("Check out").
+  • Use restaurants for meal slots — lunch (~12-2pm) and dinner (~7-9pm), one per day.
+  • Use activities for sightseeing/experiences in morning, afternoon, and evening slots.
+- Prefer items from the pool over invented ones. When the pool is sparse for a category, you may invent plausible real venues for that destination.
 - Respect must_haves exactly — every item must appear at least once across the trip.
 - Exclude anything in avoid_list entirely.
 - Keep daily_cost_usd within the daily budget.
-- Match the pace: relaxed = 2-3 activities/day, moderate = 3-4, packed = 4-5.
+- Match the pace: relaxed = 2-3 activities/day, moderate = 3-4, packed = 4-5 (meals and hotel check-in/out don't count toward this).
 - Each Activity object needs name, category, cost_usd (float), duration_hours (float), tags (list of strings), and description.
 - KEEP OUTPUT TIGHT: description max 100 characters per activity; tags max 3 items; theme max 5 words. activity_id can be omitted; the parser fills it in.
 - Leave why_this as null — it will be populated by a separate explainer pass.

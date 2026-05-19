@@ -50,22 +50,22 @@ def _destination_from_query(user_profile: UserProfile) -> Destination:
 async def _get_destination_and_activities(user_profile: UserProfile):
     """
     Use the user's typed destination as the authoritative city/country, then
-    query Pinecone's seeded 'activities' namespace for corpus-grounded
+    query the seeded Pinecone corpus (hotels + restaurants + activities) for
     candidates at that destination. If retrieval fails or returns nothing,
-    fall back to an empty activities list — the LLM prompt is permissive
-    enough to invent plausible activities in that case.
+    fall back to an empty pool — the LLM prompt is permissive enough to
+    invent plausible venues in that case.
     """
     destination = _destination_from_query(user_profile)
     activities: list[Activity] = []
     try:
         from shreyas.retrieval.search import search_activities
+        # top_k is the combined budget across hotels/restaurants/activities;
+        # search_activities splits it internally (~15/40/45).
         activities = await search_activities(
-            destination.city, destination.country or None, user_profile, top_k=25,
+            destination.city, destination.country or None, user_profile, top_k=40,
         )
-        logger.info("Pinecone returned %d activities for %s, %s",
-                    len(activities), destination.city, destination.country or "—")
     except Exception as e:
-        logger.warning("Pinecone activity retrieval failed (%s) — LLM will invent activities", e)
+        logger.warning("Pinecone retrieval failed (%s) — LLM will invent venues", e)
     return destination, activities
 
 
