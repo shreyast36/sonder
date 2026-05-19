@@ -443,15 +443,8 @@ export default function Itinerary() {
         overflowX: 'hidden', overflowY: 'auto',
       }}>
         <DestinationBackdrop city={dest?.city} visible={booted && showingItinerary}/>
-        <AtmosphericScene/>
-        <HorizonSilhouette/>
-        <FlankGlows isCompact={isCompact}/>
-        <FlightPaths/>
-        {isWide && <CompassRose/>}
+        <QuietBackdrop/>
         <PaperGrain/>
-        <Spotlight/>
-        <GoldDust count={isCompact ? 18 : 34}/>
-        <CornerOrnaments/>
         {isWide && <EditionMark itinerary={itinerary || renderTarget}/>}
 
         <PhoneStage scale={phoneScale}>
@@ -490,6 +483,27 @@ export default function Itinerary() {
 // itinerary page doesn't depend on its layout.
 const _grainSvg = `<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="4" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(#n)"/></svg>`
 const _grainBg = `url("data:image/svg+xml,${encodeURIComponent(_grainSvg)}")`
+
+// One quiet velvet field with a single soft warm glow centred behind the
+// phone. No animation, no decoration — the room the device sits in.
+function QuietBackdrop() {
+  return (
+    <>
+      <div style={{
+        position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
+        background: 'radial-gradient(ellipse 110% 90% at 50% 45%, #14110b 0%, #0c0a07 55%, #050402 100%)',
+      }}/>
+      <div style={{
+        position: 'absolute', top: '48%', left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 'min(960px, 86vw)', height: 'min(720px, 72vh)',
+        background: 'radial-gradient(ellipse, rgba(212,182,134,0.09) 0%, rgba(184,150,104,0.035) 38%, transparent 72%)',
+        filter: 'blur(28px)',
+        pointerEvents: 'none', zIndex: 0,
+      }}/>
+    </>
+  )
+}
 
 function PaperGrain() {
   return (
