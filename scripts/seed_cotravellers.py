@@ -263,6 +263,12 @@ async def main(count: int, dry_run: bool) -> None:
 
 
 if __name__ == "__main__":
+    # Windows' default ProactorEventLoop spams "Event loop is closed" tracebacks
+    # when httpx/openai clients are GC'd after asyncio.run returns. The selector
+    # loop is friendlier to HTTP libraries and we don't use subprocesses here.
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     p = argparse.ArgumentParser()
     p.add_argument("--count", type=int, default=500, help="how many co-traveller personas to seed")
     p.add_argument("--dry-run", action="store_true", help="generate everything but skip Pinecone upsert")
