@@ -24,6 +24,20 @@ export default function PersonaReveal() {
     let profile
     try { profile = JSON.parse(raw) } catch { navigate('/preferences'); return }
 
+    // If we already inferred the persona earlier in this session, show it
+    // immediately. Re-running the inference every time the user navigates
+    // back from /itinerary defeats the purpose of the confirmation screen.
+    const cachedRaw = sessionStorage.getItem('sonder_persona')
+    if (cachedRaw) {
+      try {
+        const persona = JSON.parse(cachedRaw)
+        if (persona && persona.descriptor) {
+          setState({ status: 'ready', persona, error: null })
+          return
+        }
+      } catch { /* fall through and re-infer */ }
+    }
+
     // Wait for Firebase to restore the auth state before calling the endpoint.
     // `auth.currentUser` is null on first mount until onAuthStateChanged fires.
     const unsub = onAuthStateChanged(auth, (user) => {

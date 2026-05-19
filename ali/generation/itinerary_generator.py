@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import AsyncIterator
 from shared.schemas import UserProfile, Destination, Activity, ItineraryDay, Itinerary, ValidationResult
 from ali.routing.engine import stream_request
@@ -8,6 +9,19 @@ from ali.generation.prompts import (
     build_itinerary_prompt,
     build_refinement_prompt,
 )
+from ali.generation.output_parser import _patch_activity, parse_itinerary
+
+logger = logging.getLogger(__name__)
+
+
+def _patch_day_in_place(day_data: dict, activities: list[Activity]) -> dict:
+    """Fill in activity fields the LLM may have omitted so per-day validation
+    succeeds. Mirrors what parse_itinerary does on a full itinerary."""
+    known = {a.name: a for a in (activities or [])}
+    for ia in day_data.get("activities", []) or []:
+        if isinstance(ia, dict) and isinstance(ia.get("activity"), dict):
+            ia["activity"] = _patch_activity(ia["activity"], known)
+    return day_data
 
 
 async def generate_itinerary(
@@ -45,69 +59,77 @@ async def generate_itinerary_by_day(
     activities: list[Activity],
 ):
     """
-    Stream the itinerary and yield each ItineraryDay as soon as its JSON is complete.
-    Lets the orchestrator pipeline explain_day() calls while generation is still running.
+    Stream the itinerary and yield each ItineraryDay as soon as its JSON is
+    complete. Lets the orchestrator fire `day_ready` events and start
+    explaining days while generation is still running.
+
+    Falls back to a full-buffer parse via parse_itinerary() when the streaming
+    detector produces no days (LLM wrapped JSON in fences, used a different
+    key order, or schema-validated partial days kept failing). That way the
+    pipeline never ends up with zero days when the raw output is actually fine.
     """
     prompt = build_itinerary_prompt(user_profile, destination, activities)
     buffer = ""
-    days_started = False  # True once we've seen the "days": [ opening
+    cursor = 0            # forward-only — never re-scans previous chars
+    days_started = False  # flips once we've seen the "days" key
     depth = 0
     in_string = False
     escape_next = False
-    current_string = ""   # accumulates characters of the current JSON string token
-    day_start_pos = None  # position in buffer where current day object opened
+    current_string = ""   # accumulates the current JSON string token
+    day_start_pos = None  # position where the current day object opened
+    yielded = 0
 
     async for chunk in stream_request("itinerary_generation", prompt, ITINERARY_SYSTEM_PROMPT):
         buffer += chunk
 
-        # Scan new characters for complete day objects
-        scan_from = max(0, len(buffer) - len(chunk) - 1)
-        i = scan_from
-
-        while i < len(buffer):
-            c = buffer[i]
+        while cursor < len(buffer):
+            c = buffer[cursor]
 
             if escape_next:
                 escape_next = False
-                i += 1
-                continue
-            if c == "\\" and in_string:
-                escape_next = True
-                i += 1
-                continue
-            if c == '"':
-                if in_string:
-                    # Closing quote — check if this string token was the "days" key
+            elif in_string:
+                if c == "\\":
+                    escape_next = True
+                elif c == '"':
                     if not days_started and current_string == "days":
                         days_started = True
                     current_string = ""
-                in_string = not in_string
-                i += 1
-                continue
-            if in_string:
-                current_string += c
-                i += 1
-                continue
+                    in_string = False
+                else:
+                    current_string += c
+            elif c == '"':
+                in_string = True
+            elif days_started:
+                if c == "{":
+                    depth += 1
+                    if depth == 1:
+                        day_start_pos = cursor
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0 and day_start_pos is not None:
+                        day_json = buffer[day_start_pos : cursor + 1]
+                        try:
+                            day_data = json.loads(day_json)
+                            day_data = _patch_day_in_place(day_data, activities)
+                            yield ItineraryDay.model_validate(day_data)
+                            yielded += 1
+                        except Exception as e:
+                            logger.debug("Streaming day parse skipped at pos %d: %s", cursor, e)
+                        day_start_pos = None
 
-            # Outside strings — track structure
-            if not days_started:
-                i += 1
-                continue
+            cursor += 1
 
-            if c == "{":
-                depth += 1
-                if depth == 1:
-                    day_start_pos = i  # start of a new day object
-            elif c == "}":
-                depth -= 1
-                if depth == 0 and day_start_pos is not None:
-                    # Complete day object found
-                    day_json = buffer[day_start_pos : i + 1]
-                    try:
-                        day_data = json.loads(day_json)
-                        yield ItineraryDay.model_validate(day_data)
-                    except Exception:
-                        pass  # malformed partial — skip, full parse will catch it
-                    day_start_pos = None
+    if yielded > 0:
+        return
 
-            i += 1
+    # Streaming detection found nothing. Try parse_itinerary on the full buffer
+    # — handles markdown fences, key-order quirks, and patches missing fields.
+    if not buffer.strip():
+        return
+    try:
+        itinerary = parse_itinerary(buffer, user_profile, destination, activities)
+    except Exception as e:
+        logger.warning("Fallback parse_itinerary failed: %s; raw head: %r", e, buffer[:200])
+        return
+    for day in itinerary.days:
+        yield day

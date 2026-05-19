@@ -45,7 +45,9 @@ def _extract_json_object(raw: str) -> str:
 
 
 def _patch_activity(act_data: dict, known: dict[str, Activity]) -> dict:
-    """Fill in required Activity fields the LLM may omit, matching by name."""
+    """Fill in required Activity fields the LLM may omit. When the activity
+    name matches a corpus record, copy fields from it. Otherwise (LLM-invented
+    venue) fall back to sensible defaults so validation still succeeds."""
     name = act_data.get("name", "")
     source = known.get(name)
     if source:
@@ -58,6 +60,10 @@ def _patch_activity(act_data: dict, known: dict[str, Activity]) -> dict:
     else:
         act_data.setdefault("activity_id", f"act_{uuid.uuid4().hex[:6]}")
         act_data.setdefault("description", "")
+        act_data.setdefault("category", "activity")
+        act_data.setdefault("cost_usd", 0.0)
+        act_data.setdefault("duration_hours", 2.0)
+        act_data.setdefault("tags", [])
     return act_data
 
 
