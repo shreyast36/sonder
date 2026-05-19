@@ -96,7 +96,7 @@ const DIM_TAG = {
 const _PACE_TAG = { relaxed: 'Relaxed', moderate: 'Moderate', packed: 'Packed' }
 const _BUDGET_TAG = { budget: 'Budget', mid_range: 'Mid-range', luxury: 'Luxury' }
 
-// ── Travel card — luxury membership-style object showing the user's name ──
+// ── Members card — oxblood + cream + a single gilded seal, no chip ────────
 
 function TravelCard({ firstName, displayName, uid }) {
   // Stable 4-digit member number derived from uid, so it never changes.
@@ -105,110 +105,127 @@ function TravelCard({ firstName, displayName, uid }) {
     if (!id) return '0001'
     let n = 0
     for (let i = 0; i < id.length; i++) n = (n * 31 + id.charCodeAt(i)) >>> 0
-    return String((n % 9899) + 100).padStart(4, '0')   // 0100-9999
+    return String((n % 9899) + 100).padStart(4, '0')
   }, [uid])
 
   const fullName = (displayName || firstName || 'Traveller').trim()
-  const initials = fullName.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+
+  const CREAM     = '#f4ede0'
+  const CREAM_DIM = 'rgba(244,237,224,0.55)'
+  const RIM_GOLD  = 'rgba(212,182,134,0.55)'
+  const SEAL_LINK = 'sealGrad-' + (uid || 'x').slice(0, 6)
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 18, rotateX: -8 }}
-      animate={{ opacity: 1, y: 0, rotateX: 0 }}
-      transition={{ duration: 0.85, delay: 0.45, ease }}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.75, delay: 0.4, ease }}
       style={{
         width: 460, maxWidth: 'calc(100vw - 64px)',
         margin: '36px auto 16px',
-        padding: 1.5, borderRadius: 18,
-        // Gilt edge sandwich, same finish as the phone bezel.
-        background: 'linear-gradient(135deg, #3a2d18 0%, #8a6f4a 22%, #f0dcb0 48%, #b89968 60%, #6a5028 80%, #2a1f12 100%)',
+        borderRadius: 14,
+        // Oxblood-on-oxblood gradient with a faint gilt rim on the perimeter.
+        background:
+          'radial-gradient(ellipse at 20% 0%, #4a1a22 0%, #2a0d12 55%, #170509 100%)',
         boxShadow:
-          '0 32px 80px rgba(0,0,0,0.55), ' +
-          '0 0 32px rgba(212,182,134,0.16), ' +
-          'inset 0 0 0 1px rgba(240,220,176,0.40)',
-        perspective: 1000,
+          '0 30px 70px rgba(0,0,0,0.65), ' +
+          '0 0 18px rgba(74,26,34,0.55), ' +
+          `inset 0 0 0 1px ${RIM_GOLD}, ` +     // outer gilt thread
+          'inset 0 0 0 3px rgba(20,8,10,0.95), ' + // dark inset
+          `inset 0 0 0 4px rgba(212,182,134,0.20)`, // second hairline
+        position: 'relative', overflow: 'hidden',
       }}
     >
+      {/* Subtle leather sheen — barely visible diagonal */}
       <div style={{
-        position: 'relative', overflow: 'hidden',
-        borderRadius: 17, padding: '22px 26px',
-        aspectRatio: '1.586 / 1',           // ISO 7810 ID-1 (credit card)
-        background: 'radial-gradient(ellipse at 25% 15%, #1a140b 0%, #0a0807 78%)',
-        display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-      }}>
-        {/* Warm corner glow */}
-        <div style={{ position: 'absolute', top: -60, right: -60, width: 260, height: 260,
-          background: 'radial-gradient(ellipse, rgba(240,220,176,0.18) 0%, transparent 65%)', pointerEvents: 'none' }}/>
-        {/* Faint diagonal sheen */}
-        <div style={{ position: 'absolute', inset: 0, background:
-          'linear-gradient(135deg, transparent 40%, rgba(240,220,176,0.06) 50%, transparent 60%)',
-          pointerEvents: 'none' }}/>
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: 'linear-gradient(160deg, rgba(244,237,224,0.04) 0%, transparent 30%, transparent 70%, rgba(0,0,0,0.20) 100%)',
+      }}/>
+      {/* Soft warm halo top-right */}
+      <div style={{
+        position: 'absolute', top: -80, right: -60, width: 260, height: 260,
+        background: 'radial-gradient(ellipse, rgba(212,182,134,0.10) 0%, transparent 65%)',
+        pointerEvents: 'none',
+      }}/>
 
-        {/* Header row */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', position: 'relative' }}>
-          <span style={{
-            fontFamily: '"Inter Tight",sans-serif', fontWeight: 500, fontSize: 12,
-            letterSpacing: '0.46em', textIndent: '0.46em', textTransform: 'uppercase',
-            background: 'linear-gradient(180deg, #F0DCB0 0%, #D4B686 55%, #8A6F4A 100%)',
-            WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-            WebkitTextFillColor: 'transparent',
-          }}>SONDER</span>
-          <span style={{
-            fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 12,
-            color: GOLD, letterSpacing: '0.04em',
-          }}>Travel Card</span>
-        </div>
-
-        {/* Gilt EMV-style chip */}
-        <div style={{
-          position: 'absolute', left: 26, top: '38%',
-          width: 44, height: 32, borderRadius: 5,
-          background: 'linear-gradient(135deg, #f4dfb0 0%, #d4b686 45%, #8a6f4a 100%)',
-          boxShadow: '0 3px 10px rgba(0,0,0,0.55), inset 0 0 0 0.5px rgba(58,45,24,0.6)',
+      <div style={{ position: 'relative', padding: '32px 30px 28px', textAlign: 'center' }}>
+        {/* Wordmark */}
+        <p style={{
+          fontFamily: '"Inter Tight",sans-serif', fontWeight: 500, fontSize: 10,
+          letterSpacing: '0.52em', textIndent: '0.52em', textTransform: 'uppercase',
+          color: 'rgba(212,182,134,0.85)',
+          margin: 0,
         }}>
-          {/* chip etching */}
-          <div style={{ position: 'absolute', inset: 5, border: '0.5px solid rgba(58,45,24,0.5)', borderRadius: 3 }}/>
-          <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 0.5, background: 'rgba(58,45,24,0.45)' }}/>
-          <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 0.5, background: 'rgba(58,45,24,0.45)' }}/>
+          Sonder · Members
+        </p>
+
+        {/* Gilt seal */}
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '20px 0 16px' }}>
+          <svg width="46" height="46" viewBox="0 0 46 46">
+            <defs>
+              <linearGradient id={SEAL_LINK} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"  stopColor="#f0dcb0"/>
+                <stop offset="55%" stopColor="#d4b686"/>
+                <stop offset="100%" stopColor="#8a6f4a"/>
+              </linearGradient>
+            </defs>
+            <circle cx="23" cy="23" r="21" fill="none" stroke={`url(#${SEAL_LINK})`} strokeWidth="0.8"/>
+            <circle cx="23" cy="23" r="15" fill="none" stroke={`url(#${SEAL_LINK})`} strokeWidth="0.5"/>
+            <text x="23" y="29" textAnchor="middle" fontSize="22"
+              fill={`url(#${SEAL_LINK})`} fontFamily="'Cormorant Garamond',serif" fontStyle="italic">
+              S
+            </text>
+          </svg>
         </div>
 
-        {/* Initials embossed at right of chip (subtle) */}
-        <span style={{
-          position: 'absolute', right: 26, top: '32%',
-          fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 18,
-          color: 'rgba(240,220,176,0.25)', letterSpacing: '0.04em', userSelect: 'none',
-        }}>{initials}</span>
+        {/* Top hairline */}
+        <div style={{
+          width: 80, height: 1,
+          background: `linear-gradient(to right, transparent, ${RIM_GOLD}, transparent)`,
+          margin: '0 auto 18px',
+        }}/>
 
         {/* Name block */}
-        <div style={{ position: 'relative' }}>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.36em',
-            textTransform: 'uppercase', color: MUTE, marginBottom: 4 }}>
-            Member
-          </p>
-          <h2 style={{
-            fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
-            fontSize: 'clamp(26px, 4vw, 34px)', color: BONE, margin: 0,
-            letterSpacing: '-0.01em', lineHeight: 1,
-            filter: 'drop-shadow(0 0 18px rgba(240,220,176,0.18))',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}>
-            {fullName}
-          </h2>
-        </div>
+        <p style={{
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 8,
+          letterSpacing: '0.42em', textIndent: '0.42em', textTransform: 'uppercase',
+          color: CREAM_DIM, margin: '0 0 10px',
+        }}>
+          In the name of
+        </p>
+        <h2 style={{
+          fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
+          fontSize: 'clamp(28px, 4.6vw, 38px)',
+          color: CREAM, margin: 0, lineHeight: 1,
+          letterSpacing: '-0.01em',
+          filter: 'drop-shadow(0 0 16px rgba(244,237,224,0.18))',
+        }}>
+          {fullName}
+        </h2>
 
-        {/* Bottom row: member number + edition */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', position: 'relative' }}>
+        {/* Bottom hairline */}
+        <div style={{
+          width: 80, height: 1,
+          background: `linear-gradient(to right, transparent, ${RIM_GOLD}, transparent)`,
+          margin: '22px auto 16px',
+        }}/>
+
+        {/* Bottom row: serial + est. */}
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '0 2px' }}>
           <span style={{
-            fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 22, lineHeight: 1,
-            letterSpacing: '0.02em',
+            fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 17,
+            letterSpacing: '0.04em',
             background: 'linear-gradient(180deg, #f0dcb0 0%, #b89968 100%)',
             WebkitBackgroundClip: 'text', backgroundClip: 'text',
             color: 'transparent', WebkitTextFillColor: 'transparent',
           }}>
             N°&nbsp;{num}
           </span>
-          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8,
-            letterSpacing: '0.40em', textIndent: '0.40em', textTransform: 'uppercase', color: MUTE }}>
+          <span style={{
+            fontFamily: '"Inter Tight",sans-serif', fontSize: 8,
+            letterSpacing: '0.42em', textIndent: '0.42em', textTransform: 'uppercase',
+            color: CREAM_DIM,
+          }}>
             Est. {new Date().getFullYear()}
           </span>
         </div>
