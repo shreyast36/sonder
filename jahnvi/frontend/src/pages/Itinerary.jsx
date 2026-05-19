@@ -448,7 +448,10 @@ export default function Itinerary() {
       }}>
         <DestinationBackdrop city={dest?.city} visible={booted && showingItinerary}/>
         <PaperGrain/>
+        <Spotlight/>
         <GoldVignette/>
+        <GoldDust count={isCompact ? 16 : 32}/>
+        <CornerOrnaments/>
         <GhostDestination dest={dest} showingItinerary={showingItinerary}/>
         {isWide && <EditionMark itinerary={itinerary || renderTarget}/>}
         {isWide && <Marginalia firstName={firstName} personaDescriptor={personaDescriptor} showingItinerary={showingItinerary}/>}
@@ -556,8 +559,9 @@ function DestinationBackdrop({ city, visible }) {
 }
 
 function GhostDestination({ dest, showingItinerary }) {
-  // City name behind the phone — gilded text that catches a slow shimmer,
-  // like gold leaf on a gallery wall.
+  // The destination as a framed gallery centerpiece. Eyebrow + city name in
+  // shimmering gold leaf + gilt ornament + country, layered behind the phone
+  // so what you see in the gaps reads as exhibit signage, not just a label.
   if (!showingItinerary || !dest?.city) return null
   return (
     <motion.div
@@ -567,29 +571,177 @@ function GhostDestination({ dest, showingItinerary }) {
       transition={{ duration: 1.6, ease, delay: 0.2 }}
       style={{
         position: 'absolute', inset: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
         pointerEvents: 'none', zIndex: 0, userSelect: 'none', overflow: 'hidden',
+        gap: '2vh',
       }}
     >
+      {/* Eyebrow */}
+      <motion.span
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 0.55, y: 0 }}
+        transition={{ duration: 1.2, delay: 0.5 }}
+        style={{
+          fontFamily: '"Inter Tight",sans-serif', fontWeight: 400,
+          fontSize: 11, letterSpacing: '0.6em', textIndent: '0.6em',
+          textTransform: 'uppercase',
+          backgroundImage: 'linear-gradient(180deg, #f0dcb0 0%, #8a6f4a 100%)',
+          WebkitBackgroundClip: 'text', backgroundClip: 'text',
+          color: 'transparent', WebkitTextFillColor: 'transparent',
+        }}
+      >
+        The Destination
+      </motion.span>
+
+      {/* City name — massive gilt with slow shimmer */}
       <motion.span
         animate={{ backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'] }}
         transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
         style={{
           fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
-          fontSize: 'clamp(220px, 28vw, 380px)',
-          letterSpacing: '-0.045em', lineHeight: 0.9, whiteSpace: 'nowrap',
-          // Gilded gradient — dark gold → bright gold → dark gold, with a
-          // slow horizontal shimmer that catches the eye but never demands it.
-          backgroundImage: 'linear-gradient(110deg, #3a2d18 0%, #6a4f28 18%, #b89968 38%, #f0dcb0 50%, #b89968 62%, #6a4f28 82%, #3a2d18 100%)',
-          backgroundSize: '200% 100%',
+          fontSize: 'clamp(180px, 24vw, 320px)',
+          letterSpacing: '-0.045em', lineHeight: 0.85, whiteSpace: 'nowrap',
+          backgroundImage: 'linear-gradient(110deg, #2a1f12 0%, #5a4628 14%, #b89968 36%, #f0dcb0 50%, #b89968 64%, #5a4628 86%, #2a1f12 100%)',
+          backgroundSize: '220% 100%',
           WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-          opacity: 0.18,
-          filter: `drop-shadow(0 0 32px ${GOLD}22)`,
+          WebkitTextFillColor: 'transparent',
+          opacity: 0.32,
+          filter: `drop-shadow(0 0 48px ${GOLD}30) drop-shadow(0 8px 32px rgba(0,0,0,0.6))`,
         }}
       >
         {dest.city}
       </motion.span>
+
+      {/* Gilt ornament: thin double rule with a diamond + sun-burst tick marks */}
+      <motion.div
+        initial={{ opacity: 0, scaleX: 0.6 }}
+        animate={{ opacity: 0.65, scaleX: 1 }}
+        transition={{ duration: 1.2, delay: 0.6 }}
+        style={{ display: 'flex', alignItems: 'center', gap: 16 }}
+      >
+        <span style={{ width: 'clamp(80px, 10vw, 160px)', height: 1, background: 'linear-gradient(to right, transparent, rgba(240,220,176,0.8))' }}/>
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <defs>
+            <linearGradient id="orn" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#f0dcb0"/>
+              <stop offset="100%" stopColor="#8a6f4a"/>
+            </linearGradient>
+          </defs>
+          <path d="M11 2 L13 11 L22 11 L13 11 L11 20 L9 11 L0 11 L9 11 Z" fill="url(#orn)" opacity="0.85"/>
+        </svg>
+        <span style={{ width: 'clamp(80px, 10vw, 160px)', height: 1, background: 'linear-gradient(to left, transparent, rgba(240,220,176,0.8))' }}/>
+      </motion.div>
+
+      {/* Country */}
+      {dest.country && (
+        <motion.span
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 0.55, y: 0 }}
+          transition={{ duration: 1.2, delay: 0.7 }}
+          style={{
+            fontFamily: '"Inter Tight",sans-serif', fontWeight: 400,
+            fontSize: 13, letterSpacing: '0.52em', textIndent: '0.52em',
+            textTransform: 'uppercase',
+            backgroundImage: 'linear-gradient(180deg, #f0dcb0 0%, #8a6f4a 100%)',
+            WebkitBackgroundClip: 'text', backgroundClip: 'text',
+            color: 'transparent', WebkitTextFillColor: 'transparent',
+          }}
+        >
+          {dest.country}
+        </motion.span>
+      )}
     </motion.div>
+  )
+}
+
+// Top-down gold spotlight, like a museum lamp on a private object.
+function Spotlight() {
+  return (
+    <>
+      <motion.div
+        animate={{ opacity: [0.55, 0.85, 0.55] }}
+        transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', top: -80, left: '50%',
+          transform: 'translateX(-50%)',
+          width: 'min(1200px, 90vw)', height: 600,
+          background: 'radial-gradient(ellipse 45% 70% at 50% 0%, rgba(240,220,176,0.20) 0%, rgba(212,182,134,0.10) 20%, rgba(184,150,104,0.04) 40%, transparent 70%)',
+          filter: 'blur(24px)',
+          pointerEvents: 'none', zIndex: 0,
+        }}
+      />
+      {/* Floor wash — warm gold pooling at the bottom */}
+      <div style={{
+        position: 'absolute', bottom: -120, left: '50%',
+        transform: 'translateX(-50%)',
+        width: 'min(1400px, 95vw)', height: 400,
+        background: 'radial-gradient(ellipse 60% 80% at 50% 100%, rgba(212,182,134,0.10) 0%, rgba(184,150,104,0.05) 30%, transparent 65%)',
+        filter: 'blur(32px)',
+        pointerEvents: 'none', zIndex: 0,
+      }}/>
+    </>
+  )
+}
+
+// Drifting gold dust — slow, sparse, never distracting.
+function GoldDust({ count = 28 }) {
+  const particles = useMemo(() => Array.from({ length: count }, (_, i) => ({
+    id: i,
+    left: Math.random() * 100,
+    top:  10 + Math.random() * 80,
+    size: 1 + Math.random() * 2.5,
+    duration: 22 + Math.random() * 28,
+    delay: -Math.random() * 30,
+    baseOpacity: 0.15 + Math.random() * 0.4,
+    drift: 60 + Math.random() * 120,
+  })), [count])
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
+      {particles.map(p => (
+        <motion.div
+          key={p.id}
+          animate={{ y: [0, -p.drift, 0], opacity: [p.baseOpacity, p.baseOpacity * 0.3, p.baseOpacity] }}
+          transition={{ duration: p.duration, delay: p.delay, repeat: Infinity, ease: 'easeInOut' }}
+          style={{
+            position: 'absolute',
+            left: `${p.left}%`, top: `${p.top}%`,
+            width: p.size, height: p.size,
+            borderRadius: '50%',
+            background: '#f0dcb0',
+            boxShadow: `0 0 ${p.size * 3}px rgba(240,220,176,0.7)`,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+// Gilded corner brackets — like the corners of an art print frame.
+function CornerOrnaments() {
+  const bracket = (
+    <svg width="64" height="64" viewBox="0 0 64 64" fill="none" style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id="cornGold" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%"  stopColor="#f0dcb0"/>
+          <stop offset="55%" stopColor="#b89968"/>
+          <stop offset="100%" stopColor="#5a4628"/>
+        </linearGradient>
+      </defs>
+      <path d="M4 28 V8 H24" stroke="url(#cornGold)" strokeWidth="1.4" strokeLinecap="round"/>
+      <path d="M8 8 L12 8 M8 12 L10 12" stroke="url(#cornGold)" strokeWidth="0.7" strokeLinecap="round"/>
+      <circle cx="14" cy="14" r="1.2" fill="url(#cornGold)"/>
+    </svg>
+  )
+  const wrap = { position: 'absolute', pointerEvents: 'none', zIndex: 1, opacity: 0.7 }
+  return (
+    <>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.7 }} transition={{ duration: 1.4, delay: 0.5 }} style={{ ...wrap, top: 18, left: 18 }}>{bracket}</motion.div>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.7 }} transition={{ duration: 1.4, delay: 0.55 }} style={{ ...wrap, top: 18, right: 18, transform: 'scaleX(-1)' }}>{bracket}</motion.div>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.7 }} transition={{ duration: 1.4, delay: 0.6 }} style={{ ...wrap, bottom: 18, left: 18, transform: 'scaleY(-1)' }}>{bracket}</motion.div>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.7 }} transition={{ duration: 1.4, delay: 0.65 }} style={{ ...wrap, bottom: 18, right: 18, transform: 'scale(-1, -1)' }}>{bracket}</motion.div>
+    </>
   )
 }
 
