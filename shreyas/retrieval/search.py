@@ -110,6 +110,44 @@ async def search_activities(
     return hotels + restaurants + activities
 
 
+async def get_cotraveller_by_id(profile_id: str) -> "CoTravellerProfile | None":
+    """Fetch one seeded co-traveller from Pinecone by exact id. Used by the
+    profile detail page so we don't have to re-query + filter."""
+    from shared.schemas import CoTravellerProfile
+    from jahnvi.schemas.enums import PacePreference, BudgetStyle, TravelStyle
+    if not profile_id:
+        return None
+    index = await get_pinecone_index()
+    try:
+        result = await asyncio.to_thread(
+            lambda: index.fetch(ids=[profile_id], namespace="cotravellers")
+        )
+    except Exception as e:
+        logger.warning("get_cotraveller_by_id fetch failed for %s: %s", profile_id, e)
+        return None
+    vectors = getattr(result, "vectors", None) or {}
+    rec = vectors.get(profile_id)
+    if rec is None:
+        return None
+    md = getattr(rec, "metadata", None) or {}
+    try:
+        return CoTravellerProfile(
+            profile_id   = md.get("profile_id") or profile_id,
+            display_name = md.get("display_name", "Anonymous"),
+            age          = int(md.get("age", 30) or 30),
+            location     = md.get("location", ""),
+            archetype    = md.get("archetype", "Traveller"),
+            interests    = list(md.get("interests") or md.get("top_interests") or []),
+            pace         = PacePreference(md.get("pace", "moderate")),
+            budget_style = BudgetStyle(md.get("budget_style", "mid_range")),
+            travel_style = TravelStyle(md.get("travel_style", "solo")),
+            avatar_url   = md.get("avatar_url"),
+        )
+    except Exception as e:
+        logger.warning("get_cotraveller_by_id parse failed for %s: %s", profile_id, e)
+        return None
+
+
 async def search_cotravellers(
     user_profile: UserProfile,
     top_k: int = 50,

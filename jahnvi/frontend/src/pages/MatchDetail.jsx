@@ -1,17 +1,45 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, MapPin, Check, MessageCircle } from 'lucide-react'
-import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
+import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
-import AppBackground from '../components/AppBackground'
+import { useAuth } from '../hooks/useAuth'
+import { getCurrentItinerary, getCotravellerProfile } from '../lib/api'
 
-// vivid violet — MatchDetail accent
+// vivid violet — accent for the match-detail screen
 const VIOLET = '#8B5CF6'
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+const DIM_LABEL = {
+  // PULL
+  nature_outdoors:   'Nature',
+  culture_history:   'Culture',
+  food_drink:        'Food',
+  nightlife_social:  'Nightlife',
+  comfort_luxury:    'Luxury',
+  exploration_local: 'Explore',
+  // PUSH
+  escape_reset:      'Reset',
+  adventure_novelty: 'Adventure',
+  connection:        'Connection',
+  reflection:        'Reflection',
+  curiosity:         'Curious',
+  prestige_reward:   'Milestone',
+}
+const PACE_LABEL   = { relaxed: 'Relaxed', moderate: 'Moderate', packed: 'Packed' }
+const BUDGET_LABEL = { budget: 'Budget', mid_range: 'Mid-range', luxury: 'Luxury' }
+const STYLE_LABEL  = { solo: 'Solo', couple: 'Couple', family: 'Family', friends: 'Friends' }
+
+function _initialsFromName(name) {
+  return (name || '').split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+}
 
 function useCountUp(target, duration = 1000, delay = 400) {
   const [count, setCount] = useState(0)
   useEffect(() => {
+    if (target == null) return
     const timer = setTimeout(() => {
       const start = performance.now()
       const tick = now => {
@@ -27,55 +55,27 @@ function useCountUp(target, duration = 1000, delay = 400) {
   return count
 }
 
-const MOCK_MATCH = {
-  id: '1',
-  display_name: 'Priya Mehta',
-  avatar_url: 'https://i.pravatar.cc/400?img=47',
-  location: 'Mumbai, India',
-  bio: "Slow traveller. Museum crawler. Eats where there's no menu in English.",
-  match_score: 92,
-  tags: ['Relaxed Pace', 'Mid-range', 'Culture', 'Foodie'],
-  compatibility: [
-    'Both prefer relaxed pace over packed schedules',
-    'Matching budget range — avoids over-splurging',
-    'Culture and food rank highest for both of you',
-    'Neither likes group tours or all-inclusives',
-    'Same ideal trip length: 6–10 days',
-  ],
-  topics: [
-    "Which museum in Bali are you most excited about?",
-    "Are you more of a sunrise or a sunset person?",
-    "Do you plan everything, or leave room to wander?",
-  ],
-}
-
-const spring = { type: 'spring', stiffness: 280, damping: 22 }
-const stagger = { show: { transition: { staggerChildren: 0.09 } } }
-const reveal  = { hidden: { opacity: 0, y: 24 }, show: { opacity: 1, y: 0, transition: { duration: 0.7, ease } } }
-
-// Animated SVG arc ring
-function ScoreRing({ score, size = 220 }) {
+function ScoreRing({ score, size = 180 }) {
   const r = (size / 2) - 14
   const circumference = 2 * Math.PI * r
   const [offset, setOffset] = useState(circumference)
   useEffect(() => {
     const timer = setTimeout(() => {
-      setOffset(circumference - (score / 100) * circumference)
-    }, 500)
+      setOffset(circumference - Math.max(0, Math.min(100, score)) / 100 * circumference)
+    }, 350)
     return () => clearTimeout(timer)
   }, [score, circumference])
-
   return (
     <svg width={size} height={size} style={{ display: 'block' }}>
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={HAIRLINE} strokeWidth="3"/>
       <circle
         cx={size/2} cy={size/2} r={r} fill="none"
-        stroke={`url(#violet-gold)`} strokeWidth="3"
+        stroke="url(#violet-gold)" strokeWidth="3"
         strokeLinecap="round"
         strokeDasharray={circumference}
         strokeDashoffset={offset}
         transform={`rotate(-90 ${size/2} ${size/2})`}
-        style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
+        style={{ transition: 'stroke-dashoffset 1.1s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
       />
       <defs>
         <linearGradient id="violet-gold" x1="0" y1="0" x2="1" y2="1">
@@ -87,34 +87,99 @@ function ScoreRing({ score, size = 220 }) {
   )
 }
 
+// ── Page ───────────────────────────────────────────────────────────────────
+
+const spring = { type: 'spring', stiffness: 280, damping: 22 }
+const stagger = { show: { transition: { staggerChildren: 0.09 } } }
+const reveal  = { hidden: { opacity: 0, y: 24 }, show: { opacity: 1, y: 0, transition: { duration: 0.65, ease } } }
+
 export default function MatchDetail() {
-  const navigate  = useNavigate()
-  const match     = MOCK_MATCH
-  const scoreDisp = useCountUp(match.match_score, 1000, 500)
+  const navigate = useNavigate()
+  const { id }    = useParams()
+  const { user, loading: authLoading } = useAuth()
+
+  const [data, setData]       = useState(null)   // {profile, match_score, match_reasons, compatibility_breakdown}
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState(null)
+
+  // Pull whatever current itinerary so the matching call has trip context
+  // (companion prefs are scoped per-trip).
+  useEffect(() => {
+    if (authLoading) return
+    if (!user)        { navigate('/signin');   return }
+    if (!id)          { navigate('/dashboard'); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        let itineraryId = null
+        try {
+          const cur = await getCurrentItinerary()
+          itineraryId = cur?.itinerary?.itinerary_id || null
+        } catch { /* no current trip — that's fine */ }
+        const res = await getCotravellerProfile(id, itineraryId)
+        if (cancelled) return
+        setData(res)
+      } catch (err) {
+        if (cancelled) return
+        setError(err?.message || 'Could not load this profile')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [authLoading, user?.uid, id, navigate])
+
+  const profile = data?.profile
+  const score100 = Math.round((Number(data?.match_score) || 0) * 100)
+  const scoreDisp = useCountUp(loading ? null : score100, 1000, 400)
+
+  const tags = useMemo(() => {
+    if (!profile) return []
+    const dim = (profile.interests || []).map(d => DIM_LABEL[d]).filter(Boolean)
+    return [
+      ...dim,
+      PACE_LABEL[profile.pace],
+      BUDGET_LABEL[profile.budget_style],
+      STYLE_LABEL[profile.travel_style],
+    ].filter(Boolean)
+  }, [profile])
+
+  const breakdownItems = useMemo(() => {
+    const b = data?.compatibility_breakdown || {}
+    return [
+      { key: 'interests',    label: 'Shared interests', score: b.interests },
+      { key: 'pace',         label: 'Travel pace',      score: b.pace },
+      { key: 'travel_style', label: 'Travel style',     score: b.travel_style },
+      { key: 'budget',       label: 'Budget range',     score: b.budget },
+    ].filter(x => typeof x.score === 'number')
+  }, [data])
+
+  // ── Render states ────────────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <PageShell onBack={() => navigate(-1)}>
+        <p style={{ textAlign: 'center', marginTop: 80, fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 22, color: `${VIOLET}cc` }}>
+          Reading their profile…
+        </p>
+      </PageShell>
+    )
+  }
+  if (error || !profile) {
+    return (
+      <PageShell onBack={() => navigate(-1)}>
+        <div style={{ textAlign: 'center', marginTop: 80 }}>
+          <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 28, color: BONE, marginBottom: 14 }}>Something didn't load.</p>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE }}>{error || 'Profile unavailable.'}</p>
+        </div>
+      </PageShell>
+    )
+  }
+
+  // ── Real profile ─────────────────────────────────────────────────────────
 
   return (
-    <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
-      <AppBackground accent="#8B5CF6" />
-
-      {/* nav */}
-      <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', padding: '0 48px', display: 'flex', alignItems: 'center', gap: 24, height: 68 }}>
-        <motion.button
-          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-          onClick={() => navigate(-1)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTE, padding: 0, lineHeight: 0, display: 'flex', alignItems: 'center', gap: 8, transition: 'color 0.2s' }}
-          onMouseEnter={e => { e.currentTarget.style.color = BONE }}
-          onMouseLeave={e => { e.currentTarget.style.color = MUTE }}
-        >
-          <ArrowLeft size={18}/>
-          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Back</span>
-        </motion.button>
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-          <SonderNav3D markSize={32}/>
-        </div>
-        <div style={{ width: 80 }}/>
-      </nav>
-
-      {/* 2-column body */}
+    <PageShell onBack={() => navigate(-1)}>
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', maxWidth: 1100, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
 
         {/* LEFT — profile */}
@@ -124,80 +189,100 @@ export default function MatchDetail() {
         >
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 450, background: `radial-gradient(ellipse 90% 60% at 35% 18%, ${VIOLET}1A 0%, transparent 65%)`, pointerEvents: 'none' }}/>
 
-          {/* avatar */}
-          <div style={{ marginBottom: 32, position: 'relative', display: 'inline-block' }}>
+          {/* Avatar */}
+          <div style={{ marginBottom: 24, position: 'relative', display: 'inline-block' }}>
             <motion.div
               animate={{ boxShadow: [`0 0 0 2px ${VIOLET}33, 0 0 32px ${VIOLET}18`, `0 0 0 2px ${VIOLET}77, 0 0 64px ${VIOLET}38`, `0 0 0 2px ${VIOLET}33, 0 0 32px ${VIOLET}18`] }}
               transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ width: 148, height: 148, borderRadius: '50%', overflow: 'hidden' }}
+              style={{ width: 148, height: 148, borderRadius: '50%', overflow: 'hidden', background: 'rgba(232,212,168,0.05)' }}
             >
-              <img src={match.avatar_url} alt={match.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}/>
+              {profile.avatar_url ? (
+                <img src={profile.avatar_url} alt={profile.display_name} referrerPolicy="no-referrer"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}/>
+              ) : (
+                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 56, color: GOLD }}>
+                  {_initialsFromName(profile.display_name)}
+                </div>
+              )}
             </motion.div>
           </div>
 
-          <h1 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 48, color: BONE, lineHeight: 1, marginBottom: 12, letterSpacing: '-0.01em', filter: 'drop-shadow(0 0 24px rgba(244,237,224,0.10))' }}>
-            {match.display_name}
+          <h1 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 48, color: BONE, lineHeight: 1, marginBottom: 8, letterSpacing: '-0.01em' }}>
+            {profile.display_name}
+            <span style={{ marginLeft: 12, fontSize: 22, color: MUTE, fontStyle: 'italic' }}>· {profile.age}</span>
           </h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 22 }}>
-            <MapPin size={11} style={{ color: GOLD }}/>
-            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE }}>{match.location}</span>
-          </div>
-          <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 20, lineHeight: 1.65, color: MUTE, marginBottom: 32 }}>
-            "{match.bio}"
-          </p>
+          {profile.location && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
+              <MapPin size={11} style={{ color: GOLD }}/>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE }}>{profile.location}</span>
+            </div>
+          )}
+          {profile.archetype && (
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.28em', textTransform: 'uppercase', color: VIOLET, marginBottom: 22 }}>
+              {profile.archetype}
+            </p>
+          )}
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 'auto' }}>
-            {match.tags.map((tag, i) => {
-              const colors = [VIOLET, '#14B8A6', '#F59E0B', '#E07060']
-              const c = colors[i % colors.length]
-              return (
-                <motion.span
-                  key={tag}
-                  whileHover={{ scale: 1.08, y: -2, transition: spring }}
-                  whileTap={{ scale: 0.95 }}
-                  style={{ fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: c, fontFamily: '"Inter Tight",sans-serif', padding: '6px 14px', borderRadius: 20, border: `1px solid ${c}44`, background: `${c}12`, cursor: 'default', display: 'inline-block' }}
-                >
-                  {tag}
-                </motion.span>
-              )
-            })}
-          </div>
+          {/* Tags */}
+          {tags.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 'auto' }}>
+              {tags.map((tag, i) => {
+                const colors = [VIOLET, '#14B8A6', '#F59E0B', '#E07060', GOLD]
+                const c = colors[i % colors.length]
+                return (
+                  <motion.span
+                    key={`${tag}-${i}`}
+                    whileHover={{ y: -2, transition: spring }}
+                    style={{
+                      fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase',
+                      color: c, fontFamily: '"Inter Tight",sans-serif',
+                      padding: '6px 12px', borderRadius: 20,
+                      border: `1px solid ${c}44`, background: `${c}12`,
+                    }}
+                  >
+                    {tag}
+                  </motion.span>
+                )
+              })}
+            </div>
+          )}
 
           {/* CTAs */}
-          <div style={{ marginTop: 52, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ marginTop: 44, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <motion.button
-              whileHover={{ y: -2, boxShadow: `0 0 64px ${VIOLET}55, 0 0 128px ${VIOLET}22`, transition: spring }}
+              whileHover={{ y: -2 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => navigate('/chat/session-1')}
-              style={{ width: '100%', padding: '18px 0', background: `linear-gradient(135deg, ${VIOLET} 0%, #6D28D9 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff', boxShadow: `0 0 48px ${VIOLET}33, 0 0 96px ${VIOLET}11` }}
+              disabled
+              title="Available once this traveller joins Sonder"
+              style={{ width: '100%', padding: '17px 0',
+                background: `linear-gradient(135deg, ${VIOLET}66 0%, #6D28D966 100%)`,
+                border: 'none', borderRadius: 12, cursor: 'not-allowed',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em',
+                textTransform: 'uppercase', fontWeight: 500, color: 'rgba(255,255,255,0.7)' }}
             >
-              <MessageCircle size={14}/> Start a conversation
+              <MessageCircle size={13}/> Available when they join
             </motion.button>
-            <motion.button
-              whileHover={{ borderColor: `${VIOLET}44`, color: BONE, background: `${VIOLET}0A`, transition: { duration: 0.2 } }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => navigate('/approve/1')}
-              style={{ width: '100%', padding: '15px 0', background: 'rgba(212,182,134,0.04)', border: `1px solid ${HAIRLINE}`, borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE, transition: 'all 0.2s' }}
-            >
-              Review match
-            </motion.button>
+            <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 12, color: MUTE, textAlign: 'center', margin: 0, lineHeight: 1.5 }}>
+              Sonder-curated traveller — chat unlocks when {profile.display_name.split(' ')[0]} signs up.
+            </p>
           </div>
         </motion.div>
 
         {/* RIGHT — score + compatibility */}
         <motion.div
           variants={stagger} initial="hidden" animate="show"
-          style={{ padding: '60px 52px', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}
+          style={{ padding: '60px 52px', display: 'flex', flexDirection: 'column' }}
         >
           {/* Score hero */}
-          <motion.div variants={reveal} style={{ marginBottom: 52, display: 'flex', alignItems: 'center', gap: 36 }}>
+          <motion.div variants={reveal} style={{ marginBottom: 44, display: 'flex', alignItems: 'center', gap: 32 }}>
             <div style={{ position: 'relative', flexShrink: 0 }}>
-              <ScoreRing score={match.match_score} size={180}/>
+              <ScoreRing score={score100} size={170}/>
               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 <motion.span
                   animate={{ filter: [`drop-shadow(0 0 12px ${VIOLET}88)`, `drop-shadow(0 0 32px ${VIOLET}cc)`, `drop-shadow(0 0 12px ${VIOLET}88)`] }}
                   transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
-                  style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 72, lineHeight: 1, color: BONE, letterSpacing: '-0.04em' }}
+                  style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 64, lineHeight: 1, color: BONE, letterSpacing: '-0.04em' }}
                 >
                   {scoreDisp}
                 </motion.span>
@@ -205,64 +290,95 @@ export default function MatchDetail() {
               </div>
             </div>
             <div>
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 10 }}>Compatibility</p>
-              <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 36, color: BONE, lineHeight: 1.1 }}>
-                Nearly<br/>perfect.
+              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 8 }}>Compatibility</p>
+              <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 30, color: BONE, lineHeight: 1.1 }}>
+                {score100 >= 85 ? 'Nearly perfect.' : score100 >= 65 ? 'Strong fit.' : score100 >= 45 ? 'Worth exploring.' : 'Different rhythms.'}
               </h2>
             </div>
           </motion.div>
 
-          <div style={{ height: 1, background: `linear-gradient(to right, ${HAIRLINE}, ${VIOLET}44, ${HAIRLINE})`, marginBottom: 44 }}/>
+          <div style={{ height: 1, background: `linear-gradient(to right, ${HAIRLINE}, ${VIOLET}44, ${HAIRLINE})`, marginBottom: 36 }}/>
 
-          {/* compatibility list */}
-          <motion.div variants={reveal} style={{ marginBottom: 52 }}>
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 28 }}>Why you match</p>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {match.compatibility.map((item, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, x: -20 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.45, delay: i * 0.08, ease }}
-                  whileHover={{ x: 6, transition: { duration: 0.18 } }}
-                  style={{ display: 'flex', alignItems: 'flex-start', gap: 16, padding: '14px 0', borderBottom: `1px solid ${HAIRLINE}`, cursor: 'default' }}
-                >
-                  <div style={{ width: 22, height: 22, borderRadius: '50%', border: `1px solid ${VIOLET}44`, background: `${VIOLET}12`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
-                    <Check size={9} style={{ color: VIOLET }}/>
-                  </div>
-                  <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, lineHeight: 1.65, color: BONE }}>{item}</p>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
+          {/* Match reasons */}
+          {Array.isArray(data?.match_reasons) && data.match_reasons.length > 0 && (
+            <motion.div variants={reveal} style={{ marginBottom: 44 }}>
+              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 24 }}>Why you match</p>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {data.match_reasons.map((reason, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, x: -16 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.4, delay: i * 0.07, ease }}
+                    style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '13px 0', borderBottom: `1px solid ${HAIRLINE}` }}
+                  >
+                    <div style={{ width: 22, height: 22, borderRadius: '50%', border: `1px solid ${VIOLET}44`, background: `${VIOLET}12`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                      <Check size={9} style={{ color: VIOLET }}/>
+                    </div>
+                    <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, lineHeight: 1.6, color: BONE, margin: 0 }}>{reason}</p>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          )}
 
-          <div style={{ height: 1, background: `linear-gradient(to right, ${HAIRLINE}, ${VIOLET}44, ${HAIRLINE})`, marginBottom: 44 }}/>
-
-          {/* topics */}
-          <motion.div variants={reveal}>
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 18 }}>Start the conversation</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {match.topics.map((t, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 14 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.4, delay: i * 0.07, ease }}
-                  whileHover={{ x: 6, borderColor: `${VIOLET}55`, background: `${VIOLET}0A`, transition: { duration: 0.18 } }}
-                  whileTap={{ scale: 0.99 }}
-                  style={{ padding: '18px 20px', borderRadius: 14, border: `1px solid ${HAIRLINE}`, background: 'rgba(232,212,168,0.02)', cursor: 'pointer', transition: 'border-color 0.2s, background 0.2s' }}
-                  onClick={() => navigate('/chat/session-1')}
-                >
-                  <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 17, lineHeight: 1.5, color: BONE }}>
-                    "{t}"
-                  </p>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
+          {/* Breakdown bars */}
+          {breakdownItems.length > 0 && (
+            <motion.div variants={reveal}>
+              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 18 }}>Breakdown</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {breakdownItems.map(({ key, label, score }) => {
+                  const pct = Math.round(score * 100)
+                  return (
+                    <div key={key}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: BONE, letterSpacing: '0.04em' }}>{label}</span>
+                        <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: MUTE }}>{pct}%</span>
+                      </div>
+                      <div style={{ position: 'relative', height: 4, background: 'rgba(232,212,168,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${pct}%` }}
+                          transition={{ duration: 0.9, delay: 0.2, ease }}
+                          style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, ${VIOLET} 0%, ${GOLD} 100%)`, borderRadius: 2 }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </motion.div>
+          )}
         </motion.div>
+      </div>
+    </PageShell>
+  )
+}
+
+// ── Page chrome ────────────────────────────────────────────────────────────
+
+function PageShell({ children, onBack }) {
+  return (
+    <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
+      {/* gentle ambient — keeps the page from feeling flat without the
+          violet-everywhere AppBackground from the old mock version */}
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, background: `radial-gradient(ellipse 85% 70% at 50% 25%, ${VIOLET}14 0%, transparent 65%)` }}/>
+
+      <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', padding: '0 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
+        <motion.button
+          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+          onClick={onBack}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTE, padding: 0, lineHeight: 0, display: 'flex', alignItems: 'center', gap: 8 }}
+        >
+          <ArrowLeft size={16}/>
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Back</span>
+        </motion.button>
+        <SonderNav3D markSize={28}/>
+        <div style={{ width: 80 }}/>
+      </nav>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1 }}>
+        {children}
       </div>
     </div>
   )

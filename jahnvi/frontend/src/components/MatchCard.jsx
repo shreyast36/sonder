@@ -22,23 +22,41 @@ function MatchRing({ pct = 92 }) {
   )
 }
 
+function Initials({ name, size = 50 }) {
+  const initials = (name || '?')
+    .split(/\s+/).filter(Boolean).slice(0, 2).map(s => s[0].toUpperCase()).join('') || '?'
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%', flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(212,182,134,0.10)',
+      border: `1px solid ${HAIRLINE}`,
+      color: GOLD, fontFamily: '"Cormorant Garamond",serif', fontSize: size * 0.4,
+    }}>{initials}</div>
+  )
+}
+
 export default function MatchCard({ match, onClick }) {
   const {
-    display_name = 'Priya Mehta',
+    display_name = '',
     avatar_url,
-    location = 'Mumbai, India',
-    match_score = 92,
-    tags = ['Relaxed', 'Culture', 'Mid-range'],
+    location = '',
+    match_score = 0,
+    tags = [],
   } = match ?? {}
 
   return (
     <LuxCard style={{ width: '100%' }} onClick={onClick}>
       <div style={{ padding: '18px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
-        <img
-          src={avatar_url || 'https://i.pravatar.cc/80?img=47'}
-          alt={display_name}
-          style={{ width: 50, height: 50, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
-        />
+        {avatar_url ? (
+          <img
+            src={avatar_url}
+            alt={display_name}
+            style={{ width: 50, height: 50, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+          />
+        ) : (
+          <Initials name={display_name} size={50} />
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{
             color: BONE, fontSize: 15,

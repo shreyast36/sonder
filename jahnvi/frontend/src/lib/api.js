@@ -131,6 +131,21 @@ export async function regenerateCotravellers(excludedProfileIds, feedback) {
   return post('/api/cotraveller/regenerate', { excluded_profile_ids: excludedProfileIds, feedback })
 }
 
+// One-shot fetch of a co-traveller's full profile + match score against the
+// current user. Falls back to the cached persona signals so existing users
+// see real (non-28%) scores immediately.
+export async function getCotravellerProfile(profileId, itineraryId) {
+  const params = new URLSearchParams()
+  if (itineraryId) params.set('itinerary_id', itineraryId)
+  try {
+    const cached = JSON.parse(localStorage.getItem('sonder_persona_v1') || 'null')
+    ;(cached?.persona?.top_push      || []).forEach(v => params.append('top_push', v))
+    ;(cached?.persona?.top_interests || []).forEach(v => params.append('top_interests', v))
+  } catch { /* noop */ }
+  const q = params.toString() ? `?${params.toString()}` : ''
+  return get(`/api/cotraveller/profile/${encodeURIComponent(profileId)}${q}`)
+}
+
 export async function startChat(profileId, itineraryId) {
   return post('/api/chat/start', { profile_id: profileId, itinerary_id: itineraryId })
 }

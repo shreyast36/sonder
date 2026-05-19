@@ -7,7 +7,7 @@ plan-trip and stuffs them into the `done` SSE payload.
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from shared.schemas import CoTravellerMatch, UserProfile, TripConstraints, PersonaQuestionAnswers
 from mushahid.auth import verify_token
@@ -136,6 +136,41 @@ async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verif
     except Exception as e:
         logger.error("cotraveller match failed for %s: %s", uid, e, exc_info=True)
         raise HTTPException(status_code=502, detail=f"matching failed: {type(e).__name__}: {e}") from e
+
+
+@router.get("/cotraveller/profile/{profile_id}", response_model=CoTravellerMatch)
+async def get_cotraveller_profile(
+    profile_id: str,
+    itinerary_id: str | None = Query(None),
+    top_push:      list[str] = Query(default_factory=list),
+    top_interests: list[str] = Query(default_factory=list),
+    uid: str = Depends(verify_token),
+):
+    """Fetch a single co-traveller by id and score it against the signed-in
+    user. Returns the full CoTravellerMatch so the detail page can show
+    score, reasons, and compatibility breakdown without recomputing."""
+    from shreyas.retrieval.search import get_cotraveller_by_id
+    from shreyas.cotraveller.matching import score_compatibility
+    try:
+        candidate = await get_cotraveller_by_id(profile_id)
+        if candidate is None:
+            raise HTTPException(status_code=404, detail="Co-traveller not found")
+        profile = await _load_user_profile(uid, itinerary_id)
+        # Same fallback path as the match list: backfill signals from query
+        # params (cached persona on the client) if Firestore doesn't have them.
+        cs = dict(profile.compatibility_signals or {})
+        if not cs.get("top_interests") and top_interests:
+            cs["top_interests"] = top_interests
+        if not cs.get("top_push") and top_push:
+            cs["top_push"] = top_push
+        if cs != (profile.compatibility_signals or {}):
+            profile = profile.model_copy(update={"compatibility_signals": cs})
+        return score_compatibility(profile, candidate)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("get_cotraveller_profile failed for %s: %s", profile_id, e, exc_info=True)
+        raise HTTPException(status_code=502, detail=f"profile fetch failed: {type(e).__name__}: {e}") from e
 
 
 class RegenerateMatchesRequest(BaseModel):
