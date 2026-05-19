@@ -6,6 +6,7 @@ import { ArrowLeft, Mail, Check, Bookmark } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D, SonderMark3D } from '../components/SonderMark3D'
 import { emailItinerary, saveItineraryAsCurrent, getCurrentItinerary } from '../lib/api'
+import { useDestinationPhoto } from '../lib/destinationPhoto'
 import { useAuth } from '../hooks/useAuth'
 import { useSSE } from '../hooks/useSSE'
 import { auth } from '../lib/firebase'
@@ -1678,6 +1679,75 @@ function PhoneLoading({ phase }) {
   )
 }
 
+function PhoneDestinationHeader({ dest, dateRange }) {
+  // Wikipedia REST API photo for the destination, when we can find one.
+  // Falls back to the warm sky-tinted gradient header if Wikipedia 404s or
+  // returns nothing usable.
+  const photo = useDestinationPhoto(dest?.city, dest?.country)
+  if (photo) {
+    return (
+      <div style={{ position: 'relative', height: 168, overflow: 'hidden', borderBottom: `1px solid ${HAIRLINE}` }}>
+        {/* Cover photo */}
+        <img
+          src={photo}
+          alt={dest?.city || ''}
+          referrerPolicy="no-referrer"
+          style={{
+            position: 'absolute', inset: 0, width: '100%', height: '100%',
+            objectFit: 'cover', objectPosition: 'center',
+            filter: 'saturate(0.92) brightness(0.78)',
+          }}
+        />
+        {/* Bottom-heavy darken so the text below sits on a quiet plate */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'linear-gradient(180deg, rgba(8,8,7,0.10) 0%, rgba(8,8,7,0.55) 55%, rgba(8,8,7,0.85) 100%)',
+        }}/>
+        {/* Warm gilt wash so it matches brand temperature on any photo */}
+        <div style={{
+          position: 'absolute', inset: 0, mixBlendMode: 'overlay',
+          background: 'linear-gradient(160deg, rgba(212,182,134,0.10) 0%, transparent 45%, rgba(40,28,14,0.20) 100%)',
+        }}/>
+        {/* Text */}
+        <div style={{ position: 'absolute', left: 26, right: 26, bottom: 14 }}>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: 'rgba(244,237,224,0.75)', margin: 0, marginBottom: 4 }}>
+            Your itinerary
+          </p>
+          <h1 style={{
+            fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 30,
+            color: BONE, lineHeight: 1.05, letterSpacing: '-0.02em', margin: 0,
+            textShadow: '0 2px 18px rgba(0,0,0,0.6)',
+          }}>
+            {dest.city || 'Your trip'}{dest.country ? `, ${dest.country}` : ''}
+          </h1>
+          {dateRange && (
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: 'rgba(244,237,224,0.85)', margin: '6px 0 0', textShadow: '0 1px 8px rgba(0,0,0,0.7)' }}>
+              {dateRange}
+            </p>
+          )}
+        </div>
+      </div>
+    )
+  }
+  // Fallback — the original sky-tinted header.
+  return (
+    <div style={{ padding: '6px 28px 18px', borderBottom: `1px solid ${HAIRLINE}`, position: 'relative' }}>
+      <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse 90% 100% at 70% 20%, ${SKY}10 0%, transparent 70%)`, pointerEvents: 'none' }}/>
+      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, marginBottom: 6, position: 'relative' }}>Your itinerary</p>
+      <motion.h1
+        animate={{ filter: ['drop-shadow(0 0 12px rgba(212,182,134,0.18))', 'drop-shadow(0 0 28px rgba(212,182,134,0.42))', 'drop-shadow(0 0 12px rgba(212,182,134,0.18))'] }}
+        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+        style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 32, color: BONE, lineHeight: 1.05, letterSpacing: '-0.02em', position: 'relative' }}
+      >
+        {dest.city || 'Your trip'}{dest.country ? `, ${dest.country}` : ''}
+      </motion.h1>
+      {dateRange && (
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: MUTE, marginTop: 8, position: 'relative' }}>{dateRange}</p>
+      )}
+    </div>
+  )
+}
+
 function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isStreaming, scrollRef }) {
   // Auto-scroll the active day pill into the center of the strip when the
   // selected day changes (e.g. swipe gesture, or click from the Index).
@@ -1710,21 +1780,7 @@ function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isS
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
-      {/* Header */}
-      <div style={{ padding: '6px 28px 18px', borderBottom: `1px solid ${HAIRLINE}`, position: 'relative' }}>
-        <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse 90% 100% at 70% 20%, ${SKY}10 0%, transparent 70%)`, pointerEvents: 'none' }}/>
-        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, marginBottom: 6, position: 'relative' }}>Your itinerary</p>
-        <motion.h1
-          animate={{ filter: ['drop-shadow(0 0 12px rgba(212,182,134,0.18))', 'drop-shadow(0 0 28px rgba(212,182,134,0.42))', 'drop-shadow(0 0 12px rgba(212,182,134,0.18))'] }}
-          transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-          style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 32, color: BONE, lineHeight: 1.05, letterSpacing: '-0.02em', position: 'relative' }}
-        >
-          {dest.city || 'Your trip'}{dest.country ? `, ${dest.country}` : ''}
-        </motion.h1>
-        {dateRange && (
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: MUTE, marginTop: 8, position: 'relative' }}>{dateRange}</p>
-        )}
-      </div>
+      <PhoneDestinationHeader dest={dest} dateRange={dateRange}/>
 
       {/* Day pill strip */}
       <div ref={stripRef} style={{ flexShrink: 0, borderBottom: `1px solid ${HAIRLINE}`, padding: '12px 16px', display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>

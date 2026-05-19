@@ -8,6 +8,7 @@ import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
 import { getCurrentItinerary, getCotravellers } from '../lib/api'
+import { useDestinationPhoto } from '../lib/destinationPhoto'
 import { storage } from '../lib/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { updateProfile } from 'firebase/auth'
@@ -327,6 +328,7 @@ export default function Dashboard() {
   }, [user?.uid])
 
   const trip = deriveTripCard(storedItinerary)
+  const tripPhoto = useDestinationPhoto(trip?.city, trip?.country)
   const daysAway  = useCountUp(trip?.daysAway ?? 0, 1000, 600)
 
   // displayName changes via updateProfile don't refire onAuthStateChanged, so
@@ -542,6 +544,35 @@ export default function Dashboard() {
               style={{ cursor: 'pointer', padding: 1, borderRadius: 26, background: 'linear-gradient(145deg,rgba(232,212,168,0.30) 0%,rgba(8,8,7,0) 50%,rgba(232,212,168,0.12) 100%)', boxShadow: '0 24px 72px rgba(0,0,0,0.55), 0 4px 16px rgba(0,0,0,0.30), inset 0 1px 0 rgba(232,212,168,0.10)' }}
             >
               <div style={{ background: 'linear-gradient(160deg,rgba(24,20,13,0.99) 0%,rgba(14,11,8,1) 100%)', borderRadius: 25, padding: '40px 40px 32px', position: 'relative', overflow: 'hidden' }}>
+                {/* Destination photo background — Wikipedia REST API, falls
+                    back invisible when no image is found. */}
+                {tripPhoto && (
+                  <>
+                    <img
+                      src={tripPhoto}
+                      alt={trip.city}
+                      referrerPolicy="no-referrer"
+                      style={{
+                        position: 'absolute', inset: 0, width: '100%', height: '100%',
+                        objectFit: 'cover', objectPosition: 'center',
+                        filter: 'saturate(0.85) brightness(0.55)',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                    {/* Top-to-bottom darken so the live-dot + Destination
+                        eyebrow read cleanly while the bottom still shows photo. */}
+                    <div style={{
+                      position: 'absolute', inset: 0, pointerEvents: 'none',
+                      background: 'linear-gradient(180deg, rgba(8,8,7,0.55) 0%, rgba(14,11,8,0.40) 40%, rgba(14,11,8,0.75) 100%)',
+                    }}/>
+                    {/* Warm gilt wash overlay for brand cohesion */}
+                    <div style={{
+                      position: 'absolute', inset: 0, pointerEvents: 'none',
+                      mixBlendMode: 'overlay',
+                      background: 'linear-gradient(160deg, rgba(212,182,134,0.10) 0%, transparent 50%, rgba(40,28,14,0.20) 100%)',
+                    }}/>
+                  </>
+                )}
                 <div style={{ position: 'absolute', top: -80, right: -80, width: 360, height: 360, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(245,158,11,0.12) 0%, rgba(212,182,134,0.06) 45%, transparent 70%)', pointerEvents: 'none' }}/>
                 <div style={{ position: 'absolute', bottom: -40, left: -40, width: 240, height: 240, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(180,138,68,0.08) 0%, transparent 65%)', pointerEvents: 'none' }}/>
 
