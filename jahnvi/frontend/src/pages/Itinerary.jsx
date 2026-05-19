@@ -226,21 +226,14 @@ export default function Itinerary() {
   }
 
   // ── Loading / error states ─────────────────────────────────────────────────
-  if (error) {
-    return (
-      <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48, textAlign: 'center' }}>
-        <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 32, color: BONE, marginBottom: 16, position: 'relative', zIndex: 1 }}>Something didn't load.</p>
-        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, marginBottom: 32, maxWidth: 480, position: 'relative', zIndex: 1 }}>{error}</p>
-        <motion.button
-          whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
-          onClick={() => navigate('/persona-reveal')}
-          style={{ minWidth: 240, padding: '16px 32px', background: `linear-gradient(135deg, ${SKY} 0%, #0284C7 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff', position: 'relative', zIndex: 1 }}
-        >
-          Back to your persona
-        </motion.button>
-      </div>
-    )
-  }
+  // NOTE: We intentionally do NOT early-return here. React's rules of hooks
+  // require a stable hook count across renders, and many hooks (viewport
+  // tracking, boot state, wheel-hijack, scrollbar CSS injection, etc.) are
+  // declared below this point. Bailing out early once `error` flips truthy
+  // would render fewer hooks than the previous render and throw
+  // "Rendered fewer hooks than expected." Instead we capture the error JSX
+  // and return it after every hook has been called (just above the main
+  // `return` below).
 
   // Build a render target that combines the final itinerary (when ready) with
   // partial days as they stream in. User sees Day 1 within ~15s of submitting
@@ -381,6 +374,25 @@ export default function Itinerary() {
     `
     document.head.appendChild(s)
   }, [])
+
+  // Render the error state now that every hook above has executed. Keeping
+  // this branch below all hook calls preserves a stable hook count between
+  // renders (see comment near the original error-state location above).
+  if (error) {
+    return (
+      <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48, textAlign: 'center' }}>
+        <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 32, color: BONE, marginBottom: 16, position: 'relative', zIndex: 1 }}>Something didn't load.</p>
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, marginBottom: 32, maxWidth: 480, position: 'relative', zIndex: 1 }}>{error}</p>
+        <motion.button
+          whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
+          onClick={() => navigate('/persona-reveal')}
+          style={{ minWidth: 240, padding: '16px 32px', background: `linear-gradient(135deg, ${SKY} 0%, #0284C7 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff', position: 'relative', zIndex: 1 }}
+        >
+          Back to your persona
+        </motion.button>
+      </div>
+    )
+  }
 
   return (
     <div style={{ height: vh, overflow: 'hidden', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
