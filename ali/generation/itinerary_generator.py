@@ -54,6 +54,7 @@ async def generate_itinerary_by_day(
     depth = 0
     in_string = False
     escape_next = False
+    current_string = ""   # accumulates characters of the current JSON string token
     day_start_pos = None  # position in buffer where current day object opened
 
     async for chunk in stream_request("itinerary_generation", prompt, ITINERARY_SYSTEM_PROMPT):
@@ -75,18 +76,21 @@ async def generate_itinerary_by_day(
                 i += 1
                 continue
             if c == '"':
+                if in_string:
+                    # Closing quote — check if this string token was the "days" key
+                    if not days_started and current_string == "days":
+                        days_started = True
+                    current_string = ""
                 in_string = not in_string
                 i += 1
                 continue
             if in_string:
+                current_string += c
                 i += 1
                 continue
 
             # Outside strings — track structure
             if not days_started:
-                # Look for the "days" array opening
-                if buffer[i:].startswith('"days"'):
-                    days_started = True
                 i += 1
                 continue
 
