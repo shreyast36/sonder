@@ -65,6 +65,40 @@ async def route_request(task_type: str, prompt: str, system: str = "", context: 
     raise last_exc
 
 
+async def route_request_structured(
+    task_type: str,
+    prompt: str,
+    system: str = "",
+    push_ids: list[str] | None = None,
+    pull_ids: list[str] | None = None,
+    context: dict | None = None,
+) -> str:
+    """
+    Like route_request but uses enum-constrained tool-use for Anthropic clients
+    to prevent dimension ID hallucination. Falls back to plain route_request for
+    non-Anthropic providers.
+    """
+    tier = classify(task_type, context)
+    providers = _build_provider_list(tier)
+
+    last_exc: Exception = RuntimeError("No providers configured")
+    for provider in providers:
+        try:
+            client = _get_client_for_provider(tier, provider)
+            if provider == "anthropic" and hasattr(client, "complete_with_tools"):
+                return await client.complete_with_tools(
+                    prompt, system, push_ids=push_ids, pull_ids=pull_ids
+                )
+            return await client.complete(prompt, system)
+        except ValueError:
+            continue
+        except Exception as exc:
+            logger.warning("Provider %s failed for task %s: %s", provider, task_type, exc)
+            last_exc = exc
+
+    raise last_exc
+
+
 async def stream_request(task_type: str, prompt: str, system: str = "", context: dict | None = None):
     """
     Streaming version of route_request. Yields raw token strings.
