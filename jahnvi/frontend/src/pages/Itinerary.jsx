@@ -275,9 +275,65 @@ export default function Itinerary() {
     if (raw) personaDescriptor = JSON.parse(raw)?.persona?.descriptor || null
   } catch { /* noop */ }
 
+  // ── Phone behaviour: power-on, autoscale, wheel routing ────────────────────
+  // Power-on boot sequence: black screen → gilt logo → app. Just one phase
+  // gate so the boot runs once per page mount.
+  const [booted, setBooted] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setBooted(true), 1700)
+    return () => clearTimeout(t)
+  }, [])
+
+  // Scale the phone down on short viewports so it always fits without a page
+  // scrollbar. The page itself is locked to 100vh — the phone is the only
+  // scroll surface, just like a real device.
+  const [phoneScale, setPhoneScale] = useState(1)
+  useEffect(() => {
+    const compute = () => {
+      const navH = 68
+      const verticalPadding = 64
+      const avail = window.innerHeight - navH - verticalPadding
+      setPhoneScale(Math.min(1, avail / (PHONE_H + 24)))
+    }
+    compute()
+    window.addEventListener('resize', compute)
+    return () => window.removeEventListener('resize', compute)
+  }, [])
+
+  // Route every wheel event into the phone's inner scroll, so the user can
+  // mousewheel anywhere on the page and the phone scrolls — like they're
+  // looking at a device, not a webpage.
+  const phoneScrollRef = useRef(null)
+  const bootedRef = useRef(false)
+  useEffect(() => { bootedRef.current = booted }, [booted])
+  useEffect(() => {
+    const onWheel = (e) => {
+      if (!bootedRef.current) return
+      const el = phoneScrollRef.current
+      if (!el) return
+      // Don't hijack scroll over the top nav (so its buttons stay usable).
+      if (e.clientY < 68) return
+      el.scrollTop += e.deltaY
+      e.preventDefault()
+    }
+    window.addEventListener('wheel', onWheel, { passive: false })
+    return () => window.removeEventListener('wheel', onWheel)
+  }, [])
+
+  // Inject scrollbar-hiding CSS once. Real phones don't show track chrome.
+  useEffect(() => {
+    if (document.getElementById('sonder-phone-scroll-css')) return
+    const s = document.createElement('style')
+    s.id = 'sonder-phone-scroll-css'
+    s.textContent = `
+      .sonder-phone-scroll::-webkit-scrollbar { width: 0 !important; height: 0 !important; }
+      .sonder-phone-scroll { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+    `
+    document.head.appendChild(s)
+  }, [])
 
   return (
-    <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100vh', overflow: 'hidden', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
       <AppBackground accent={SKY}/>
 
       {/* nav */}
@@ -325,22 +381,21 @@ export default function Itinerary() {
         </div>
       </nav>
 
-      {/* Bespoke print spread — massive ghosted destination, paper grain,
-          edition mark, handwritten curator note. Phone is the artefact. */}
+      {/* Bespoke print spread. Page is exactly 100vh; the phone is the only
+          surface that scrolls. Mousewheel anywhere is routed into it. */}
       <main style={{
         flex: 1, position: 'relative', zIndex: 1,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: isWide ? '40px 64px 80px' : '24px 24px 64px',
+        padding: 0,
         overflow: 'hidden',
-        minHeight: 920,
       }}>
         <PaperGrain/>
         <GoldVignette/>
         <GhostDestination dest={dest} showingItinerary={showingItinerary}/>
-        <EditionMark itinerary={itinerary || renderTarget}/>
-        <Marginalia firstName={firstName} personaDescriptor={personaDescriptor} showingItinerary={showingItinerary}/>
+        {isWide && <EditionMark itinerary={itinerary || renderTarget}/>}
+        {isWide && <Marginalia firstName={firstName} personaDescriptor={personaDescriptor} showingItinerary={showingItinerary}/>}
 
-        <PhoneStage>
+        <PhoneStage scale={phoneScale}>
           <PhoneFrame>
             <PhoneStatusBar/>
             {!showingItinerary ? (
@@ -354,17 +409,23 @@ export default function Itinerary() {
                 setDay={setDay}
                 day={day}
                 isStreaming={isStreaming}
+                scrollRef={phoneScrollRef}
               />
             )}
             <PhoneHomeIndicator/>
+            <AnimatePresence>
+              {!booted && <PhoneBootScreen key="boot"/>}
+            </AnimatePresence>
           </PhoneFrame>
         </PhoneStage>
 
-        <CuratorNote
-          dateRange={dateRange}
-          firstName={firstName}
-          showingItinerary={showingItinerary}
-        />
+        {isWide && (
+          <CuratorNote
+            dateRange={dateRange}
+            firstName={firstName}
+            showingItinerary={showingItinerary}
+          />
+        )}
       </main>
     </div>
   )
@@ -583,7 +644,68 @@ function CuratorNote({ dateRange, firstName, showingItinerary }) {
   )
 }
 
-function PhoneStage({ children }) {
+function PhoneBootScreen() {
+  return (
+    <motion.div
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: 0.55, ease } }}
+      style={{
+        position: 'absolute', inset: 0, background: '#000', zIndex: 20,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        borderRadius: SCREEN_RADIUS,
+        overflow: 'hidden',
+      }}
+    >
+      {/* Brightness sweep — like the panel actually waking. */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: [0, 0.35, 0.6, 0.3] }}
+        transition={{ duration: 1.4, times: [0, 0.5, 0.8, 1], ease: 'easeOut' }}
+        style={{
+          position: 'absolute', inset: 0,
+          background: 'radial-gradient(ellipse 70% 50% at 50% 50%, rgba(240,220,176,0.18) 0%, transparent 70%)',
+          pointerEvents: 'none',
+        }}
+      />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.82, filter: 'blur(8px)' }}
+        animate={{
+          opacity: [0, 1, 1, 1],
+          scale: [0.82, 1, 1, 0.97],
+          filter: ['blur(8px)', 'blur(0px)', 'blur(0px)', 'blur(1px)'],
+        }}
+        transition={{ duration: 1.5, times: [0, 0.45, 0.78, 1], ease: 'easeOut' }}
+        style={{
+          fontFamily: '"Cormorant Garamond",serif',
+          fontStyle: 'italic', fontWeight: 400,
+          fontSize: 132, lineHeight: 1,
+          backgroundImage: 'linear-gradient(180deg, #f0dcb0 0%, #d4b686 55%, #8a6f4a 100%)',
+          WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+          WebkitTextFillColor: 'transparent',
+          filter: 'drop-shadow(0 0 32px rgba(240,220,176,0.55))',
+        }}
+      >
+        S
+      </motion.div>
+      {/* Subtle "Sonder" wordmark below the S */}
+      <motion.span
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: [0, 0.7, 0.7, 0], y: [8, 0, 0, -4] }}
+        transition={{ duration: 1.5, times: [0, 0.55, 0.85, 1], ease: 'easeOut' }}
+        style={{
+          position: 'absolute', bottom: 96,
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+          letterSpacing: '0.48em', textTransform: 'uppercase',
+          color: GOLD,
+        }}
+      >
+        Sonder
+      </motion.span>
+    </motion.div>
+  )
+}
+
+function PhoneStage({ children, scale = 1 }) {
   // Mouse-tracked 3D tilt with spring smoothing — the phone reads as a
   // physical object the cursor is holding.
   const rawX = useMotionValue(0)
@@ -612,7 +734,7 @@ function PhoneStage({ children }) {
       transition={{ duration: 1, ease, delay: 0.15 }}
       onMouseMove={onMove}
       onMouseLeave={onLeave}
-      style={{ position: 'relative', zIndex: 1, perspective: 1600 }}
+      style={{ position: 'relative', zIndex: 1, perspective: 1600, transform: `scale(${scale})`, transformOrigin: 'center center' }}
     >
       {/* Pool of warm gold light beneath the phone — velvet plinth */}
       <div style={{
@@ -815,7 +937,7 @@ function PhoneLoading({ phase }) {
   )
 }
 
-function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isStreaming }) {
+function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isStreaming, scrollRef }) {
   // Auto-scroll the active day pill into the center of the strip when the
   // selected day changes (e.g. swipe gesture, or click from the Index).
   const stripRef = useRef(null)
@@ -899,23 +1021,29 @@ function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isS
         )}
       </div>
 
-      {/* Swipeable scrollable content. drag handles the day swipe; AnimatePresence
-          cross-fades the day content when key changes. */}
-      <AnimatePresence mode="wait" custom={{ canSwipeLeft, canSwipeRight }}>
-        <motion.div
-          key={safeActiveDay}
-          drag={(days?.length ?? 1) > 1 ? 'x' : false}
-          dragConstraints={{ left: 0, right: 0 }}
-          dragElastic={0.22}
-          onDragEnd={handleDragEnd}
-          initial={{ opacity: 0, x: 28 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -28 }}
-          transition={{ duration: 0.32, ease }}
-          style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0 24px 40px', scrollbarWidth: 'thin', cursor: (days?.length ?? 1) > 1 ? 'grab' : 'auto', touchAction: 'pan-y' }}
-        >
-          {day && (
-            <>
+      {/* Stable scroll container — the page's wheel router targets this ref
+          so the phone is the sole scroll surface. Day swap happens inside it
+          via AnimatePresence + drag for swipe paging. */}
+      <div
+        ref={scrollRef}
+        className="sonder-phone-scroll"
+        style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch' }}
+      >
+        <AnimatePresence mode="wait" custom={{ canSwipeLeft, canSwipeRight }}>
+          <motion.div
+            key={safeActiveDay}
+            drag={(days?.length ?? 1) > 1 ? 'x' : false}
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.22}
+            onDragEnd={handleDragEnd}
+            initial={{ opacity: 0, x: 28 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -28 }}
+            transition={{ duration: 0.32, ease }}
+            style={{ padding: '0 24px 40px', cursor: (days?.length ?? 1) > 1 ? 'grab' : 'auto', touchAction: 'pan-y' }}
+          >
+            {day && (
+              <>
               {/* Day intro */}
               <div style={{ padding: '22px 0 18px', borderBottom: `1px solid ${HAIRLINE}` }}>
                 <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, marginBottom: 6 }}>
@@ -964,6 +1092,7 @@ function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isS
           )}
         </motion.div>
       </AnimatePresence>
+      </div>
     </div>
   )
 }
