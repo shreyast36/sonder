@@ -10,6 +10,16 @@ import { inferPersona } from '../lib/api'
 
 const ORANGE = '#F97316'
 const spring = { type: 'spring', stiffness: 280, damping: 22 }
+const PERSONA_CACHE_KEY = 'sonder_persona_v1'
+
+// Tiny stable hash so we can auto-invalidate the persona cache when the
+// underlying trip answers actually change. Not cryptographic — collision
+// resistance doesn't matter, only equality detection.
+function _signature(s) {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0
+  return h
+}
 
 export default function PersonaReveal() {
   const navigate = useNavigate()
@@ -24,15 +34,17 @@ export default function PersonaReveal() {
     let profile
     try { profile = JSON.parse(raw) } catch { navigate('/preferences'); return }
 
-    // If we already inferred the persona earlier in this session, show it
-    // immediately. Re-running the inference every time the user navigates
-    // back from /itinerary defeats the purpose of the confirmation screen.
-    const cachedRaw = sessionStorage.getItem('sonder_persona')
+    const sig = _signature(raw)
+
+    // Reuse the previously inferred persona unless the user actually changed
+    // their answers. localStorage so it survives tab close; signature gate so
+    // a fresh trip auto-invalidates instead of showing the old persona.
+    const cachedRaw = localStorage.getItem(PERSONA_CACHE_KEY)
     if (cachedRaw) {
       try {
-        const persona = JSON.parse(cachedRaw)
-        if (persona && persona.descriptor) {
-          setState({ status: 'ready', persona, error: null })
+        const cached = JSON.parse(cachedRaw)
+        if (cached?.signature === sig && cached?.persona?.descriptor) {
+          setState({ status: 'ready', persona: cached.persona, error: null })
           return
         }
       } catch { /* fall through and re-infer */ }
@@ -47,7 +59,9 @@ export default function PersonaReveal() {
       }
       inferPersona(profile)
         .then(persona => {
-          sessionStorage.setItem('sonder_persona', JSON.stringify(persona))
+          try {
+            localStorage.setItem(PERSONA_CACHE_KEY, JSON.stringify({ signature: sig, persona }))
+          } catch { /* quota / private-mode — ignore */ }
           setState({ status: 'ready', persona, error: null })
         })
         .catch(err => setState({ status: 'error', persona: null, error: err.message || 'Could not read your persona' }))
@@ -60,7 +74,7 @@ export default function PersonaReveal() {
   }
 
   function handleAdjust() {
-    sessionStorage.removeItem('sonder_persona')
+    localStorage.removeItem(PERSONA_CACHE_KEY)
     navigate('/preferences')
   }
 
