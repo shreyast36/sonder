@@ -449,6 +449,7 @@ export default function Itinerary() {
         <DestinationBackdrop city={dest?.city} visible={booted && showingItinerary}/>
         <AtmosphericScene/>
         <HorizonSilhouette/>
+        <FlankGlows isCompact={isCompact}/>
         <FlightPaths/>
         {isWide && <CompassRose/>}
         <PaperGrain/>
@@ -811,6 +812,79 @@ function FlightArc({ from, to, delay = 0, dur = 7, repeatDelay = 6 }) {
         style={{ transformOrigin: `${to.x}px ${to.y}px`, filter: 'drop-shadow(0 0 8px rgba(240,220,176,0.9))' }}
       />
     </motion.svg>
+  )
+}
+
+// Soft gold wash + scattered twinkling lights cascading down each flank.
+// Fills the vertical strips between the phone and the page edges so they
+// don't read as dead space, without adding any more typography.
+function FlankGlows({ isCompact }) {
+  const perSide = isCompact ? 6 : 10
+  const orbs = useMemo(() => (
+    ['left', 'right'].flatMap(side =>
+      Array.from({ length: perSide }, (_, i) => ({
+        id: `${side}-${i}`,
+        side,
+        top: 6 + (i / perSide) * 84 + Math.random() * 4,
+        offset: 2 + Math.random() * 10,
+        size: 1.4 + Math.random() * 2.6,
+        delay: -Math.random() * 5,
+        duration: 2.8 + Math.random() * 3.4,
+      }))
+    )
+  ), [perSide])
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
+      {/* Left gilt wash — like sconce light spilling inward */}
+      <div style={{
+        position: 'absolute', top: 0, bottom: 0, left: 0,
+        width: 'min(26%, 320px)',
+        background: 'linear-gradient(90deg, rgba(212,182,134,0.11) 0%, rgba(184,150,104,0.04) 45%, transparent 100%)',
+      }}/>
+      {/* Right gilt wash */}
+      <div style={{
+        position: 'absolute', top: 0, bottom: 0, right: 0,
+        width: 'min(26%, 320px)',
+        background: 'linear-gradient(270deg, rgba(212,182,134,0.11) 0%, rgba(184,150,104,0.04) 45%, transparent 100%)',
+      }}/>
+
+      {/* Subtle vertical filament running down each flank */}
+      <motion.div
+        animate={{ opacity: [0.25, 0.55, 0.25] }}
+        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', top: '6%', bottom: '6%', left: '6%', width: 1,
+          background: 'linear-gradient(180deg, transparent, rgba(240,220,176,0.45) 20%, rgba(240,220,176,0.45) 80%, transparent)',
+        }}
+      />
+      <motion.div
+        animate={{ opacity: [0.25, 0.55, 0.25] }}
+        transition={{ duration: 7, delay: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', top: '6%', bottom: '6%', right: '6%', width: 1,
+          background: 'linear-gradient(180deg, transparent, rgba(240,220,176,0.45) 20%, rgba(240,220,176,0.45) 80%, transparent)',
+        }}
+      />
+
+      {/* Twinkling distant lights along each flank */}
+      {orbs.map(o => (
+        <motion.div
+          key={o.id}
+          animate={{ opacity: [0.2, 0.95, 0.2] }}
+          transition={{ duration: o.duration, delay: o.delay, repeat: Infinity, ease: 'easeInOut' }}
+          style={{
+            position: 'absolute',
+            [o.side]: `${o.offset}%`,
+            top: `${o.top}%`,
+            width: o.size, height: o.size,
+            borderRadius: '50%',
+            background: '#f8e6c0',
+            boxShadow: `0 0 ${o.size * 5}px rgba(240,220,176,0.9), 0 0 ${o.size * 10}px rgba(240,220,176,0.35)`,
+          }}
+        />
+      ))}
+    </div>
   )
 }
 
