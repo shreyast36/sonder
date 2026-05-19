@@ -447,14 +447,12 @@ export default function Itinerary() {
         overflowX: 'hidden', overflowY: 'auto',
       }}>
         <DestinationBackdrop city={dest?.city} visible={booted && showingItinerary}/>
+        <AtmosphericScene/>
         <PaperGrain/>
         <Spotlight/>
-        <GoldVignette/>
-        <GoldDust count={isCompact ? 16 : 32}/>
+        <GoldDust count={isCompact ? 16 : 36}/>
         <CornerOrnaments/>
-        <GhostDestination dest={dest} showingItinerary={showingItinerary}/>
         {isWide && <EditionMark itinerary={itinerary || renderTarget}/>}
-        {isWide && <Marginalia firstName={firstName} personaDescriptor={personaDescriptor} showingItinerary={showingItinerary}/>}
 
         <PhoneStage scale={phoneScale}>
           <PhoneFrame onPowerButton={togglePower} powerButtonGlow={!booted && !booting}>
@@ -655,6 +653,94 @@ function GhostDestination({ dest, showingItinerary }) {
   )
 }
 
+// Atmospheric stage: drifting light beams + horizontal mist + floor pool +
+// off-center "sun". Cinematic and motion-rich — the kind of thing you'd see
+// behind a private auction lot.
+function AtmosphericScene() {
+  return (
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
+      {/* Deep velvet vignette base */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'radial-gradient(ellipse 95% 95% at 50% 45%, #1a140b 0%, #0a0807 65%, #050402 100%)',
+      }}/>
+
+      {/* Off-center warm sun — upper-left light source */}
+      <motion.div
+        animate={{ opacity: [0.7, 1, 0.7], scale: [1, 1.05, 1] }}
+        transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', top: '-20%', left: '15%',
+          width: 720, height: 720, borderRadius: '50%',
+          background: 'radial-gradient(circle at 50% 50%, rgba(240,220,176,0.32) 0%, rgba(212,182,134,0.18) 25%, rgba(184,150,104,0.06) 50%, transparent 70%)',
+          filter: 'blur(40px)',
+        }}
+      />
+
+      {/* Counter-light from lower right — cooler amber */}
+      <motion.div
+        animate={{ opacity: [0.55, 0.85, 0.55] }}
+        transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut', delay: 4 }}
+        style={{
+          position: 'absolute', bottom: '-15%', right: '10%',
+          width: 680, height: 680, borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(184,150,104,0.22) 0%, rgba(110,82,42,0.10) 35%, transparent 65%)',
+          filter: 'blur(56px)',
+        }}
+      />
+
+      {/* Light beams — vertical curtains of warm light, gently swaying */}
+      <motion.div
+        animate={{ rotate: [-3, 3, -3], opacity: [0.45, 0.7, 0.45] }}
+        transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', top: '-30%', left: '8%',
+          width: 360, height: '160%',
+          background: 'linear-gradient(180deg, rgba(240,220,176,0.18) 0%, rgba(212,182,134,0.04) 40%, transparent 75%)',
+          filter: 'blur(48px)',
+          transformOrigin: 'top center',
+        }}
+      />
+      <motion.div
+        animate={{ rotate: [4, -4, 4], opacity: [0.35, 0.6, 0.35] }}
+        transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 6 }}
+        style={{
+          position: 'absolute', top: '-30%', right: '6%',
+          width: 320, height: '160%',
+          background: 'linear-gradient(180deg, rgba(212,182,134,0.14) 0%, rgba(184,150,104,0.04) 40%, transparent 75%)',
+          filter: 'blur(48px)',
+          transformOrigin: 'top center',
+        }}
+      />
+
+      {/* Mid-canvas drifting mist band */}
+      <motion.div
+        animate={{ x: ['-8%', '8%', '-8%'], opacity: [0.25, 0.5, 0.25] }}
+        transition={{ duration: 28, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', top: '38%',
+          left: '-15%', right: '-15%',
+          height: 360,
+          background: 'radial-gradient(ellipse 55% 65% at 50% 50%, rgba(240,220,176,0.12) 0%, rgba(212,182,134,0.05) 40%, transparent 75%)',
+          filter: 'blur(64px)',
+        }}
+      />
+
+      {/* Floor pool — warm gilt light gathering at the page bottom */}
+      <motion.div
+        animate={{ opacity: [0.65, 0.95, 0.65] }}
+        transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', bottom: '-25%',
+          left: 0, right: 0, height: 600,
+          background: 'radial-gradient(ellipse 70% 60% at 50% 100%, rgba(212,182,134,0.20) 0%, rgba(184,150,104,0.10) 30%, transparent 65%)',
+          filter: 'blur(48px)',
+        }}
+      />
+    </div>
+  )
+}
+
 // Top-down gold spotlight, like a museum lamp on a private object.
 function Spotlight() {
   return (
@@ -783,45 +869,26 @@ function _editionNumber(itinerary) {
 }
 
 function EditionMark({ itinerary }) {
+  // Tiny gilded print number tucked in the corner — fingerprint, not signage.
   const num = _editionNumber(itinerary)
-  // Gilded gradient applied via background-clip so it reads as real
-  // metal, not flat gold colour.
-  const goldText = {
-    backgroundImage: 'linear-gradient(180deg, #f0dcb0 0%, #d4b686 35%, #8a6f4a 80%, #5a4628 100%)',
-    WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-    WebkitTextFillColor: 'transparent',
-    filter: 'drop-shadow(0 0 14px rgba(240,220,176,0.32))',
-  }
   return (
     <motion.div
       initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
+      animate={{ opacity: 0.7, y: 0 }}
       transition={{ duration: 0.9, ease, delay: 0.4 }}
       style={{
-        position: 'absolute', top: 32, right: 56,
-        display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6,
-        zIndex: 2, pointerEvents: 'none', textAlign: 'right',
+        position: 'absolute', top: 28, right: 32,
+        display: 'flex', alignItems: 'baseline', gap: 4,
+        zIndex: 2, pointerEvents: 'none',
+        fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
+        backgroundImage: 'linear-gradient(180deg, #f0dcb0 0%, #d4b686 50%, #8a6f4a 100%)',
+        WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+        WebkitTextFillColor: 'transparent',
+        filter: 'drop-shadow(0 0 10px rgba(240,220,176,0.32))',
       }}
     >
-      <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 13, letterSpacing: '0.08em', lineHeight: 1, ...goldText }}>N°</span>
-      <motion.span
-        animate={{ filter: ['drop-shadow(0 0 14px rgba(240,220,176,0.32))', 'drop-shadow(0 0 34px rgba(240,220,176,0.58))', 'drop-shadow(0 0 14px rgba(240,220,176,0.32))'] }}
-        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-        style={{
-          fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
-          fontSize: 64, lineHeight: 1, letterSpacing: '-0.025em',
-          ...goldText,
-        }}
-      >
-        {num}
-      </motion.span>
-      <div style={{ width: 44, height: 1, background: 'linear-gradient(to right, transparent, #f0dcb0, transparent)', marginTop: 8, marginBottom: 6, opacity: 0.85 }}/>
-      <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.48em', textTransform: 'uppercase', ...goldText }}>
-        Bespoke · One of one
-      </span>
-      <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.38em', textTransform: 'uppercase', color: MUTE, marginTop: 2 }}>
-        Sonder Atelier
-      </span>
+      <span style={{ fontSize: 11, letterSpacing: '0.04em' }}>N°</span>
+      <span style={{ fontSize: 24, lineHeight: 1, letterSpacing: '-0.02em' }}>{num}</span>
     </motion.div>
   )
 }
