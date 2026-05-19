@@ -110,20 +110,65 @@ async def search_activities(
     return hotels + restaurants + activities
 
 
-def search_cotravellers(user_profile: UserProfile, top_k: int = 20) -> list[dict]:
+async def search_cotravellers(user_profile: UserProfile, top_k: int = 50) -> list[CoTravellerProfile]:
     """
-    Find the most compatible co-traveller profiles via vector similarity.
+    Query the seeded 'cotravellers' Pinecone namespace with the user's persona
+    embedding and return up to top_k candidate profiles ranked by cosine.
 
-    Expected input:  user_profile with travel_style_embedding populated (from Jahnvi's module3)
-    Expected output:
-        [
-            {"id": "ct_maya_001", "score": 0.94, "metadata": {"profile_id": "maya_001", "archetype": "Cultural Explorer"}},
-            ...
-        ]
+    The actual fine-grained match scoring (dimension overlap, pace/budget
+    alignment, match_reasons) happens in shreyas.cotraveller.matching.get_top_matches —
+    this function is purely the coarse retrieval step.
     """
-    # TODO: use user_profile.travel_style_embedding if set, else embed build_user_query(user_profile)
-    # TODO: query Pinecone with filter={"type": "cotraveller"}
-    raise NotImplementedError
+    from shared.schemas import CoTravellerProfile
+    from jahnvi.schemas.enums import PacePreference, BudgetStyle, TravelStyle
+
+    # Reuse the user's stored embedding if module3_persona already wrote it;
+    # otherwise embed their persona text on the fly. Same path real users hit.
+    if user_profile and user_profile.travel_style_embedding:
+        query_vec = list(user_profile.travel_style_embedding)
+    else:
+        persona_text = build_persona_text(
+            user_profile.constraints if user_profile else None,
+            user_profile.persona_answers if user_profile else None,
+        )
+        if not persona_text.strip():
+            persona_text = (user_profile.display_name if user_profile else "") or "traveller"
+        query_vec = await corpus_embed(persona_text)
+
+    index = await get_pinecone_index()
+    try:
+        result = await asyncio.to_thread(
+            lambda: index.query(
+                namespace="cotravellers",
+                vector=query_vec,
+                top_k=top_k,
+                include_metadata=True,
+            )
+        )
+    except Exception as e:
+        logger.warning("cotraveller Pinecone query failed: %s", e)
+        return []
+
+    profiles: list[CoTravellerProfile] = []
+    for match in (getattr(result, "matches", []) or []):
+        md = match.metadata or {}
+        try:
+            profiles.append(CoTravellerProfile(
+                profile_id   = md.get("profile_id") or match.id,
+                display_name = md.get("display_name", "Anonymous"),
+                age          = int(md.get("age", 30) or 30),
+                location     = md.get("location", ""),
+                archetype    = md.get("archetype", "Traveller"),
+                interests    = list(md.get("interests") or md.get("top_interests") or []),
+                pace         = PacePreference(md.get("pace", "moderate")),
+                budget_style = BudgetStyle(md.get("budget_style", "mid_range")),
+                travel_style = TravelStyle(md.get("travel_style", "solo")),
+                avatar_url   = md.get("avatar_url"),
+            ))
+        except Exception as e:
+            logger.warning("skipping malformed cotraveller %s: %s", match.id, e)
+    logger.info("cotraveller search returned %d candidates", len(profiles))
+    return profiles
 
 
 def upsert_destinations(destinations: list[Destination]) -> None:

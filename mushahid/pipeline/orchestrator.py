@@ -69,13 +69,14 @@ async def _get_destination_and_activities(user_profile: UserProfile):
     return destination, activities
 
 
-def _get_cotraveller_matches(user_profile: UserProfile):
+async def _get_cotraveller_matches(user_profile: UserProfile):
     try:
         from shreyas.cotraveller.matching import get_top_matches
         from shreyas.retrieval.search import search_cotravellers
-        candidates = search_cotravellers(user_profile)
+        candidates = await search_cotravellers(user_profile)
         return get_top_matches(user_profile, candidates)
-    except Exception:
+    except Exception as e:
+        logger.warning("cotraveller matching failed (%s) — returning no matches", e)
         return []
 
 
@@ -202,7 +203,7 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
         # Step 7 — Co-traveller matching (Shreyas)
         step = "matching_cotravellers"
         yield format_event("matching_cotravellers", {})
-        matches = _get_cotraveller_matches(user_profile)
+        matches = await _get_cotraveller_matches(user_profile)
         yield format_event("matched", {"match_count": len(matches)})
 
         # Done
