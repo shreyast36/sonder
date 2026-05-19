@@ -448,6 +448,7 @@ export default function Itinerary() {
       }}>
         <DestinationBackdrop city={dest?.city} visible={booted && showingItinerary}/>
         <AtmosphericScene/>
+        <HorizonSilhouette/>
         <FlightPaths/>
         {isWide && <CompassRose/>}
         <PaperGrain/>
@@ -810,6 +811,79 @@ function FlightArc({ from, to, delay = 0, dur = 7, repeatDelay = 6 }) {
         style={{ transformOrigin: `${to.x}px ${to.y}px`, filter: 'drop-shadow(0 0 8px rgba(240,220,176,0.9))' }}
       />
     </motion.svg>
+  )
+}
+
+// Three layered ridge silhouettes receding into haze at the bottom of the
+// canvas, with a warm horizon glow and a sparse line of twinkling city
+// lights along the nearest range. Reads as the view from a high terrace
+// — fills the empty lower canvas without adding more typography.
+function HorizonSilhouette() {
+  const cityLights = useMemo(() => Array.from({ length: 22 }, (_, i) => ({
+    id: i,
+    left: 4 + (i / 22) * 92 + Math.random() * 4,
+    bottom: 28 + Math.random() * 36,
+    size: 1.4 + Math.random() * 1.8,
+    delay: -Math.random() * 6,
+    duration: 2.6 + Math.random() * 3.4,
+  })), [])
+  return (
+    <div style={{
+      position: 'absolute', left: 0, right: 0, bottom: 0,
+      height: 'min(34%, 320px)', pointerEvents: 'none', zIndex: 0,
+      overflow: 'hidden',
+    }}>
+      {/* Atmospheric haze layer — soft warm horizon */}
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0, height: '60%',
+        background: 'linear-gradient(180deg, transparent 0%, rgba(184,150,104,0.04) 35%, rgba(212,182,134,0.10) 75%, rgba(240,220,176,0.13) 100%)',
+      }}/>
+
+      {/* Back range — far, almost vapor */}
+      <svg style={{ position: 'absolute', bottom: '40%', left: 0, width: '100%', height: 120 }}
+        viewBox="0 0 1200 120" preserveAspectRatio="none">
+        <path d="M 0 120 L 0 90 Q 120 50 220 78 T 420 64 T 640 50 T 860 70 T 1080 56 T 1200 70 L 1200 120 Z"
+              fill="rgba(74,58,32,0.35)"/>
+      </svg>
+
+      {/* Middle range */}
+      <svg style={{ position: 'absolute', bottom: '20%', left: 0, width: '100%', height: 140 }}
+        viewBox="0 0 1200 140" preserveAspectRatio="none">
+        <path d="M 0 140 L 0 90 Q 80 38 180 70 T 340 50 T 540 84 T 720 46 T 920 70 T 1200 58 L 1200 140 Z"
+              fill="rgba(40,30,18,0.55)"/>
+      </svg>
+
+      {/* Front range — closest, darkest */}
+      <svg style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: 160 }}
+        viewBox="0 0 1200 160" preserveAspectRatio="none">
+        <path d="M 0 160 L 0 100 Q 100 50 240 86 T 460 60 T 700 96 T 900 50 T 1200 80 L 1200 160 Z"
+              fill="rgba(14,11,7,0.85)"/>
+      </svg>
+
+      {/* Distant city lights twinkling along the front ridge */}
+      {cityLights.map(l => (
+        <motion.div
+          key={l.id}
+          animate={{ opacity: [0.25, 0.95, 0.25] }}
+          transition={{ duration: l.duration, delay: l.delay, repeat: Infinity, ease: 'easeInOut' }}
+          style={{
+            position: 'absolute',
+            left: `${l.left}%`, bottom: l.bottom,
+            width: l.size, height: l.size,
+            borderRadius: '50%',
+            background: '#f8e6c0',
+            boxShadow: `0 0 ${l.size * 4}px rgba(240,220,176,0.85)`,
+          }}
+        />
+      ))}
+
+      {/* Warm glow line at horizon, just above the back range — like sunset afterglow */}
+      <div style={{
+        position: 'absolute', bottom: '54%', left: '10%', right: '10%', height: 2,
+        background: 'radial-gradient(ellipse 60% 100% at 50% 50%, rgba(240,220,176,0.45) 0%, transparent 70%)',
+        filter: 'blur(2px)',
+      }}/>
+    </div>
   )
 }
 
