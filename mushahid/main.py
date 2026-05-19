@@ -100,7 +100,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from mushahid.routes import plan_trip, update_trip, cotraveller, chat, users, visa, export, health, persona, itineraries, auth as auth_routes
+from mushahid.routes import plan_trip, update_trip, cotraveller, chat, users, visa, export, health, persona, itineraries, journal, auth as auth_routes
 
 app.include_router(health.router)
 app.include_router(visa.router,         prefix="/api")
@@ -110,6 +110,7 @@ app.include_router(plan_trip.router,    prefix="/api")
 app.include_router(update_trip.router,  prefix="/api")
 app.include_router(persona.router,      prefix="/api")
 app.include_router(itineraries.router,  prefix="/api")
+app.include_router(journal.router,      prefix="/api")
 app.include_router(cotraveller.router,  prefix="/api")
 app.include_router(chat.router,         prefix="/api")
 app.include_router(export.router,       prefix="/api")

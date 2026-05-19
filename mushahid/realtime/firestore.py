@@ -115,6 +115,90 @@ async def update_user_profile(user_id: str, updates: dict) -> None:
     )
 
 
+async def write_journal_entry(entry_id: str, entry: dict) -> None:
+    """Upsert one journal entry. Schema: {entry_id, user_id, itinerary_id,
+    day_number, text, photos[], is_public, city, country, display_name,
+    avatar_url, created_at, updated_at}."""
+    if LOCAL_MODE:
+        _store[f"journal:{entry_id}"] = entry
+        return
+    try:
+        await asyncio.to_thread(
+            lambda: get_db().collection("journal_entries").document(entry_id).set(entry, merge=True)
+        )
+    except Exception as e:
+        logger.warning("write_journal_entry failed: %s", e)
+
+
+async def get_journal_entry(entry_id: str) -> dict | None:
+    if LOCAL_MODE:
+        return _store.get(f"journal:{entry_id}")
+    try:
+        doc = await asyncio.to_thread(
+            lambda: get_db().collection("journal_entries").document(entry_id).get()
+        )
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        logger.warning("get_journal_entry failed: %s", e)
+        return None
+
+
+async def list_journal_entries_for_trip(itinerary_id: str) -> list[dict]:
+    """All entries for a trip, ordered by day_number then created_at."""
+    if LOCAL_MODE:
+        return sorted(
+            (v for k, v in _store.items()
+             if k.startswith("journal:") and v.get("itinerary_id") == itinerary_id),
+            key=lambda e: (e.get("day_number") or 0, e.get("created_at") or ""),
+        )
+    try:
+        docs = await asyncio.to_thread(
+            lambda: list(get_db()
+                .collection("journal_entries")
+                .where("itinerary_id", "==", itinerary_id)
+                .stream())
+        )
+        return sorted(
+            (d.to_dict() for d in docs),
+            key=lambda e: (e.get("day_number") or 0, e.get("created_at") or ""),
+        )
+    except Exception as e:
+        logger.warning("list_journal_entries_for_trip failed: %s", e)
+        return []
+
+
+async def list_public_journal_entries_for_city(city: str, country: str | None, limit: int = 40) -> list[dict]:
+    """Public entries tagged to a destination. Powers the destination feed."""
+    city_l = (city or "").strip().lower()
+    if not city_l:
+        return []
+    if LOCAL_MODE:
+        all_public = [
+            v for k, v in _store.items()
+            if k.startswith("journal:")
+            and v.get("is_public")
+            and (v.get("city") or "").strip().lower() == city_l
+            and (not country or (v.get("country") or "").strip().lower() == country.strip().lower())
+        ]
+        return sorted(all_public, key=lambda e: e.get("created_at") or "", reverse=True)[:limit]
+    try:
+        q = (get_db()
+             .collection("journal_entries")
+             .where("is_public", "==", True)
+             .where("city_lower", "==", city_l))
+        if country:
+            q = q.where("country_lower", "==", country.strip().lower())
+        docs = await asyncio.to_thread(lambda: list(q.limit(limit).stream()))
+        return sorted(
+            (d.to_dict() for d in docs),
+            key=lambda e: e.get("created_at") or "",
+            reverse=True,
+        )
+    except Exception as e:
+        logger.warning("list_public_journal_entries_for_city failed: %s", e)
+        return []
+
+
 async def write_companion_prefs(itinerary_id: str, prefs: dict) -> None:
     if LOCAL_MODE:
         _store[f"companion_prefs:{itinerary_id}"] = prefs

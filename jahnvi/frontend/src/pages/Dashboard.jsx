@@ -714,7 +714,32 @@ export default function Dashboard() {
                   ))}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: 28, paddingTop: 22, borderTop: `1px solid ${HAIRLINE}`, position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 28, paddingTop: 22, borderTop: `1px solid ${HAIRLINE}`, position: 'relative', gap: 14, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (storedItinerary?.itinerary_id) navigate(`/journal/${storedItinerary.itinerary_id}`)
+                      }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: 0 }}
+                    >
+                      <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE }}>Journal</span>
+                    </motion.button>
+                    {trip?.city && (
+                      <motion.button
+                        whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const q = trip.country ? `?country=${encodeURIComponent(trip.country)}` : ''
+                          navigate(`/destination/${encodeURIComponent(trip.city)}${q}`)
+                        }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: 0 }}
+                      >
+                        <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE }}>Notes from {trip.city}</span>
+                      </motion.button>
+                    )}
+                  </div>
                   <motion.div whileHover={{ x: 4 }} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: GOLD }}>View itinerary</span>
                     <ChevronRight size={12} style={{ color: GOLD }}/>

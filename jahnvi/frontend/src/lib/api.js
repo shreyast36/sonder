@@ -160,6 +160,31 @@ export async function setCurrentItinerary(itineraryId) {
   return post('/api/itineraries/set-current', { itinerary_id: itineraryId })
 }
 
+// ── Journal ────────────────────────────────────────────────────────────────
+
+export async function listTripJournal(itineraryId) {
+  return get(`/api/itineraries/${encodeURIComponent(itineraryId)}/journal`)
+}
+
+export async function upsertJournalEntry(itineraryId, body) {
+  return post(`/api/itineraries/${encodeURIComponent(itineraryId)}/journal`, body)
+}
+
+export async function deleteJournalEntry(entryId) {
+  const token = await auth.currentUser.getIdToken()
+  const res = await fetch(`${BASE}/api/journal/${encodeURIComponent(entryId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw Object.assign(new Error(await _readError(res)), { status: res.status })
+  return res.json()
+}
+
+export async function getDestinationFeed(city, country) {
+  const q = country ? `?country=${encodeURIComponent(country)}` : ''
+  return get(`/api/destinations/${encodeURIComponent(city)}/journal${q}`)
+}
+
 export async function getCompanionPrefs(itineraryId) {
   return get(`/api/itineraries/${encodeURIComponent(itineraryId)}/companion-prefs`)
 }
