@@ -327,295 +327,223 @@ export default function Itinerary() {
         </div>
       </nav>
 
-      {/* editorial spread */}
-      <main style={{ flex: 1, position: 'relative', zIndex: 1, padding: isWide ? '64px 64px 120px' : '40px 24px 96px' }}>
-        <EditorialBackdrop/>
-        <div style={{
-          maxWidth: 1440, margin: '0 auto',
-          display: 'grid',
-          gridTemplateColumns: isWide ? 'minmax(0, 1.05fr) auto minmax(0, 1.05fr)' : '1fr',
-          columnGap: isWide ? 96 : 0,
-          rowGap: 56,
-          alignItems: 'center',
-          position: 'relative',
-        }}>
-          {isWide && (
-            <LeftEditorial
-              dest={dest}
-              dateRange={dateRange}
-              showingItinerary={showingItinerary}
-            />
-          )}
+      {/* Bespoke print spread — massive ghosted destination, paper grain,
+          edition mark, handwritten curator note. Phone is the artefact. */}
+      <main style={{
+        flex: 1, position: 'relative', zIndex: 1,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: isWide ? '40px 64px 80px' : '24px 24px 64px',
+        overflow: 'hidden',
+        minHeight: 920,
+      }}>
+        <PaperGrain/>
+        <GhostDestination dest={dest} showingItinerary={showingItinerary}/>
+        <EditionMark itinerary={itinerary || renderTarget}/>
+        <Marginalia firstName={firstName} personaDescriptor={personaDescriptor} showingItinerary={showingItinerary}/>
 
-          <PhoneStage>
-            <PhoneFrame>
-              <PhoneStatusBar/>
-              {!showingItinerary ? (
-                <PhoneLoading phase={phase}/>
-              ) : (
-                <PhoneItinerary
-                  dest={dest}
-                  dateRange={dateRange}
-                  days={days}
-                  safeActiveDay={safeActiveDay}
-                  setDay={setDay}
-                  day={day}
-                  isStreaming={isStreaming}
-                />
-              )}
-              <PhoneHomeIndicator/>
-            </PhoneFrame>
-          </PhoneStage>
+        <PhoneStage>
+          <PhoneFrame>
+            <PhoneStatusBar/>
+            {!showingItinerary ? (
+              <PhoneLoading phase={phase}/>
+            ) : (
+              <PhoneItinerary
+                dest={dest}
+                dateRange={dateRange}
+                days={days}
+                safeActiveDay={safeActiveDay}
+                setDay={setDay}
+                day={day}
+                isStreaming={isStreaming}
+              />
+            )}
+            <PhoneHomeIndicator/>
+          </PhoneFrame>
+        </PhoneStage>
 
-          {isWide && (
-            <RightContext
-              firstName={firstName}
-              personaDescriptor={personaDescriptor}
-              dest={dest}
-              days={days}
-              day={day}
-              safeActiveDay={safeActiveDay}
-              setDay={setDay}
-              totalBudget={totalBudget}
-              showingItinerary={showingItinerary}
-            />
-          )}
-        </div>
-
-        {/* Footer signature line */}
-        <div style={{ maxWidth: 1440, margin: '88px auto 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 }}>
-          <div style={{ height: 1, flex: 1, background: `linear-gradient(to right, transparent, ${HAIRLINE}, transparent)` }}/>
-          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.42em', textTransform: 'uppercase', color: MUTE }}>
-            Sonder · Edition {new Date().getFullYear()}
-          </span>
-          <div style={{ height: 1, flex: 1, background: `linear-gradient(to right, transparent, ${HAIRLINE}, transparent)` }}/>
-        </div>
+        <CuratorNote
+          dateRange={dateRange}
+          firstName={firstName}
+          showingItinerary={showingItinerary}
+        />
       </main>
     </div>
   )
 }
 
-// ─── Editorial surround ───────────────────────────────────────────────────────
+// ─── Bespoke print surround ───────────────────────────────────────────────────
 
-function EditorialBackdrop() {
+// Paper-grain noise overlay. Reused from Welcome; inlined here so the
+// itinerary page doesn't depend on its layout.
+const _grainSvg = `<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="4" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(#n)"/></svg>`
+const _grainBg = `url("data:image/svg+xml,${encodeURIComponent(_grainSvg)}")`
+
+function PaperGrain() {
   return (
-    <>
-      {/* Soft golden glow upper-left, sky glow lower-right */}
-      <div style={{ position: 'absolute', top: -120, left: -160, width: 720, height: 720, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(212,182,134,0.10) 0%, transparent 60%)', pointerEvents: 'none', zIndex: 0 }}/>
-      <div style={{ position: 'absolute', bottom: -200, right: -140, width: 820, height: 820, borderRadius: '50%', background: `radial-gradient(ellipse, ${SKY}10 0%, transparent 60%)`, pointerEvents: 'none', zIndex: 0 }}/>
-      {/* Faint center halo */}
-      <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%,-50%)', width: 1100, height: 700, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(212,182,134,0.06) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }}/>
-      {/* Vertical filaments on the page edges */}
-      <motion.div
-        animate={{ opacity: [0.18, 0.42, 0.18] }}
-        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-        style={{ position: 'absolute', top: 0, bottom: 0, left: 36, width: 1, background: `linear-gradient(to bottom, transparent, ${GOLD}33 20%, ${GOLD}33 80%, transparent)`, pointerEvents: 'none', zIndex: 0 }}
-      />
-      <motion.div
-        animate={{ opacity: [0.18, 0.42, 0.18] }}
-        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 3 }}
-        style={{ position: 'absolute', top: 0, bottom: 0, right: 36, width: 1, background: `linear-gradient(to bottom, transparent, ${GOLD}33 20%, ${GOLD}33 80%, transparent)`, pointerEvents: 'none', zIndex: 0 }}
-      />
-    </>
+    <div style={{
+      position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0,
+      opacity: 0.05, backgroundImage: _grainBg, backgroundSize: '200px 200px',
+      mixBlendMode: 'overlay',
+    }}/>
+  )
+}
+
+function GhostDestination({ dest, showingItinerary }) {
+  // Show the city name behind the phone at a massive scale, like wall
+  // lettering at a private viewing. Hidden during loading.
+  if (!showingItinerary || !dest?.city) return null
+  return (
+    <motion.div
+      key={dest.city}
+      initial={{ opacity: 0, scale: 1.04 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 1.6, ease, delay: 0.2 }}
+      style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        pointerEvents: 'none', zIndex: 0, userSelect: 'none', overflow: 'hidden',
+      }}
+    >
+      <span style={{
+        fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
+        fontSize: 'clamp(220px, 28vw, 360px)',
+        color: BONE, opacity: 0.045,
+        letterSpacing: '-0.045em', lineHeight: 0.9, whiteSpace: 'nowrap',
+        textShadow: `0 0 64px ${GOLD}11`,
+      }}>
+        {dest.city}
+      </span>
+    </motion.div>
+  )
+}
+
+// Stable 4-digit "edition number" derived from the itinerary id so each
+// trip has its own print number. Falls back to today's day of year while
+// generating, so even the loading state feels numbered.
+function _editionNumber(itinerary) {
+  const id = itinerary?.itinerary_id || ''
+  let n = 0
+  for (let i = 0; i < id.length; i++) n = (n * 31 + id.charCodeAt(i)) >>> 0
+  if (n === 0) {
+    const start = new Date(new Date().getFullYear(), 0, 0)
+    n = Math.floor((Date.now() - start.getTime()) / 86400000)
+  }
+  return String(n % 9999).padStart(4, '0')
+}
+
+function EditionMark({ itinerary }) {
+  const num = _editionNumber(itinerary)
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.9, ease, delay: 0.4 }}
+      style={{
+        position: 'absolute', top: 36, right: 56,
+        display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4,
+        zIndex: 2, pointerEvents: 'none', textAlign: 'right',
+      }}
+    >
+      <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 12, color: MUTE, letterSpacing: '0.04em', lineHeight: 1 }}>N°</span>
+      <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 44, color: GOLD, lineHeight: 1, letterSpacing: '-0.02em' }}>
+        {num}
+      </span>
+      <div style={{ width: 28, height: 1, background: GOLD, marginTop: 6, marginBottom: 6 }}/>
+      <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.42em', textTransform: 'uppercase', color: MUTE }}>
+        Bespoke · One of one
+      </span>
+    </motion.div>
+  )
+}
+
+function Marginalia({ firstName, personaDescriptor, showingItinerary }) {
+  // Tiny left-margin annotations — a serial-feeling editorial sidebar.
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -12 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.9, ease, delay: 0.55 }}
+      style={{
+        position: 'absolute', top: 'min(48%, 460px)', left: 56,
+        transform: 'translateY(-50%)',
+        display: 'flex', alignItems: 'center', gap: 14,
+        zIndex: 2, pointerEvents: 'none',
+      }}
+    >
+      <div style={{
+        writingMode: 'vertical-rl', transform: 'rotate(180deg)',
+        fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.42em',
+        textTransform: 'uppercase', color: MUTE,
+      }}>
+        Sonder · Private commission · {showingItinerary ? 'Drawn' : 'Drawing'} for {firstName}
+      </div>
+      {personaDescriptor && (
+        <p style={{
+          fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+          fontSize: 12, color: `${GOLD}aa`, margin: 0,
+          maxWidth: 160, lineHeight: 1.4, transform: 'translateY(0)',
+        }}>
+          “{personaDescriptor}”
+        </p>
+      )}
+    </motion.div>
+  )
+}
+
+function CuratorNote({ dateRange, firstName, showingItinerary }) {
+  const note = showingItinerary
+    ? `Drawn for ${firstName}, with care.`
+    : `Drawing your days, ${firstName}.`
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 1, ease, delay: 0.75 }}
+      style={{
+        position: 'absolute', bottom: 56, left: '50%',
+        transform: 'translateX(-50%)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+        zIndex: 2, pointerEvents: 'none', textAlign: 'center',
+      }}
+    >
+      <div style={{ width: 1, height: 28, background: `linear-gradient(to bottom, transparent, ${GOLD}88)` }}/>
+      <p style={{
+        fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+        fontSize: 17, color: BONE, margin: 0, letterSpacing: '0.005em',
+      }}>
+        — {note}
+      </p>
+      {dateRange && (
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.36em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+          {dateRange}
+        </p>
+      )}
+    </motion.div>
   )
 }
 
 function PhoneStage({ children }) {
   return (
-    <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-      {/* Halo behind phone — soft sky/gold blend */}
+    <motion.div
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 1, ease, delay: 0.15 }}
+      style={{ position: 'relative', zIndex: 1 }}
+    >
+      {/* Soft pool of light beneath the phone — object on velvet */}
+      <div style={{
+        position: 'absolute', bottom: -36, left: '50%', transform: 'translateX(-50%)',
+        width: 380, height: 80, borderRadius: '50%',
+        background: 'radial-gradient(ellipse, rgba(212,182,134,0.18) 0%, transparent 70%)',
+        filter: 'blur(20px)', pointerEvents: 'none', zIndex: 0,
+      }}/>
       <motion.div
-        animate={{ opacity: [0.55, 0.95, 0.55] }}
-        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-        style={{
-          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-          width: 560, height: 880, borderRadius: '50%',
-          background: `radial-gradient(ellipse 50% 55% at 50% 50%, ${SKY}28 0%, rgba(212,182,134,0.10) 35%, transparent 70%)`,
-          filter: 'blur(40px)',
-          pointerEvents: 'none', zIndex: 0,
-        }}
-      />
-      {/* Floating phone with gentle bob */}
-      <motion.div
-        animate={{ y: [0, -8, 0] }}
-        transition={{ duration: 6.5, repeat: Infinity, ease: 'easeInOut' }}
-        style={{ position: 'relative', zIndex: 1 }}
+        animate={{ y: [0, -5, 0] }}
+        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
       >
         {children}
       </motion.div>
-    </div>
-  )
-}
-
-const fadeUp = {
-  hidden: { opacity: 0, y: 24 },
-  show:   { opacity: 1, y: 0, transition: { duration: 0.8, ease } },
-}
-const fadeUpDelayed = (delay) => ({
-  hidden: { opacity: 0, y: 18 },
-  show:   { opacity: 1, y: 0, transition: { duration: 0.7, ease, delay } },
-})
-
-function LeftEditorial({ dest, dateRange, showingItinerary }) {
-  const title = showingItinerary
-    ? (dest.city ? `${dest.city}.` : 'A trip, in your pocket.')
-    : 'Reading the room…'
-  const subline = showingItinerary
-    ? 'Day by day, deliberately. Yours to revise, anywhere.'
-    : 'A few seconds. The shape of your week is arriving.'
-
-  return (
-    <motion.div
-      initial="hidden" animate="show"
-      variants={{ show: { transition: { staggerChildren: 0.08 } } }}
-      style={{ display: 'flex', flexDirection: 'column', gap: 28, justifyContent: 'center' }}
-    >
-      <motion.div variants={fadeUp} style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 22, color: `${GOLD}cc`, lineHeight: 1 }}>01</span>
-        <span style={{ flex: 1, height: 1, background: `linear-gradient(to right, ${GOLD}66, transparent)` }}/>
-        <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.36em', textTransform: 'uppercase', color: GOLD }}>Your itinerary</span>
-      </motion.div>
-
-      <motion.h1
-        variants={fadeUpDelayed(0.05)}
-        style={{
-          fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
-          fontSize: 'clamp(48px, 5.2vw, 76px)', lineHeight: 1.02, letterSpacing: '-0.02em',
-          color: BONE, margin: 0,
-        }}
-      >
-        {title}
-      </motion.h1>
-
-      <motion.p
-        variants={fadeUpDelayed(0.15)}
-        style={{
-          fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
-          fontSize: 15, lineHeight: 1.75, color: `${BONE}b8`,
-          maxWidth: 360, margin: 0, letterSpacing: '0.01em',
-        }}
-      >
-        {subline}
-      </motion.p>
-
-      {dateRange && showingItinerary && (
-        <motion.div variants={fadeUpDelayed(0.25)} style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
-          <span style={{ width: 28, height: 1, background: GOLD }}/>
-          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE }}>
-            {dateRange}
-          </span>
-        </motion.div>
-      )}
-
-      <motion.div variants={fadeUpDelayed(0.35)} style={{ marginTop: 36, display: 'flex', alignItems: 'center', gap: 12 }}>
-        {/* Tiny compass-rose motif */}
-        <svg width="32" height="32" viewBox="0 0 32 32" style={{ flexShrink: 0 }}>
-          <circle cx="16" cy="16" r="14" fill="none" stroke={`${GOLD}44`} strokeWidth="0.6"/>
-          <circle cx="16" cy="16" r="9"  fill="none" stroke={`${GOLD}66`} strokeWidth="0.6"/>
-          <line x1="16" y1="2"  x2="16" y2="6"  stroke={GOLD} strokeWidth="0.8"/>
-          <line x1="16" y1="26" x2="16" y2="30" stroke={`${GOLD}88`} strokeWidth="0.8"/>
-          <line x1="2"  y1="16" x2="6"  y2="16" stroke={`${GOLD}88`} strokeWidth="0.8"/>
-          <line x1="26" y1="16" x2="30" y2="16" stroke={`${GOLD}88`} strokeWidth="0.8"/>
-          <circle cx="16" cy="16" r="1.4" fill={GOLD}/>
-        </svg>
-        <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 13, color: MUTE, margin: 0, maxWidth: 220, lineHeight: 1.55 }}>
-          Curated, then revised — until the days feel like yours.
-        </p>
-      </motion.div>
     </motion.div>
-  )
-}
-
-function RightContext({ firstName, personaDescriptor, dest, days, day, safeActiveDay, setDay, totalBudget, showingItinerary }) {
-  return (
-    <motion.div
-      initial="hidden" animate="show"
-      variants={{ show: { transition: { staggerChildren: 0.08, delayChildren: 0.15 } } }}
-      style={{ display: 'flex', flexDirection: 'column', gap: 32, justifyContent: 'center' }}
-    >
-      <motion.div variants={fadeUp}>
-        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.36em', textTransform: 'uppercase', color: MUTE, marginBottom: 10 }}>Curated for</p>
-        <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 36, color: BONE, margin: 0, letterSpacing: '-0.01em', lineHeight: 1 }}>
-          {firstName}
-        </h2>
-        {personaDescriptor && (
-          <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 14, color: `${GOLD}cc`, margin: '10px 0 0', lineHeight: 1.4, maxWidth: 280 }}>
-            “{personaDescriptor}”
-          </p>
-        )}
-      </motion.div>
-
-      <motion.div variants={fadeUp} style={{ height: 1, background: `linear-gradient(to right, ${HAIRLINE}, ${HAIRLINE}, transparent)` }}/>
-
-      {/* Trip stats — editorial numerals */}
-      <motion.div variants={fadeUp} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 28 }}>
-        <Stat label="Days"      value={showingItinerary ? String(days.length) : '—'}/>
-        <Stat label="Total spend" value={showingItinerary && totalBudget ? `$${Math.round(totalBudget).toLocaleString()}` : '—'}/>
-        <Stat label="Today's stops" value={day ? String(day.activities?.length ?? 0) : '—'}/>
-        <Stat label="Today's spend" value={day?.daily_cost_usd != null ? `$${Math.round(day.daily_cost_usd)}` : '—'}/>
-      </motion.div>
-
-      <motion.div variants={fadeUp} style={{ height: 1, background: `linear-gradient(to right, ${HAIRLINE}, ${HAIRLINE}, transparent)` }}/>
-
-      {/* Day index */}
-      {showingItinerary && days.length > 0 && (
-        <motion.div variants={fadeUp}>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.36em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>The Index</p>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {days.map((d, i) => {
-              const active = safeActiveDay === i
-              return (
-                <button
-                  key={d.day_number}
-                  onClick={() => setDay(i)}
-                  style={{
-                    display: 'grid', gridTemplateColumns: '34px 1fr auto', alignItems: 'center', gap: 12,
-                    padding: '10px 0', background: 'none', border: 'none', cursor: 'pointer',
-                    borderTop: `1px solid ${HAIRLINE}`,
-                    textAlign: 'left',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.opacity = '0.85' }}
-                  onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
-                >
-                  <span style={{
-                    fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 22,
-                    color: active ? SKY : `${BONE}66`,
-                    transition: 'color 0.25s',
-                  }}>
-                    {String(d.day_number).padStart(2, '0')}
-                  </span>
-                  <span style={{
-                    fontFamily: '"Cormorant Garamond",serif', fontSize: 16, fontStyle: 'italic',
-                    color: active ? BONE : `${BONE}99`,
-                    lineHeight: 1.3,
-                    transition: 'color 0.25s',
-                  }}>
-                    {d.theme || '—'}
-                  </span>
-                  <span style={{
-                    fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase',
-                    color: active ? SKY : MUTE,
-                    transition: 'color 0.25s',
-                  }}>
-                    {active ? 'Reading' : `Day ${d.day_number}`}
-                  </span>
-                </button>
-              )
-            })}
-            <div style={{ height: 1, background: HAIRLINE }}/>
-          </div>
-        </motion.div>
-      )}
-    </motion.div>
-  )
-}
-
-function Stat({ label, value }) {
-  return (
-    <div>
-      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 6 }}>{label}</p>
-      <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 32, color: BONE, lineHeight: 1, margin: 0, letterSpacing: '-0.01em' }}>{value}</p>
-    </div>
   )
 }
 
