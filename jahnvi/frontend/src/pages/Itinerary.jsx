@@ -85,7 +85,9 @@ export default function Itinerary() {
       itinerary_generated: (data) => {
         // Fires as soon as day streaming completes — well before validation
         // and matching run. Surfacing the itinerary here lets the Save
-        // button appear immediately even if the rest of the pipeline hangs.
+        // button appear immediately even if the rest of the pipeline hangs,
+        // and triggers the companion prompt so the user sees it right after
+        // the last day lands instead of waiting on validation/matching.
         setStreamingDone(true)
         if (data?.itinerary) {
           setItinerary(data.itinerary)
@@ -93,13 +95,12 @@ export default function Itinerary() {
           // and still see this trip even if they haven't clicked Save yet.
           try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(data.itinerary)) } catch {}
         }
+        // Invite them to meet new people for this trip, with a beat so the
+        // last day lands first.
+        setTimeout(() => setShowCompanionPrompt(true), 1400)
       },
       done:  (data) => {
         setStreamingDone(true)
-        // Trip is fully ready — invite the user to meet new people.
-        // Defer the prompt by a beat so they get to see their finished
-        // itinerary land first.
-        setTimeout(() => setShowCompanionPrompt(true), 1400)
         // Refinement may have produced a different final itinerary — prefer
         // that over the one emitted at itinerary_generated.
         if (data?.itinerary) {
@@ -300,6 +301,16 @@ export default function Itinerary() {
     const raw = localStorage.getItem('sonder_persona_v1')
     if (raw) personaDescriptor = JSON.parse(raw)?.persona?.descriptor || null
   } catch { /* noop */ }
+
+  // Whichever path set itinerary (SSE done, SSE itinerary_generated, or
+  // view-mode /current load), make sure the companion prompt eventually
+  // shows up. The SSE handlers already arm a delayed prompt; this effect
+  // covers view mode where no events fire.
+  useEffect(() => {
+    if (!itinerary || showCompanionPrompt || companionPromptDismissed) return
+    const t = setTimeout(() => setShowCompanionPrompt(true), 1400)
+    return () => clearTimeout(t)
+  }, [itinerary, showCompanionPrompt, companionPromptDismissed])
 
   // ── Phone behaviour: power-on, autoscale, wheel routing ────────────────────
   // Phone starts asleep. User taps the screen (or the right-side power
