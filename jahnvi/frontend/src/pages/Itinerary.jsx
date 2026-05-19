@@ -448,14 +448,11 @@ export default function Itinerary() {
       }}>
         <DestinationBackdrop city={dest?.city} visible={booted && showingItinerary}/>
         <AtmosphericScene/>
-        <OrbitalRings/>
-        <AuroraRibbon y="18%"  delay={0} dur={22} opacity={0.4}/>
-        <AuroraRibbon y="48%"  delay={3} dur={26} opacity={0.32} hue="#e8d4a8"/>
-        <AuroraRibbon y="74%"  delay={6} dur={28} opacity={0.28} hue="#b89968"/>
-        <CometShower/>
+        <FlightPaths/>
+        {isWide && <CompassRose/>}
         <PaperGrain/>
         <Spotlight/>
-        <GoldDust count={isCompact ? 22 : 44}/>
+        <GoldDust count={isCompact ? 18 : 34}/>
         <CornerOrnaments/>
         {isWide && <EditionMark itinerary={itinerary || renderTarget}/>}
 
@@ -775,164 +772,105 @@ function Spotlight() {
   )
 }
 
-// Aurora-like gold ribbons drifting across the canvas. Bezier paths whose
-// `d` morphs between three shapes so the curve looks alive, not static.
-function AuroraRibbon({ y, delay, hue = '#f0dcb0', dur = 20, opacity = 0.35 }) {
-  const id = `aurora-${delay}-${y}`
+// A single travelling flight arc — origin dot blooms, dashed gold curve
+// traces itself between two points, destination dot lights up, then it all
+// fades. Loops on a stagger so the canvas always has one or two routes
+// drawing themselves like an in-flight map.
+function FlightArc({ from, to, delay = 0, dur = 7, repeatDelay = 6 }) {
+  const mx = (from.x + to.x) / 2
+  const my = Math.min(from.y, to.y) - 60 - Math.random() * 60
+  const d = `M ${from.x} ${from.y} Q ${mx} ${my} ${to.x} ${to.y}`
   return (
     <motion.svg
-      initial={{ opacity: 0 }}
-      animate={{ opacity }}
-      transition={{ duration: 1.6, delay: delay + 0.4 }}
-      style={{
-        position: 'absolute', top: y, left: '-10%',
-        width: '120%', height: 240,
-        pointerEvents: 'none', filter: 'blur(1.5px)',
-      }}
-      viewBox="0 0 1000 240" preserveAspectRatio="none"
+      style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'visible' }}
+      viewBox="0 0 1000 800" preserveAspectRatio="xMidYMid slice"
     >
-      <defs>
-        <linearGradient id={id} x1="0" x2="1">
-          <stop offset="0%"  stopColor={hue} stopOpacity="0"/>
-          <stop offset="35%" stopColor={hue} stopOpacity="0.55"/>
-          <stop offset="65%" stopColor={hue} stopOpacity="0.55"/>
-          <stop offset="100%" stopColor={hue} stopOpacity="0"/>
-        </linearGradient>
-      </defs>
       <motion.path
+        d={d} fill="none"
+        stroke="#d4b686" strokeWidth="1.1"
+        strokeDasharray="5 6" strokeLinecap="round"
+        initial={{ pathLength: 0, opacity: 0 }}
         animate={{
-          d: [
-            'M 0 120 Q 200 40  400 120 T 800 120 T 1200 120',
-            'M 0 120 Q 200 200 400 120 T 800 120 T 1200 120',
-            'M 0 120 Q 200 80  400 160 T 800 100 T 1200 120',
-            'M 0 120 Q 200 40  400 120 T 800 120 T 1200 120',
-          ],
+          pathLength: [0, 1, 1, 1],
+          opacity:    [0, 0.7, 0.7, 0],
         }}
-        transition={{ duration: dur, delay, repeat: Infinity, ease: 'easeInOut' }}
-        stroke={`url(#${id})`} strokeWidth="1.6" fill="none"
+        transition={{ duration: dur, delay, times: [0, 0.45, 0.78, 1], repeat: Infinity, repeatDelay, ease: 'easeInOut' }}
+        style={{ filter: 'drop-shadow(0 0 6px rgba(240,220,176,0.5))' }}
       />
-      <motion.path
-        animate={{
-          d: [
-            'M 0 130 Q 250 80  500 130 T 1000 130 T 1500 130',
-            'M 0 130 Q 250 180 500 130 T 1000 130 T 1500 130',
-            'M 0 130 Q 250 60  500 170 T 1000 110 T 1500 130',
-            'M 0 130 Q 250 80  500 130 T 1000 130 T 1500 130',
-          ],
-        }}
-        transition={{ duration: dur + 6, delay: delay + 2, repeat: Infinity, ease: 'easeInOut' }}
-        stroke={`url(#${id})`} strokeWidth="0.8" fill="none" opacity="0.5"
+      <motion.circle
+        cx={from.x} cy={from.y} r="3.5" fill="#f0dcb0"
+        animate={{ opacity: [0, 1, 1, 0] }}
+        transition={{ duration: dur, delay, times: [0, 0.08, 0.85, 1], repeat: Infinity, repeatDelay, ease: 'easeOut' }}
+        style={{ filter: 'drop-shadow(0 0 8px rgba(240,220,176,0.9))' }}
+      />
+      <motion.circle
+        cx={to.x} cy={to.y} r="3.5" fill="#f0dcb0"
+        animate={{ opacity: [0, 0, 1, 0], scale: [0.6, 0.6, 1.2, 1] }}
+        transition={{ duration: dur, delay, times: [0, 0.42, 0.55, 1], repeat: Infinity, repeatDelay, ease: 'easeOut' }}
+        style={{ transformOrigin: `${to.x}px ${to.y}px`, filter: 'drop-shadow(0 0 8px rgba(240,220,176,0.9))' }}
       />
     </motion.svg>
   )
 }
 
-// Gold comet — a quick bright streak that traverses the canvas at random
-// intervals, like a shooting star at dusk.
-function CometStreak({ startX, startY, endX, endY, delay, dur = 2.4, repeatDelay = 14 }) {
+function FlightPaths() {
+  // Pre-baked routes that span the canvas at travel-poster angles.
   return (
-    <motion.div
-      initial={{ opacity: 0, x: startX, y: startY }}
-      animate={{
-        opacity: [0, 1, 1, 0],
-        x: [startX, endX, endX, endX],
-        y: [startY, endY, endY, endY],
-      }}
-      transition={{
-        duration: dur,
-        delay,
-        repeat: Infinity,
-        repeatDelay,
-        times: [0, 0.2, 0.85, 1],
-        ease: 'easeOut',
-      }}
-      style={{
-        position: 'absolute', top: 0, left: 0,
-        width: 140, height: 2,
-        background: 'linear-gradient(90deg, transparent, rgba(240,220,176,0.8) 60%, #f8e6c0)',
-        boxShadow: '0 0 14px rgba(240,220,176,0.9), 0 0 36px rgba(240,220,176,0.45)',
-        borderRadius: 2,
-        transformOrigin: 'right center',
-        transform: `rotate(${Math.atan2(endY - startY, endX - startX) * 180 / Math.PI}deg)`,
-        pointerEvents: 'none',
-      }}
-    />
-  )
-}
-
-function CometShower() {
-  // Pre-baked trajectories — each crosses the canvas at a different angle.
-  return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: 0 }}>
-      <CometStreak startX={-200}  startY={120}  endX={1400} endY={420}  delay={2}   dur={2.6} repeatDelay={18}/>
-      <CometStreak startX={1500}  startY={80}   endX={-200} endY={520}  delay={9}   dur={3.1} repeatDelay={22}/>
-      <CometStreak startX={-200}  startY={500}  endX={1500} endY={140}  delay={15}  dur={2.4} repeatDelay={20}/>
-      <CometStreak startX={600}   startY={-100} endX={400}  endY={900}  delay={24}  dur={3.4} repeatDelay={26}/>
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
+      <FlightArc from={{ x:  80, y: 220 }} to={{ x: 880, y: 300 }} delay={0}  dur={7}  repeatDelay={9}/>
+      <FlightArc from={{ x: 920, y: 140 }} to={{ x: 220, y: 560 }} delay={4}  dur={8}  repeatDelay={11}/>
+      <FlightArc from={{ x: 160, y: 640 }} to={{ x: 840, y: 480 }} delay={9}  dur={7}  repeatDelay={10}/>
+      <FlightArc from={{ x: 460, y:  60 }} to={{ x: 720, y: 720 }} delay={14} dur={8}  repeatDelay={12}/>
+      <FlightArc from={{ x: 780, y: 620 }} to={{ x:  60, y: 360 }} delay={20} dur={7}  repeatDelay={11}/>
     </div>
   )
 }
 
-// Concentric orbital rings rotating around the phone — celestial compass.
-function OrbitalRings() {
+// Vintage compass rose — tiny gilded dial drifting slowly in a corner,
+// like the inset of a travel atlas. The whole thing rotates ~ once per
+// four minutes, and the needle has its own faster sway.
+function CompassRose() {
   return (
     <div style={{
-      position: 'absolute', top: '50%', left: '50%',
-      transform: 'translate(-50%, -50%)',
-      pointerEvents: 'none', zIndex: 0,
-      width: 0, height: 0,
+      position: 'absolute', top: 96, left: 64,
+      width: 132, height: 132,
+      opacity: 0.22, pointerEvents: 'none', zIndex: 0,
     }}>
-      {/* Outer ring — dashed, slow CCW */}
-      <motion.div
-        animate={{ rotate: -360 }}
-        transition={{ duration: 220, repeat: Infinity, ease: 'linear' }}
-        style={{
-          position: 'absolute', top: '-460px', left: '-460px',
-          width: 920, height: 920, borderRadius: '50%',
-          border: '1px dashed rgba(240,220,176,0.10)',
-        }}
-      >
-        {/* Cardinal tick marks */}
-        {[0, 90, 180, 270].map(d => (
-          <span key={d} style={{
-            position: 'absolute', top: '50%', left: '50%',
-            width: 14, height: 1, background: 'rgba(240,220,176,0.35)',
-            transformOrigin: '0 50%',
-            transform: `rotate(${d}deg) translateX(454px)`,
-          }}/>
-        ))}
-      </motion.div>
-
-      {/* Middle ring — solid faint, slow CW */}
-      <motion.div
+      <motion.svg
+        viewBox="0 0 120 120" style={{ width: '100%', height: '100%' }}
         animate={{ rotate: 360 }}
-        transition={{ duration: 320, repeat: Infinity, ease: 'linear' }}
-        style={{
-          position: 'absolute', top: '-340px', left: '-340px',
-          width: 680, height: 680, borderRadius: '50%',
-          border: '1px solid rgba(212,182,134,0.10)',
-        }}
+        transition={{ duration: 260, repeat: Infinity, ease: 'linear' }}
       >
-        {[45, 135, 225, 315].map(d => (
-          <span key={d} style={{
-            position: 'absolute', top: '50%', left: '50%',
-            width: 6, height: 6, borderRadius: '50%', background: 'rgba(240,220,176,0.55)',
-            boxShadow: '0 0 8px rgba(240,220,176,0.7)',
-            transformOrigin: '0 50%',
-            transform: `rotate(${d}deg) translateX(336px) translateY(-3px)`,
-          }}/>
+        <defs>
+          <linearGradient id="cr-gold" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"  stopColor="#f0dcb0"/>
+            <stop offset="60%" stopColor="#b89968"/>
+            <stop offset="100%" stopColor="#5a4628"/>
+          </linearGradient>
+        </defs>
+        <circle cx="60" cy="60" r="56" fill="none" stroke="url(#cr-gold)" strokeWidth="0.7"/>
+        <circle cx="60" cy="60" r="42" fill="none" stroke="url(#cr-gold)" strokeWidth="0.4"/>
+        {/* 4 cardinal arrow blades */}
+        {[0, 90, 180, 270].map(deg => (
+          <g key={deg} transform={`rotate(${deg} 60 60)`}>
+            <polygon points="60,6 57,58 60,52 63,58" fill="url(#cr-gold)"/>
+          </g>
         ))}
-      </motion.div>
-
-      {/* Inner ring — soft halo, breathes */}
-      <motion.div
-        animate={{ scale: [1, 1.04, 1], opacity: [0.16, 0.32, 0.16] }}
-        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-        style={{
-          position: 'absolute', top: '-280px', left: '-280px',
-          width: 560, height: 560, borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(240,220,176,0.08) 0%, transparent 60%)',
-        }}
-      />
+        {/* 4 intercardinal blades, half scale */}
+        {[45, 135, 225, 315].map(deg => (
+          <g key={deg} transform={`rotate(${deg} 60 60)`}>
+            <polygon points="60,18 58.5,56 60,53 61.5,56" fill="url(#cr-gold)" opacity="0.75"/>
+          </g>
+        ))}
+        <circle cx="60" cy="60" r="2.4" fill="#f0dcb0"/>
+        {/* N/E/S/W tick labels — counter-rotated below so they stay upright would
+            require a second layer; here they spin with the dial like a real
+            map inset, which reads correctly enough at low opacity. */}
+        <text x="60" y="5" textAnchor="middle" fontSize="5.4" fill="#f0dcb0" fontFamily="'Cormorant Garamond',serif" fontStyle="italic">N</text>
+        <text x="117" y="62" textAnchor="middle" fontSize="5.4" fill="#f0dcb0" fontFamily="'Cormorant Garamond',serif" fontStyle="italic">E</text>
+        <text x="60" y="119" textAnchor="middle" fontSize="5.4" fill="#f0dcb0" fontFamily="'Cormorant Garamond',serif" fontStyle="italic">S</text>
+        <text x="3" y="62" textAnchor="middle" fontSize="5.4" fill="#f0dcb0" fontFamily="'Cormorant Garamond',serif" fontStyle="italic">W</text>
+      </motion.svg>
     </div>
   )
 }
