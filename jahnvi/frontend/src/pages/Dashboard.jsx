@@ -7,6 +7,7 @@ import MatchCard from '../components/MatchCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
+import { getCurrentItinerary } from '../lib/api'
 import { storage } from '../lib/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { updateProfile } from 'firebase/auth'
@@ -87,24 +88,48 @@ export default function Dashboard() {
   const navigate  = useNavigate()
   const { user, signOut }  = useAuth()
 
-  // Generated itinerary persisted by Itinerary.jsx on `done`. Falls back to
-  // null when the user hasn't planned a trip yet — empty-state CTA renders
-  // instead of a fake Bali card.
+  // Firestore is the source of truth — orchestrator writes every itinerary
+  // to it on `done`, and the Save button on /itinerary marks one as current.
+  // localStorage is a same-tab cache so the dashboard renders instantly
+  // while the network round-trip catches up.
   const [storedItinerary, setStoredItinerary] = useState(() => loadStoredItinerary())
+
+  const refresh = async () => {
+    try {
+      const res = await getCurrentItinerary()
+      const it = res?.itinerary ?? null
+      if (it) {
+        setStoredItinerary(it)
+        try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(it)) } catch { /* noop */ }
+      } else if (loadStoredItinerary()) {
+        // Server says no current trip but cache has one → user discarded it
+        // or it never made it to Firestore. Clear the stale local copy.
+        localStorage.removeItem('sonder_last_itinerary')
+        setStoredItinerary(null)
+      }
+    } catch (err) {
+      // 401/network → keep the cached card so the dashboard isn't blank.
+      console.warn('getCurrentItinerary failed (keeping cache):', err?.message || err)
+    }
+  }
+
   useEffect(() => {
-    // `storage` only fires for OTHER tabs; the user saving on /itinerary and
-    // hitting back is same-tab, so also re-read on focus + visibility change.
-    const reload = () => setStoredItinerary(loadStoredItinerary())
-    const onStorage = (e) => { if (e.key === 'sonder_last_itinerary') reload() }
+    if (!user) return
+    refresh()
+    const reloadLocal = () => setStoredItinerary(loadStoredItinerary())
+    const onStorage = (e) => { if (e.key === 'sonder_last_itinerary') reloadLocal() }
+    const onFocus = () => { reloadLocal(); refresh() }
     window.addEventListener('storage', onStorage)
-    window.addEventListener('focus', reload)
-    document.addEventListener('visibilitychange', reload)
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
     return () => {
       window.removeEventListener('storage', onStorage)
-      window.removeEventListener('focus', reload)
-      document.removeEventListener('visibilitychange', reload)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid])
+
   const trip = deriveTripCard(storedItinerary)
   const daysAway  = useCountUp(trip?.daysAway ?? 0, 1000, 600)
 

@@ -7,7 +7,7 @@ import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tok
 import ActivityCard from '../components/ActivityCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
-import { emailItinerary } from '../lib/api'
+import { emailItinerary, saveItineraryAsCurrent } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
 import { useSSE } from '../hooks/useSSE'
 import { auth } from '../lib/firebase'
@@ -97,14 +97,27 @@ export default function Itinerary() {
     return base
   }, [])
 
-  function handleSave() {
-    if (!itinerary) return
+  const [saving, setSaving]     = useState(false)
+  const [saveError, setSaveErr] = useState(null)
+
+  async function handleSave() {
+    if (!itinerary?.itinerary_id || saving || saved) return
+    setSaving(true)
+    setSaveErr(null)
     try {
-      localStorage.setItem('sonder_last_itinerary', JSON.stringify(itinerary))
+      await saveItineraryAsCurrent(itinerary.itinerary_id)
+      // Mirror to localStorage so the dashboard renders instantly on first
+      // load — the GET /itineraries/current call refreshes it from Firestore.
+      try {
+        localStorage.setItem('sonder_last_itinerary', JSON.stringify(itinerary))
+      } catch { /* quota / private-mode — non-fatal */ }
       setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
     } catch (err) {
-      console.warn('Save failed:', err)
+      console.error('Save failed:', err)
+      setSaveErr(err?.message || 'Save failed')
+      setTimeout(() => setSaveErr(null), 4000)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -235,15 +248,16 @@ export default function Itinerary() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {itinerary && (
             <motion.button
-              whileHover={!saved ? { borderColor: `${SKY}55`, boxShadow: `0 0 24px ${SKY}22`, scale: 1.04, transition: spring } : {}}
-              whileTap={!saved ? { scale: 0.96 } : {}}
+              whileHover={!saved && !saving ? { borderColor: `${SKY}55`, boxShadow: `0 0 24px ${SKY}22`, scale: 1.04, transition: spring } : {}}
+              whileTap={!saved && !saving ? { scale: 0.96 } : {}}
               onClick={handleSave}
-              disabled={saved}
-              style={{ background: saved ? `${SKY}14` : 'none', border: `1px solid ${saved ? `${SKY}66` : HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: saved ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.25s' }}
+              disabled={saved || saving}
+              title={saveError || ''}
+              style={{ background: saved ? `${SKY}14` : 'none', border: `1px solid ${saved ? `${SKY}66` : HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: saved ? 'default' : saving ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.25s', opacity: saving ? 0.6 : 1 }}
             >
               {saved ? <Check size={11} style={{ color: SKY }}/> : <Bookmark size={11} style={{ color: GOLD }}/>}
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: saved ? SKY : GOLD }}>
-                {saved ? 'Saved to dashboard' : 'Save itinerary'}
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: saved ? SKY : saveError ? '#E89B7C' : GOLD }}>
+                {saving ? 'Saving…' : saved ? 'Saved to dashboard' : saveError ? 'Try again' : 'Save itinerary'}
               </span>
             </motion.button>
           )}

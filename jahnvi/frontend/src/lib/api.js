@@ -131,6 +131,14 @@ export async function denyMatch(sessionId) {
   return post('/api/chat/deny', { session_id: sessionId })
 }
 
+export async function saveItineraryAsCurrent(itineraryId) {
+  return post(`/api/itineraries/${encodeURIComponent(itineraryId)}/save`, {})
+}
+
+export async function getCurrentItinerary() {
+  return get('/api/itineraries/current')
+}
+
 export async function emailItinerary(itineraryId, recipients, includeNotes = true) {
   return post('/api/export/email', {
     itinerary_id: itineraryId,
