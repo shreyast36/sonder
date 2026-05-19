@@ -92,11 +92,18 @@ export default function Dashboard() {
   // instead of a fake Bali card.
   const [storedItinerary, setStoredItinerary] = useState(() => loadStoredItinerary())
   useEffect(() => {
-    const onStorage = (e) => {
-      if (e.key === 'sonder_last_itinerary') setStoredItinerary(loadStoredItinerary())
-    }
+    // `storage` only fires for OTHER tabs; the user saving on /itinerary and
+    // hitting back is same-tab, so also re-read on focus + visibility change.
+    const reload = () => setStoredItinerary(loadStoredItinerary())
+    const onStorage = (e) => { if (e.key === 'sonder_last_itinerary') reload() }
     window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
+    window.addEventListener('focus', reload)
+    document.addEventListener('visibilitychange', reload)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('focus', reload)
+      document.removeEventListener('visibilitychange', reload)
+    }
   }, [])
   const trip = deriveTripCard(storedItinerary)
   const daysAway  = useCountUp(trip?.daysAway ?? 0, 1000, 600)

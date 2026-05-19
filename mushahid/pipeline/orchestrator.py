@@ -14,7 +14,7 @@ from mushahid.validation.rules import run_all_checks
 from mushahid.validation.critic import validate_large_output
 from ali.generation.itinerary_generator import generate_itinerary, generate_itinerary_by_day
 from ali.generation.output_parser import parse_itinerary
-from ali.rag.explainer import explain_itinerary
+from ali.rag.explainer import explain_day, explain_itinerary
 from shared.schemas import Itinerary
 
 logger = logging.getLogger(__name__)
@@ -111,15 +111,21 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
         yield format_event("ranking", {})
         yield format_event("ranked", {"top_destination": f"{destination.city}, {destination.country}"})
 
-        # Step 4 — Itinerary generation (token streaming) + per-day explanation queued
+        # Step 4 — Itinerary generation (token streaming) + per-day explanation
         step = "generating"
         yield format_event("generating", {})
         days = []
 
-        # Day-by-day streaming: emit each day to the frontend as soon as its
-        # JSON closes, so the user sees Day 1 within ~15s instead of waiting
-        # for the full ~6-8k token JSON blob to finish streaming.
+        # Day-by-day streaming with inline explanation: as soon as each day's
+        # JSON closes we run explain_day (parallel Haiku calls per activity)
+        # and emit day_ready with why_this already populated. The user sees
+        # Day 1 with its rationale within ~15-20s instead of waiting for all
+        # days to stream AND a separate explanation pass to finish.
         async for day in generate_itinerary_by_day(user_profile, destination, activities):
+            try:
+                day = await explain_day(day, user_profile)
+            except Exception as e:
+                logger.warning("explain_day failed for day %s (%s) — emitting without why_this", day.day_number, e)
             days.append(day)
             yield format_event("day_ready", {"day": day.model_dump(mode="json")})
 
@@ -136,15 +142,9 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
             co_traveller_ids=[],
         )
 
+        # itinerary_generated signals the frontend that the day stream is
+        # complete (so the "more days coming" indicator can be turned off).
         yield format_event("itinerary_generated", {"days": len(itinerary.days)})
-
-        # Step 5 — Explain activities concurrently (Ali RAG)
-        step = "explaining"
-        yield format_event("explaining", {})
-        try:
-            itinerary = await explain_itinerary(itinerary, user_profile)
-        except Exception:
-            pass  # RAG explanation is best-effort
 
         # Step 6 — Validation
         step = "validating"

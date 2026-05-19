@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { onAuthStateChanged } from 'firebase/auth'
-import { ArrowLeft, Users, Mail } from 'lucide-react'
+import { ArrowLeft, Users, Mail, Check, Bookmark } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
 import ActivityCard from '../components/ActivityCard'
 import { SonderNav3D } from '../components/SonderMark3D'
@@ -29,7 +29,7 @@ const PHASE_COPY = {
   ranked:                 null,
   generating:             'Designing your days',
   day_ready:              null,                     // handled separately — renders progressively
-  itinerary_generated:    'Adding the details',
+  itinerary_generated:    null,                     // handled separately — flips streamingDone
   explaining:             null,
   validating:             'Polishing',
   revision:               'Refining',
@@ -61,6 +61,8 @@ export default function Itinerary() {
   const [itinerary, setItinerary] = useState(null)
   const [partialDays, setPartialDays] = useState([])  // days as they stream in
   const [destination, setDestination] = useState(null)
+  const [streamingDone, setStreamingDone] = useState(false)  // flips on itinerary_generated
+  const [saved, setSaved]         = useState(false)
   const [error, setError]         = useState(null)
   const startedRef                = useRef(false)
 
@@ -79,15 +81,11 @@ export default function Itinerary() {
           return [...without, data.day].sort((a, b) => a.day_number - b.day_number)
         })
       },
+      itinerary_generated: () => setStreamingDone(true),
       done:  (data) => {
+        setStreamingDone(true)
         if (data?.itinerary) {
           setItinerary(data.itinerary)
-          // Persist so the Dashboard can show the trip after the user navigates
-          // away. Backend already writes to Firestore — this is just a fast
-          // local read for the dashboard card.
-          try {
-            localStorage.setItem('sonder_last_itinerary', JSON.stringify(data.itinerary))
-          } catch { /* quota / private-mode — ignore */ }
         } else {
           setError('No itinerary returned')
         }
@@ -98,6 +96,17 @@ export default function Itinerary() {
     }
     return base
   }, [])
+
+  function handleSave() {
+    if (!itinerary) return
+    try {
+      localStorage.setItem('sonder_last_itinerary', JSON.stringify(itinerary))
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (err) {
+      console.warn('Save failed:', err)
+    }
+  }
 
   const { start } = useSSE(handlers)
 
@@ -200,7 +209,9 @@ export default function Itinerary() {
     return <div style={{ minHeight: '100vh', background: BG }}/>
   }
 
-  const isStreaming = !itinerary && partialDays.length > 0
+  // Show the streaming pulse only while days are still arriving — flip off
+  // once the orchestrator signals itinerary_generated (or done).
+  const isStreaming = !streamingDone && partialDays.length > 0
   const dest = renderTarget.destination || {}
   const dateRange = formatDateRange(tripProfile?.constraints?.start_date, tripProfile?.constraints?.end_date)
 
@@ -222,12 +233,26 @@ export default function Itinerary() {
         </motion.button>
         <SonderNav3D markSize={32}/>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {itinerary && (
+            <motion.button
+              whileHover={!saved ? { borderColor: `${SKY}55`, boxShadow: `0 0 24px ${SKY}22`, scale: 1.04, transition: spring } : {}}
+              whileTap={!saved ? { scale: 0.96 } : {}}
+              onClick={handleSave}
+              disabled={saved}
+              style={{ background: saved ? `${SKY}14` : 'none', border: `1px solid ${saved ? `${SKY}66` : HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: saved ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.25s' }}
+            >
+              {saved ? <Check size={11} style={{ color: SKY }}/> : <Bookmark size={11} style={{ color: GOLD }}/>}
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: saved ? SKY : GOLD }}>
+                {saved ? 'Saved to dashboard' : 'Save itinerary'}
+              </span>
+            </motion.button>
+          )}
           <motion.button
             whileHover={{ borderColor: `${SKY}55`, boxShadow: `0 0 24px ${SKY}22`, scale: 1.04, transition: spring }}
             whileTap={{ scale: 0.96 }}
             onClick={handleEmailExport}
-            disabled={emailing}
-            style={{ background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.2s', opacity: emailing ? 0.6 : 1 }}
+            disabled={emailing || !itinerary}
+            style={{ background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.2s', opacity: emailing || !itinerary ? 0.6 : 1 }}
           >
             <Mail size={11} style={{ color: GOLD }}/>
             <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD }}>
