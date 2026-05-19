@@ -15,19 +15,36 @@ import sentry_sdk
 from sentry_sdk.integrations.starlette import StarletteIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
-if SENTRY_DSN:
+def _valid_sentry_dsn(dsn: str | None) -> bool:
+    # A real DSN looks like "https://<pubkey>@<host>/<project_id>".
+    # Guard against the .env.example placeholder leaking into prod, which
+    # would crash startup with BadDsn before any route can register.
+    if not dsn:
+        return False
+    if not (dsn.startswith("https://") or dsn.startswith("http://")):
+        return False
+    if "@" not in dsn or "..." in dsn:
+        return False
+    return True
+
+
+if _valid_sentry_dsn(SENTRY_DSN):
     # Render exposes the deploy commit as RENDER_GIT_COMMIT — use it for release
     # tracking so we can tell when a fix actually shipped vs. is still pending.
     _release = os.getenv("RENDER_GIT_COMMIT") or os.getenv("GIT_COMMIT_SHA")
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        integrations=[StarletteIntegration(), FastApiIntegration()],
-        environment="development" if LOCAL_MODE else "production",
-        release=_release,
-        traces_sample_rate=0.2,
-        profiles_sample_rate=0.1,
-        send_default_pii=False,
-    )
+    try:
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=[StarletteIntegration(), FastApiIntegration()],
+            environment="development" if LOCAL_MODE else "production",
+            release=_release,
+            traces_sample_rate=0.2,
+            profiles_sample_rate=0.1,
+            send_default_pii=False,
+        )
+    except Exception as e:
+        # Never let a bad Sentry DSN take the whole API down.
+        print(f"[startup] Sentry init failed, continuing without it: {e}")
 
 logger = logging.getLogger(__name__)
 
