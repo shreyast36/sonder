@@ -38,7 +38,7 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Co-Traveller Matching Algorithms
 
-- [ ] `shreyas/cotraveller/matching.py` — `score_compatibility()`, `get_top_matches()` — scores pairs of user profiles on interests, pace, and budget; returns top 3 `CoTravellerMatch` objects
+- [x] `shreyas/cotraveller/matching.py` — `score_compatibility()`, `get_top_matches()` — scores pairs of user profiles on interests, pace, and budget; returns top 3 `CoTravellerMatch` objects
 
 ### Real-time Layer
 
