@@ -276,13 +276,16 @@ export default function Itinerary() {
   } catch { /* noop */ }
 
   // ── Phone behaviour: power-on, autoscale, wheel routing ────────────────────
-  // Power-on boot sequence: black screen → gilt logo → app. Just one phase
-  // gate so the boot runs once per page mount.
+  // Phone starts asleep. User taps the screen (or the right-side power
+  // button) → boot animation (~1.7s) → app reveals + destination photo
+  // fades onto the page background. Mirrors the real "press to wake".
   const [booted, setBooted] = useState(false)
-  useEffect(() => {
-    const t = setTimeout(() => setBooted(true), 1700)
-    return () => clearTimeout(t)
-  }, [])
+  const [booting, setBooting] = useState(false)
+  const powerOn = () => {
+    if (booted || booting) return
+    setBooting(true)
+    setTimeout(() => { setBooted(true); setBooting(false) }, 1700)
+  }
 
   // Scale the phone down on short viewports so it always fits without a page
   // scrollbar. The page itself is locked to 100vh — the phone is the only
@@ -389,6 +392,7 @@ export default function Itinerary() {
         padding: 0,
         overflow: 'hidden',
       }}>
+        <DestinationBackdrop city={dest?.city} visible={booted && showingItinerary}/>
         <PaperGrain/>
         <GoldVignette/>
         <GhostDestination dest={dest} showingItinerary={showingItinerary}/>
@@ -396,7 +400,7 @@ export default function Itinerary() {
         {isWide && <Marginalia firstName={firstName} personaDescriptor={personaDescriptor} showingItinerary={showingItinerary}/>}
 
         <PhoneStage scale={phoneScale}>
-          <PhoneFrame>
+          <PhoneFrame onPowerButton={powerOn} powerButtonGlow={!booted && !booting}>
             <PhoneStatusBar/>
             {!showingItinerary ? (
               <PhoneLoading phase={phase}/>
@@ -414,7 +418,8 @@ export default function Itinerary() {
             )}
             <PhoneHomeIndicator/>
             <AnimatePresence>
-              {!booted && <PhoneBootScreen key="boot"/>}
+              {!booted && !booting && <PhoneSleepScreen key="sleep" onWake={powerOn}/>}
+              {booting && <PhoneBootScreen key="boot"/>}
             </AnimatePresence>
           </PhoneFrame>
         </PhoneStage>
@@ -445,6 +450,61 @@ function PaperGrain() {
       opacity: 0.05, backgroundImage: _grainBg, backgroundSize: '200px 200px',
       mixBlendMode: 'overlay',
     }}/>
+  )
+}
+
+function DestinationBackdrop({ city, visible }) {
+  // Pulls a destination photo from Unsplash (no API key, simple Source URL),
+  // preloads it, then fades it onto the page once the phone is awake. The
+  // image is heavily darkened so the device + gold typography stay readable.
+  // If the image fails to load, the existing gold gradient remains the
+  // background — no visible fallback noise.
+  const [loadedUrl, setLoadedUrl] = useState(null)
+
+  useEffect(() => {
+    if (!city) { setLoadedUrl(null); return }
+    let cancelled = false
+    const url = `https://source.unsplash.com/1600x900/?${encodeURIComponent(city)},travel,city`
+    const img = new Image()
+    img.onload  = () => { if (!cancelled) setLoadedUrl(url) }
+    img.onerror = () => { if (!cancelled) setLoadedUrl(null) }
+    img.src = url
+    return () => { cancelled = true }
+  }, [city])
+
+  return (
+    <AnimatePresence>
+      {visible && loadedUrl && (
+        <motion.div
+          key={loadedUrl}
+          initial={{ opacity: 0, scale: 1.04 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, transition: { duration: 0.8, ease } }}
+          transition={{ duration: 2.4, ease }}
+          style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}
+        >
+          {/* The photograph */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            backgroundImage: `url(${loadedUrl})`,
+            backgroundSize: 'cover', backgroundPosition: 'center',
+            filter: 'saturate(0.85) brightness(0.85)',
+          }}/>
+          {/* Tinted vignette so the phone reads clearly against any photo */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            background:
+              'radial-gradient(ellipse 60% 70% at 50% 50%, rgba(8,8,7,0.45) 0%, rgba(8,8,7,0.78) 60%, rgba(8,8,7,0.94) 100%)',
+          }}/>
+          {/* Warm gilt wash on top — keeps the brand temperature */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: 'linear-gradient(160deg, rgba(212,182,134,0.06) 0%, transparent 40%, rgba(58,45,24,0.18) 100%)',
+            mixBlendMode: 'overlay',
+          }}/>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 
@@ -644,6 +704,61 @@ function CuratorNote({ dateRange, firstName, showingItinerary }) {
   )
 }
 
+function PhoneSleepScreen({ onWake }) {
+  // Dark always-on style display: faint gilt power glyph + "tap to wake".
+  // Whole screen is the wake target so the user can tap anywhere on the
+  // device, the way an iPhone's tap-to-wake gesture works.
+  return (
+    <motion.div
+      key="sleep"
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: 0.35, ease } }}
+      onClick={onWake}
+      style={{
+        position: 'absolute', inset: 0, background: '#000', zIndex: 20,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        borderRadius: SCREEN_RADIUS, cursor: 'pointer', userSelect: 'none',
+      }}
+    >
+      {/* Pulsing gilt power glyph */}
+      <motion.div
+        animate={{ opacity: [0.32, 0.85, 0.32], scale: [0.96, 1, 0.96] }}
+        transition={{ duration: 3.4, repeat: Infinity, ease: 'easeInOut' }}
+        style={{ marginBottom: 22 }}
+      >
+        <svg width="46" height="46" viewBox="0 0 24 24" fill="none">
+          <defs>
+            <linearGradient id="sonderPower" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%"  stopColor="#f0dcb0"/>
+              <stop offset="55%" stopColor="#d4b686"/>
+              <stop offset="100%" stopColor="#8a6f4a"/>
+            </linearGradient>
+          </defs>
+          <path d="M12 3 V12" stroke="url(#sonderPower)" strokeWidth="1.8" strokeLinecap="round"/>
+          <path d="M5.5 8 A8 8 0 1 0 18.5 8" stroke="url(#sonderPower)" strokeWidth="1.8" strokeLinecap="round" fill="none"/>
+        </svg>
+      </motion.div>
+      <motion.span
+        animate={{ opacity: [0.35, 0.85, 0.35] }}
+        transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          fontFamily: '"Inter Tight",sans-serif',
+          fontSize: 10, letterSpacing: '0.48em', textTransform: 'uppercase',
+          color: GOLD, marginBottom: 6,
+        }}
+      >
+        Tap to wake
+      </motion.span>
+      <span style={{
+        fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+        fontSize: 11, color: 'rgba(212,182,134,0.55)',
+      }}>
+        — or press the side button
+      </span>
+    </motion.div>
+  )
+}
+
 function PhoneBootScreen() {
   return (
     <motion.div
@@ -787,7 +902,7 @@ const GOLD_RIM = (
   'inset 0 0 0 6.5px rgba(20,16,10,0.95)'            // black just inside the rim
 )
 
-function PhoneFrame({ children }) {
+function PhoneFrame({ children, onPowerButton, powerButtonGlow }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 24, scale: 0.985 }}
@@ -805,7 +920,22 @@ function PhoneFrame({ children }) {
       }}
     >
       {/* Side hardware accents — gilt power + volume buttons */}
-      <div style={{ position: 'absolute', right: -2.5, top: 150, width: 3.5, height: 82, borderRadius: 2, background: 'linear-gradient(90deg,#3a2d18,#f0dcb0 50%,#3a2d18)', boxShadow: '0 0 6px rgba(240,220,176,0.4)' }}/>
+      <motion.button
+        onClick={onPowerButton}
+        animate={powerButtonGlow
+          ? { boxShadow: ['0 0 6px rgba(240,220,176,0.4)', '0 0 22px rgba(240,220,176,0.95)', '0 0 6px rgba(240,220,176,0.4)'] }
+          : { boxShadow: '0 0 6px rgba(240,220,176,0.4)' }}
+        transition={powerButtonGlow ? { duration: 2.4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 }}
+        title={onPowerButton && powerButtonGlow ? 'Power on' : ''}
+        style={{
+          position: 'absolute', right: -3, top: 150,
+          width: 3.5, height: 82, borderRadius: 2,
+          background: 'linear-gradient(90deg,#3a2d18,#f0dcb0 50%,#3a2d18)',
+          border: 'none', padding: 0,
+          cursor: onPowerButton ? 'pointer' : 'default',
+          zIndex: 4,
+        }}
+      />
       <div style={{ position: 'absolute', left: -2.5, top: 124, width: 3.5, height: 30, borderRadius: 2, background: 'linear-gradient(90deg,#3a2d18,#f0dcb0 50%,#3a2d18)' }}/>
       <div style={{ position: 'absolute', left: -2.5, top: 174, width: 3.5, height: 58, borderRadius: 2, background: 'linear-gradient(90deg,#3a2d18,#f0dcb0 50%,#3a2d18)' }}/>
       <div style={{ position: 'absolute', left: -2.5, top: 244, width: 3.5, height: 58, borderRadius: 2, background: 'linear-gradient(90deg,#3a2d18,#f0dcb0 50%,#3a2d18)' }}/>
