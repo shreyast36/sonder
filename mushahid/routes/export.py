@@ -13,38 +13,127 @@ logger = logging.getLogger(__name__)
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
 
 
+def _format_trip_date_range(itinerary) -> str:
+    """Pull dates off the first/last day; fall back gracefully if missing."""
+    days = itinerary.days or []
+    if not days:
+        return ""
+    try:
+        from datetime import date
+        def _fmt(v):
+            if isinstance(v, date):
+                return v.strftime("%b %-d") if hasattr(v, "strftime") else str(v)
+            # ISO string fallback
+            s = str(v)[:10]
+            try:
+                return date.fromisoformat(s).strftime("%b %-d")
+            except Exception:
+                return s
+        start_raw = days[0].trip_date
+        end_raw = days[-1].trip_date
+        if not start_raw or not end_raw:
+            return f"{len(days)} day{'s' if len(days) != 1 else ''}"
+        # Windows strftime doesn't support %-d; fall back without the dash
+        try:
+            start = _fmt(start_raw)
+            end = _fmt(end_raw)
+        except ValueError:
+            start = str(start_raw)[:10]
+            end = str(end_raw)[:10]
+        return f"{start} – {end}  ·  {len(days)} day{'s' if len(days) != 1 else ''}"
+    except Exception:
+        return f"{len(days)} day{'s' if len(days) != 1 else ''}"
+
+
 def _render_itinerary_html(itinerary, include_notes: bool = True) -> str:
-    days_html = ""
-    for day in itinerary.days:
-        acts = "".join(
-            f"<li><b>{html_lib.escape(ia.time)}</b> — {html_lib.escape(ia.activity.name)}"
-            f"{(' <em>' + html_lib.escape(ia.why_this) + '</em>') if ia.why_this else ''}</li>"
-            for ia in day.activities
-        )
-        theme = html_lib.escape(day.theme) if day.theme else ""
-        days_html += (
-            f"<h3>Day {day.day_number}"
-            f"{(' — ' + theme) if theme else ''}"
-            f" (${day.daily_cost_usd:.0f})</h3><ul>{acts}</ul>"
-        )
+    BG, INK, GOLD, MUTE, RULE = "#FAF8F4", "#2A241A", "#B89968", "#8B7355", "#E5DCC9"
+    SERIF = "'Cormorant Garamond', Georgia, 'Times New Roman', serif"
+    SANS  = "'Inter Tight', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
+
+    def day_block(day) -> str:
+        rows = []
+        for ia in day.activities:
+            time = html_lib.escape(ia.time or "")
+            name = html_lib.escape(ia.activity.name)
+            why = html_lib.escape(ia.why_this) if ia.why_this else (
+                html_lib.escape(ia.activity.description or "")
+            )
+            rows.append(f"""
+            <tr>
+              <td valign="top" style="padding:18px 0;border-top:1px solid {RULE};">
+                <p style="margin:0 0 4px;font-family:{SANS};font-size:10px;letter-spacing:0.18em;text-transform:uppercase;color:{GOLD};">{time}</p>
+                <p style="margin:0 0 6px;font-family:{SERIF};font-size:22px;color:{INK};line-height:1.2;">{name}</p>
+                <p style="margin:0;font-family:{SANS};font-size:13px;line-height:1.55;color:{MUTE};">{why}</p>
+              </td>
+            </tr>""")
+        theme = html_lib.escape(day.theme) if day.theme else "Day plan"
+        cost = f"${day.daily_cost_usd:.0f}" if day.daily_cost_usd else ""
+        cost_chip = (
+            f'<span style="font-family:{SANS};font-size:9px;letter-spacing:0.18em;'
+            f'text-transform:uppercase;color:{MUTE};margin-left:12px;">{cost} day</span>'
+        ) if cost else ""
+        return f"""
+        <tr><td style="padding:40px 48px 8px;">
+          <p style="margin:0 0 6px;font-family:{SANS};font-size:9px;letter-spacing:0.32em;text-transform:uppercase;color:{MUTE};">Day {day.day_number}{cost_chip}</p>
+          <h2 style="margin:0 0 18px;font-family:{SERIF};font-style:italic;font-weight:400;font-size:32px;color:{INK};line-height:1;">{theme}</h2>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">{"".join(rows)}</table>
+        </td></tr>"""
+
+    days_html = "".join(day_block(d) for d in itinerary.days)
 
     notes_html = ""
     if include_notes and itinerary.notes:
-        notes_html = "<h3>Notes</h3><ul>" + "".join(
-            f"<li>{html_lib.escape(n)}</li>" for n in itinerary.notes
-        ) + "</ul>"
+        items = "".join(
+            f'<li style="margin:0 0 6px;font-family:{SANS};font-size:13px;line-height:1.55;color:{MUTE};">'
+            f"{html_lib.escape(n)}</li>"
+            for n in itinerary.notes
+        )
+        notes_html = f"""
+        <tr><td style="padding:32px 48px 8px;border-top:1px solid {RULE};">
+          <p style="margin:0 0 12px;font-family:{SANS};font-size:9px;letter-spacing:0.32em;text-transform:uppercase;color:{MUTE};">Notes</p>
+          <ul style="margin:0;padding-left:18px;">{items}</ul>
+        </td></tr>"""
 
-    city = html_lib.escape(itinerary.destination.city)
-    country = html_lib.escape(itinerary.destination.country)
+    city = html_lib.escape(itinerary.destination.city or "")
+    country = html_lib.escape(itinerary.destination.country or "")
+    title = city + (f", {country}" if country else "")
+    date_range = _format_trip_date_range(itinerary)
+    budget_line = (
+        f"Total budget · ${itinerary.total_budget_usd:.0f}"
+        if itinerary.total_budget_usd else ""
+    )
 
-    return f"""
-    <html><body style="font-family:sans-serif;max-width:700px;margin:auto;padding:2rem">
-    <h1>Sonder Itinerary</h1>
-    <h2>{city}, {country}</h2>
-    <p>Total budget: <b>${itinerary.total_budget_usd:.0f}</b></p>
-    {days_html}{notes_html}
-    </body></html>
-    """
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Your Sonder Itinerary</title></head>
+<body style="margin:0;padding:0;background:{BG};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{BG};">
+    <tr><td align="center" style="padding:48px 16px;">
+      <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background:#FFFFFF;border:1px solid {RULE};">
+
+        <tr><td style="padding:40px 48px 8px;text-align:center;">
+          <p style="margin:0;font-family:{SANS};font-size:10px;letter-spacing:0.38em;text-transform:uppercase;color:{GOLD};">Sonder</p>
+        </td></tr>
+
+        <tr><td style="padding:24px 48px 48px;text-align:center;border-bottom:1px solid {RULE};">
+          <p style="margin:0 0 8px;font-family:{SANS};font-size:10px;letter-spacing:0.28em;text-transform:uppercase;color:{MUTE};">Your itinerary</p>
+          <h1 style="margin:0 0 12px;font-family:{SERIF};font-weight:400;font-size:54px;color:{INK};line-height:1;letter-spacing:-0.02em;">{title}</h1>
+          <p style="margin:0;font-family:{SANS};font-size:13px;color:{MUTE};letter-spacing:0.04em;">{html_lib.escape(date_range)}</p>
+          {f'<p style="margin:10px 0 0;font-family:{SANS};font-size:11px;color:{MUTE};letter-spacing:0.08em;">{budget_line}</p>' if budget_line else ''}
+        </td></tr>
+
+        {days_html}
+        {notes_html}
+
+        <tr><td style="padding:40px 48px 48px;border-top:1px solid {RULE};text-align:center;">
+          <p style="margin:0 0 8px;font-family:{SANS};font-size:10px;letter-spacing:0.32em;text-transform:uppercase;color:{MUTE};">Curated for you by</p>
+          <p style="margin:0;font-family:{SERIF};font-style:italic;font-size:20px;color:{GOLD};">Sonder</p>
+        </td></tr>
+
+      </table>
+      <p style="margin:24px 0 0;font-family:{SANS};font-size:11px;color:{MUTE};">You're receiving this because you requested an itinerary export.</p>
+    </td></tr>
+  </table>
+</body></html>"""
 
 
 _TEST_DAYS = [

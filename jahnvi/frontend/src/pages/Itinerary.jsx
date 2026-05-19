@@ -7,7 +7,7 @@ import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tok
 import ActivityCard from '../components/ActivityCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
-import { emailItineraryTest } from '../lib/api'
+import { emailItinerary } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
 import { useSSE } from '../hooks/useSSE'
 import { auth } from '../lib/firebase'
@@ -80,8 +80,17 @@ export default function Itinerary() {
         })
       },
       done:  (data) => {
-        if (data?.itinerary) setItinerary(data.itinerary)
-        else setError('No itinerary returned')
+        if (data?.itinerary) {
+          setItinerary(data.itinerary)
+          // Persist so the Dashboard can show the trip after the user navigates
+          // away. Backend already writes to Firestore — this is just a fast
+          // local read for the dashboard card.
+          try {
+            localStorage.setItem('sonder_last_itinerary', JSON.stringify(data.itinerary))
+          } catch { /* quota / private-mode — ignore */ }
+        } else {
+          setError('No itinerary returned')
+        }
       },
     }
     for (const [evt, copy] of Object.entries(PHASE_COPY)) {
@@ -110,10 +119,10 @@ export default function Itinerary() {
   }, [navigate, start])
 
   async function handleEmailExport() {
-    if (!user?.email || !itinerary) return
+    if (!user?.email || !itinerary?.itinerary_id) return
     setEmailing(true)
     try {
-      await emailItineraryTest(user.email)
+      await emailItinerary(itinerary.itinerary_id, [user.email])
       setEmailSent(true)
       setTimeout(() => setEmailSent(false), 3000)
     } catch (err) {

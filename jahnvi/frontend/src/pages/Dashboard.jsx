@@ -33,6 +33,47 @@ function useCountUp(target, duration = 1200, delay = 300) {
   return count
 }
 
+function loadStoredItinerary() {
+  try {
+    const raw = localStorage.getItem('sonder_last_itinerary')
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch { return null }
+}
+
+function fmtShortDate(v) {
+  if (!v) return ''
+  try {
+    const d = new Date(typeof v === 'string' ? v.slice(0, 10) : v)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  } catch { return '' }
+}
+
+function deriveTripCard(itinerary) {
+  if (!itinerary) return null
+  const days = itinerary.days || []
+  if (!days.length) return null
+  const startRaw = days[0]?.trip_date
+  const endRaw   = days[days.length - 1]?.trip_date
+  const departs  = fmtShortDate(startRaw) || '—'
+  const returns  = fmtShortDate(endRaw)   || '—'
+  const duration = `${days.length} day${days.length === 1 ? '' : 's'}`
+  let daysAway = null
+  if (startRaw) {
+    const start = new Date(typeof startRaw === 'string' ? startRaw.slice(0, 10) : startRaw)
+    if (!isNaN(start.getTime())) {
+      const diff = Math.ceil((start.getTime() - Date.now()) / 86400000)
+      daysAway = diff > 0 ? diff : 0
+    }
+  }
+  return {
+    city: itinerary.destination?.city || 'Your trip',
+    country: itinerary.destination?.country || '',
+    departs, returns, duration, daysAway,
+  }
+}
+
 const MOCK_MATCHES = [
   { id: '1', display_name: 'Priya Mehta',  location: 'Mumbai, India',    match_score: 92, tags: ['Relaxed', 'Culture', 'Mid-range'],  avatar_url: 'https://i.pravatar.cc/80?img=47' },
   { id: '2', display_name: 'Arjun Nair',   location: 'Bangalore, India', match_score: 87, tags: ['Adventure', 'Mid-range', 'Foodie'], avatar_url: 'https://i.pravatar.cc/80?img=12' },
@@ -45,7 +86,20 @@ const reveal  = { hidden: { opacity: 0, y: 28 }, show: { opacity: 1, y: 0, trans
 export default function Dashboard() {
   const navigate  = useNavigate()
   const { user, signOut }  = useAuth()
-  const daysAway  = useCountUp(18, 1000, 600)
+
+  // Generated itinerary persisted by Itinerary.jsx on `done`. Falls back to
+  // null when the user hasn't planned a trip yet — empty-state CTA renders
+  // instead of a fake Bali card.
+  const [storedItinerary, setStoredItinerary] = useState(() => loadStoredItinerary())
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'sonder_last_itinerary') setStoredItinerary(loadStoredItinerary())
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+  const trip = deriveTripCard(storedItinerary)
+  const daysAway  = useCountUp(trip?.daysAway ?? 0, 1000, 600)
 
   // displayName changes via updateProfile don't refire onAuthStateChanged, so
   // we track an in-component override that takes precedence over user.displayName.
@@ -246,74 +300,92 @@ export default function Dashboard() {
         <motion.div variants={reveal} style={{ padding: '52px 52px', borderRight: `1px solid ${HAIRLINE}` }}>
           <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 24 }}>Upcoming Trip</p>
 
-          <motion.div
-            onClick={() => navigate('/itinerary')}
-            whileHover={{ y: -6, transition: spring }}
-            whileTap={{ scale: 0.99 }}
-            style={{ cursor: 'pointer', padding: 1, borderRadius: 26, background: 'linear-gradient(145deg,rgba(232,212,168,0.30) 0%,rgba(8,8,7,0) 50%,rgba(232,212,168,0.12) 100%)', boxShadow: '0 24px 72px rgba(0,0,0,0.55), 0 4px 16px rgba(0,0,0,0.30), inset 0 1px 0 rgba(232,212,168,0.10)' }}
-          >
-            <div style={{ background: 'linear-gradient(160deg,rgba(24,20,13,0.99) 0%,rgba(14,11,8,1) 100%)', borderRadius: 25, padding: '40px 40px 32px', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', top: -80, right: -80, width: 360, height: 360, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(245,158,11,0.12) 0%, rgba(212,182,134,0.06) 45%, transparent 70%)', pointerEvents: 'none' }}/>
-              <div style={{ position: 'absolute', bottom: -40, left: -40, width: 240, height: 240, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(180,138,68,0.08) 0%, transparent 65%)', pointerEvents: 'none' }}/>
+          {trip ? (
+            <motion.div
+              onClick={() => navigate('/itinerary')}
+              whileHover={{ y: -6, transition: spring }}
+              whileTap={{ scale: 0.99 }}
+              style={{ cursor: 'pointer', padding: 1, borderRadius: 26, background: 'linear-gradient(145deg,rgba(232,212,168,0.30) 0%,rgba(8,8,7,0) 50%,rgba(232,212,168,0.12) 100%)', boxShadow: '0 24px 72px rgba(0,0,0,0.55), 0 4px 16px rgba(0,0,0,0.30), inset 0 1px 0 rgba(232,212,168,0.10)' }}
+            >
+              <div style={{ background: 'linear-gradient(160deg,rgba(24,20,13,0.99) 0%,rgba(14,11,8,1) 100%)', borderRadius: 25, padding: '40px 40px 32px', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: -80, right: -80, width: 360, height: 360, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(245,158,11,0.12) 0%, rgba(212,182,134,0.06) 45%, transparent 70%)', pointerEvents: 'none' }}/>
+                <div style={{ position: 'absolute', bottom: -40, left: -40, width: 240, height: 240, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(180,138,68,0.08) 0%, transparent 65%)', pointerEvents: 'none' }}/>
 
-              {/* live dot */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 16 }}>
-                <motion.div
-                  animate={{ opacity: [1, 0.3, 1], scale: [1, 1.3, 1] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                  style={{ width: 6, height: 6, borderRadius: '50%', background: AMBER, boxShadow: `0 0 8px ${AMBER}` }}
-                />
-                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(245,158,11,0.70)' }}>Upcoming</span>
-              </div>
-
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: 'rgba(212,182,134,0.50)', marginBottom: 10, position: 'relative' }}>Destination</p>
-              <motion.h2
-                animate={{ filter: ['drop-shadow(0 0 16px rgba(212,182,134,0.28))', 'drop-shadow(0 0 48px rgba(212,182,134,0.65))', 'drop-shadow(0 0 16px rgba(212,182,134,0.28))'] }}
-                transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-                style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 96, lineHeight: 0.85, letterSpacing: '-0.03em', background: GOLD_GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', display: 'block', marginBottom: 8, position: 'relative' }}
-              >
-                Bali
-              </motion.h2>
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, letterSpacing: '0.32em', textTransform: 'uppercase', color: MUTE, marginBottom: 36, position: 'relative' }}>Indonesia</p>
-
-              <div style={{ height: 1, background: `linear-gradient(to right, ${HAIRLINE}, rgba(232,212,168,0.20), ${HAIRLINE})`, marginBottom: 28 }}/>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 0, position: 'relative' }}>
-                {[
-                  { label: 'Departs',   value: 'Jun 14', accent: false },
-                  { label: 'Returns',   value: 'Jun 21', accent: false },
-                  { label: 'Duration',  value: '7 days', accent: false },
-                  { label: 'Days away', value: daysAway, accent: true  },
-                ].map(({ label, value, accent }, i) => (
-                  <div key={label} style={{ borderRight: i < 3 ? `1px solid ${HAIRLINE}` : 'none', paddingRight: 20, paddingLeft: i > 0 ? 20 : 0 }}>
-                    <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, marginBottom: 6 }}>{label}</p>
-                    {accent ? (
-                      <motion.p
-                        animate={{ filter: [`drop-shadow(0 0 8px ${AMBER}88)`, `drop-shadow(0 0 20px ${AMBER}cc)`, `drop-shadow(0 0 8px ${AMBER}88)`] }}
-                        transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-                        style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 28, fontWeight: 400, color: AMBER, lineHeight: 1 }}
-                      >
-                        {value}
-                      </motion.p>
-                    ) : (
-                      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 16, fontWeight: 500, color: BONE }}>{value}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 28, paddingTop: 22, borderTop: `1px solid ${HAIRLINE}`, position: 'relative' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <img src="https://i.pravatar.cc/80?img=47" alt="" style={{ width: 28, height: 28, borderRadius: '50%', border: `1.5px solid rgba(212,182,134,0.30)`, boxShadow: '0 0 12px rgba(212,182,134,0.15)' }}/>
-                  <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE }}>Travelling with Priya M.</span>
+                {/* live dot */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 16 }}>
+                  <motion.div
+                    animate={{ opacity: [1, 0.3, 1], scale: [1, 1.3, 1] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                    style={{ width: 6, height: 6, borderRadius: '50%', background: AMBER, boxShadow: `0 0 8px ${AMBER}` }}
+                  />
+                  <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(245,158,11,0.70)' }}>Upcoming</span>
                 </div>
-                <motion.div whileHover={{ x: 4 }} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: GOLD }}>View itinerary</span>
-                  <ChevronRight size={12} style={{ color: GOLD }}/>
-                </motion.div>
+
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: 'rgba(212,182,134,0.50)', marginBottom: 10, position: 'relative' }}>Destination</p>
+                <motion.h2
+                  animate={{ filter: ['drop-shadow(0 0 16px rgba(212,182,134,0.28))', 'drop-shadow(0 0 48px rgba(212,182,134,0.65))', 'drop-shadow(0 0 16px rgba(212,182,134,0.28))'] }}
+                  transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+                  style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 96, lineHeight: 0.85, letterSpacing: '-0.03em', background: GOLD_GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', display: 'block', marginBottom: 8, position: 'relative' }}
+                >
+                  {trip.city}
+                </motion.h2>
+                {trip.country && (
+                  <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, letterSpacing: '0.32em', textTransform: 'uppercase', color: MUTE, marginBottom: 36, position: 'relative' }}>{trip.country}</p>
+                )}
+
+                <div style={{ height: 1, background: `linear-gradient(to right, ${HAIRLINE}, rgba(232,212,168,0.20), ${HAIRLINE})`, marginBottom: 28 }}/>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 0, position: 'relative' }}>
+                  {[
+                    { label: 'Departs',   value: trip.departs,  accent: false },
+                    { label: 'Returns',   value: trip.returns,  accent: false },
+                    { label: 'Duration',  value: trip.duration, accent: false },
+                    { label: 'Days away', value: trip.daysAway != null ? daysAway : '—', accent: true  },
+                  ].map(({ label, value, accent }, i) => (
+                    <div key={label} style={{ borderRight: i < 3 ? `1px solid ${HAIRLINE}` : 'none', paddingRight: 20, paddingLeft: i > 0 ? 20 : 0 }}>
+                      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, marginBottom: 6 }}>{label}</p>
+                      {accent ? (
+                        <motion.p
+                          animate={{ filter: [`drop-shadow(0 0 8px ${AMBER}88)`, `drop-shadow(0 0 20px ${AMBER}cc)`, `drop-shadow(0 0 8px ${AMBER}88)`] }}
+                          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                          style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 28, fontWeight: 400, color: AMBER, lineHeight: 1 }}
+                        >
+                          {value}
+                        </motion.p>
+                      ) : (
+                        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 16, fontWeight: 500, color: BONE }}>{value}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: 28, paddingTop: 22, borderTop: `1px solid ${HAIRLINE}`, position: 'relative' }}>
+                  <motion.div whileHover={{ x: 4 }} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: GOLD }}>View itinerary</span>
+                    <ChevronRight size={12} style={{ color: GOLD }}/>
+                  </motion.div>
+                </div>
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          ) : (
+            <motion.div
+              onClick={() => navigate('/preferences')}
+              whileHover={{ y: -4, borderColor: 'rgba(245,158,11,0.35)', transition: spring }}
+              whileTap={{ scale: 0.99 }}
+              style={{ cursor: 'pointer', padding: '48px 40px', borderRadius: 26, background: 'rgba(245,158,11,0.04)', border: `1px solid rgba(245,158,11,0.18)`, textAlign: 'center', transition: 'all 0.25s' }}
+            >
+              <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 32, color: BONE, lineHeight: 1.15, marginBottom: 12 }}>
+                Your next trip is one decision away.
+              </p>
+              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, marginBottom: 28, lineHeight: 1.6, maxWidth: 360, margin: '0 auto 28px' }}>
+                Plan a trip and your itinerary will live here.
+              </p>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: `1px solid rgba(245,158,11,0.30)` }}>
+                <Plus size={12} style={{ color: AMBER }}/>
+                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: AMBER }}>Plan your first trip</span>
+              </div>
+            </motion.div>
+          )}
         </motion.div>
 
         {/* RIGHT — companions + new trip */}
