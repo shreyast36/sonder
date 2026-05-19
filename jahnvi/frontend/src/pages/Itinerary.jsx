@@ -424,13 +424,6 @@ export default function Itinerary() {
           </PhoneFrame>
         </PhoneStage>
 
-        {isWide && (
-          <CuratorNote
-            dateRange={dateRange}
-            firstName={firstName}
-            showingItinerary={showingItinerary}
-          />
-        )}
       </main>
     </div>
   )
