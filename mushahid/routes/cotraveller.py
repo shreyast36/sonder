@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from shared.schemas import CoTravellerMatch, UserProfile, TripConstraints, PersonaQuestionAnswers
 from mushahid.auth import verify_token
-from mushahid.realtime.firestore import get_user_profile, get_itinerary
+from mushahid.realtime.firestore import get_user_profile, get_itinerary, get_companion_prefs
 from mushahid.utils.sanitize import sanitize_user_input
 
 router = APIRouter()
@@ -53,21 +53,70 @@ async def _load_user_profile(uid: str, itinerary_id: str | None = None) -> UserP
     return profile
 
 
+def _extra_text_from_prefs(prefs: dict | None) -> str:
+    """Turn the four companion-intake answers into a short natural-language
+    string that gets appended to the user's persona text before embedding.
+    The phrasing here matters: it has to live in the same lexical space as
+    seeded co-traveller bios so cosine retrieval skews the right way."""
+    if not prefs:
+        return ""
+    bits: list[str] = []
+    party = (prefs.get("party_arrival") or "").strip()
+    if party == "close":
+        bits.append("at a party, sticks close to one familiar person")
+    elif party == "explore":
+        bits.append("at a party, makes a lap and meets new people")
+    elif party == "anchored":
+        bits.append("at a party, anchors somewhere and lets people come over")
+    chat = (prefs.get("chat_lull") or "").strip()
+    if chat == "revive":
+        bits.append("actively revives quiet group chats")
+    elif chat == "hands_off":
+        bits.append("hands-off about group chats, lets them breathe")
+    elif chat == "direct":
+        bits.append("prefers direct one-to-one messages over group chats")
+    spo = (prefs.get("spontaneity") or "").strip()
+    if spo == "yes":
+        bits.append("open to last-minute plans with people they barely know")
+    elif spo == "depends":
+        bits.append("considers last-minute plans based on who else is in")
+    elif spo == "pass":
+        bits.append("prefers planned over spontaneous social moves")
+    free = (prefs.get("companion_text") or "").strip()
+    if free:
+        bits.append(free)
+    return ". ".join(bits)
+
+
 class MatchesRequest(BaseModel):
     itinerary_id: str | None = None
 
 
 @router.post("/cotraveller", response_model=list[CoTravellerMatch])
 async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verify_token)):
-    """Top matches for the signed-in user (optionally scoped to a specific trip)."""
+    """Top matches for the signed-in user. When itinerary_id is set, load
+    any companion preferences saved for that trip and fold them into the
+    retrieval vector so the candidate pool reflects what the user actually
+    wants in a companion for *this* trip."""
     from shreyas.retrieval.search import search_cotravellers
     from shreyas.cotraveller.matching import get_top_matches
     from mushahid.monitoring import capture
     try:
         profile = await _load_user_profile(uid, body.itinerary_id)
-        candidates = await search_cotravellers(profile)
+        prefs = None
+        if body.itinerary_id:
+            try:
+                prefs = await get_companion_prefs(body.itinerary_id)
+            except Exception as e:
+                logger.warning("companion_prefs load failed for %s: %s", body.itinerary_id, e)
+        extra = _extra_text_from_prefs(prefs)
+        candidates = await search_cotravellers(profile, extra_text=extra)
         matches = get_top_matches(profile, candidates)
-        capture(uid, "match_found", {"match_count": len(matches), "itinerary_id": body.itinerary_id})
+        capture(uid, "match_found", {
+            "match_count": len(matches),
+            "itinerary_id": body.itinerary_id,
+            "had_prefs": bool(prefs),
+        })
         return matches
     except Exception as e:
         logger.error("cotraveller match failed for %s: %s", uid, e, exc_info=True)

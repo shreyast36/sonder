@@ -62,6 +62,8 @@ export default function Itinerary() {
   const [destination, setDestination] = useState(null)
   const [streamingDone, setStreamingDone] = useState(false)  // flips on itinerary_generated
   const [saved, setSaved]         = useState(false)
+  const [showCompanionPrompt, setShowCompanionPrompt] = useState(false)
+  const [companionPromptDismissed, setCompanionPromptDismissed] = useState(false)
   const [error, setError]         = useState(null)
   const startedRef                = useRef(false)
 
@@ -94,6 +96,10 @@ export default function Itinerary() {
       },
       done:  (data) => {
         setStreamingDone(true)
+        // Trip is fully ready — invite the user to meet new people.
+        // Defer the prompt by a beat so they get to see their finished
+        // itinerary land first.
+        setTimeout(() => setShowCompanionPrompt(true), 1400)
         // Refinement may have produced a different final itinerary — prefer
         // that over the one emitted at itinerary_generated.
         if (data?.itinerary) {
@@ -187,6 +193,18 @@ export default function Itinerary() {
     })
     return () => unsub()
   }, [navigate, start])
+
+  async function handleMeetPeople() {
+    if (!itinerary?.itinerary_id) return
+    setCompanionPromptDismissed(true)
+    // Best-effort save so the trip lands on the dashboard before we navigate.
+    if (!saved) {
+      try { await saveItineraryAsCurrent(itinerary.itinerary_id) } catch (err) {
+        console.warn('save before companions failed:', err?.message || err)
+      }
+    }
+    navigate(`/companions/${itinerary.itinerary_id}`)
+  }
 
   async function handleEmailExport() {
     if (!user?.email || !itinerary?.itinerary_id) return
@@ -475,6 +493,70 @@ export default function Itinerary() {
         </PhoneStage>
 
       </main>
+
+      {/* Companion prompt — slides up when the pipeline 'done' event fires,
+          asks Yes/No to meeting new people for this trip. Non-blocking. */}
+      <AnimatePresence>
+        {showCompanionPrompt && !companionPromptDismissed && itinerary && (
+          <motion.div
+            key="companion-prompt"
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 60, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 240, damping: 26 }}
+            style={{
+              position: 'fixed',
+              bottom: 24, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 100,
+              maxWidth: 'min(480px, calc(100vw - 32px))',
+              padding: '18px 22px',
+              background: 'rgba(20,16,11,0.96)',
+              border: `1px solid rgba(212,182,134,0.30)`,
+              borderRadius: 16,
+              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.55), 0 0 32px rgba(212,182,134,0.10)',
+              display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
+            }}
+          >
+            <span style={{
+              flex: '1 1 220px',
+              fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+              fontSize: 16, color: BONE, lineHeight: 1.35,
+            }}>
+              Would you like to meet new people on this trip?
+            </span>
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <motion.button
+                whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+                onClick={() => setCompanionPromptDismissed(true)}
+                style={{
+                  padding: '9px 18px', background: 'none',
+                  border: `1px solid ${HAIRLINE}`, borderRadius: 18,
+                  cursor: 'pointer',
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em',
+                  textTransform: 'uppercase', color: MUTE,
+                }}
+              >
+                No
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.04, boxShadow: `0 0 18px ${GOLD}55` }}
+                whileTap={{ scale: 0.97 }}
+                onClick={handleMeetPeople}
+                style={{
+                  padding: '9px 22px',
+                  background: `linear-gradient(135deg, ${GOLD} 0%, #B89464 100%)`,
+                  border: 'none', borderRadius: 18, cursor: 'pointer',
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.20em',
+                  textTransform: 'uppercase', color: '#0a0807', fontWeight: 500,
+                }}
+              >
+                Yes
+              </motion.button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

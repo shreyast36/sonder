@@ -139,6 +139,14 @@ export async function getCurrentItinerary() {
   return get('/api/itineraries/current')
 }
 
+export async function getCompanionPrefs(itineraryId) {
+  return get(`/api/itineraries/${encodeURIComponent(itineraryId)}/companion-prefs`)
+}
+
+export async function saveCompanionPrefs(itineraryId, prefs) {
+  return post(`/api/itineraries/${encodeURIComponent(itineraryId)}/companion-prefs`, prefs)
+}
+
 export async function emailItinerary(itineraryId, recipients, includeNotes = true) {
   return post('/api/export/email', {
     itinerary_id: itineraryId,

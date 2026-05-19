@@ -35,6 +35,26 @@ class CoTravellerProfile(BaseModel):
     embedding:    Optional[list[float]] = None
 
 
+class CompanionPrefs(BaseModel):
+    """
+    Per-trip companion preferences captured by 4 fun, non-travel questions
+    on /companions before matches render. Stored in Firestore at
+    companion_prefs/{itinerary_id}; influences both the embedding (free text
+    appended to persona) and the candidate pool (question keywords nudge
+    cosine retrieval).
+
+    Field values are picker keys; the frontend renders the human labels:
+      party_arrival:  close | explore | anchored
+      chat_lull:      revive | hands_off | direct
+      spontaneity:    yes | depends | pass
+      companion_text: ≤ 200 chars free text
+    """
+    party_arrival:  Optional[str] = None
+    chat_lull:      Optional[str] = None
+    spontaneity:    Optional[str] = None
+    companion_text: Optional[str] = None
+
+
 class CoTravellerMatch(BaseModel):
     """
     The result of Shreyas's compatibility scoring — shown on Screen 4.

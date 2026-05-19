@@ -8,6 +8,7 @@ import Dashboard       from './pages/Dashboard'
 import TripPreferences from './pages/TripPreferences'
 import PersonaReveal   from './pages/PersonaReveal'
 import Itinerary       from './pages/Itinerary'
+import Companions      from './pages/Companions'
 import MatchDetail     from './pages/MatchDetail'
 import Chat            from './pages/Chat'
 import ApproveDeny     from './pages/ApproveDeny'
@@ -54,6 +55,7 @@ export default function App() {
           <Route path="/preferences"        element={<Page><TripPreferences/></Page>}/>
           <Route path="/persona-reveal"     element={<Page><PersonaReveal/></Page>}/>
           <Route path="/itinerary"          element={<Page><Itinerary/></Page>}/>
+          <Route path="/companions/:itineraryId" element={<Page><Companions/></Page>}/>
           <Route path="/match/:id"          element={<Page><MatchDetail/></Page>}/>
           <Route path="/chat/:sessionId"    element={<Page><Chat/></Page>}/>
           <Route path="/approve/:sessionId" element={<Page><ApproveDeny/></Page>}/>

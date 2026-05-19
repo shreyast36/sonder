@@ -110,27 +110,37 @@ async def search_activities(
     return hotels + restaurants + activities
 
 
-async def search_cotravellers(user_profile: UserProfile, top_k: int = 50) -> list[CoTravellerProfile]:
+async def search_cotravellers(
+    user_profile: UserProfile,
+    top_k: int = 50,
+    extra_text: str = "",
+) -> list[CoTravellerProfile]:
     """
     Query the seeded 'cotravellers' Pinecone namespace with the user's persona
     embedding and return up to top_k candidate profiles ranked by cosine.
 
-    The actual fine-grained match scoring (dimension overlap, pace/budget
-    alignment, match_reasons) happens in shreyas.cotraveller.matching.get_top_matches —
+    `extra_text` is appended to the persona text before embedding — used by the
+    cotraveller route to fold the user's per-trip companion preferences (party
+    arrival style, communication style, spontaneity, free-text wish) into the
+    retrieval vector so the candidate pool reflects what they actually want.
+
+    The fine-grained match scoring (dimension overlap, pace/budget alignment,
+    match_reasons) happens in shreyas.cotraveller.matching.get_top_matches —
     this function is purely the coarse retrieval step.
     """
     from shared.schemas import CoTravellerProfile
     from jahnvi.schemas.enums import PacePreference, BudgetStyle, TravelStyle
 
-    # Reuse the user's stored embedding if module3_persona already wrote it;
-    # otherwise embed their persona text on the fly. Same path real users hit.
-    if user_profile and user_profile.travel_style_embedding:
+    # extra_text overrides the cached embedding so prefs always take effect.
+    if user_profile and user_profile.travel_style_embedding and not extra_text:
         query_vec = list(user_profile.travel_style_embedding)
     else:
         persona_text = build_persona_text(
             user_profile.constraints if user_profile else None,
             user_profile.persona_answers if user_profile else None,
         )
+        if extra_text:
+            persona_text = f"{persona_text}. {extra_text}".strip(". ")
         if not persona_text.strip():
             persona_text = (user_profile.display_name if user_profile else "") or "traveller"
         query_vec = await corpus_embed(persona_text)

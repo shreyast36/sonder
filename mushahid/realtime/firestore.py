@@ -115,6 +115,31 @@ async def update_user_profile(user_id: str, updates: dict) -> None:
     )
 
 
+async def write_companion_prefs(itinerary_id: str, prefs: dict) -> None:
+    if LOCAL_MODE:
+        _store[f"companion_prefs:{itinerary_id}"] = prefs
+        return
+    try:
+        await asyncio.to_thread(
+            lambda: get_db().collection("companion_prefs").document(itinerary_id).set(prefs)
+        )
+    except Exception as e:
+        logger.warning("write_companion_prefs failed: %s", e)
+
+
+async def get_companion_prefs(itinerary_id: str) -> dict | None:
+    if LOCAL_MODE:
+        return _store.get(f"companion_prefs:{itinerary_id}")
+    try:
+        doc = await asyncio.to_thread(
+            lambda: get_db().collection("companion_prefs").document(itinerary_id).get()
+        )
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        logger.warning("get_companion_prefs failed: %s", e)
+        return None
+
+
 async def write_chat_session(session) -> None:
     data = session.model_dump(mode="json")
     if LOCAL_MODE:
