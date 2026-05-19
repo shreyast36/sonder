@@ -56,3 +56,5 @@ data/seed/*.zip
 
 # Cities API cache
 .cache/
+
+michelin_my_maps.csv
