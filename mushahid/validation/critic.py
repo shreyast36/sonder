@@ -61,7 +61,7 @@ async def _call_llm(client, provider: str, model: str, prompt: str, system: str)
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ],
-        max_tokens=512,
+        max_completion_tokens=512,
     )
     return response.choices[0].message.content
 
