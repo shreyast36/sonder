@@ -29,6 +29,7 @@ from shared.schemas import TripConstraints, PersonaQuestionAnswers
 from jahnvi.data.dimensions import PUSH_DIMENSIONS, PULL_DIMENSIONS
 from jahnvi.data.persona_labels import label_for
 from jahnvi.data.convert_to_embeddings import embed_persona
+from jahnvi.data.classify_emotions import classify_emotions
 from jahnvi.pipeline.module3_persona import _resolve_pace
 from ali.routing.engine import route_request, route_request_structured
 
@@ -289,16 +290,49 @@ async def persona_infer(
     })
     constraints = body.constraints
 
-    # Embedding and LLM persona call run in parallel — they don't depend on each other.
-    user_prompt = _user_prompt(constraints, answers)
-    embed_task = embed_persona(constraints, answers)
-    llm_task   = route_request_structured(
-        "persona_label", user_prompt, _system_prompt(),
-        push_ids=_ALLOWED_PUSH, pull_ids=_ALLOWED_PULL,
+    # Embedding + emotion classification run in parallel; the LLM call then
+    # uses the classifier output to ground its persona tone (reduces tonal
+    # hallucination from the LLM since it has explicit emotional anchors
+    # detected from the user's actual free text).
+    user_prompt_base = _user_prompt(constraints, answers)
+    embed_task    = embed_persona(constraints, answers)
+    classify_task = classify_emotions(
+        # Free text is the strongest signal of tone; fall back to the
+        # picker labels concatenated when small_thing is empty.
+        (answers.small_thing or "").strip() or
+        " ".join(filter(None, [
+            label_for("friends_would_say", constraints.friends_would_say),
+            label_for("restaurant_order",  constraints.restaurant_order),
+            label_for("what_you_notice",   constraints.what_you_notice),
+            label_for("ideal_atmosphere",  constraints.ideal_atmosphere),
+        ])),
+        top_k=5,
     )
 
     try:
-        user_vector, raw = await asyncio.gather(embed_task, llm_task)
+        user_vector, emotion_signals = await asyncio.gather(embed_task, classify_task)
+    except Exception as e:
+        logger.error("persona pre-LLM step failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=502, detail=f"persona pre-LLM step failed: {type(e).__name__}: {e}") from e
+
+    # Build the grounded user prompt. Top emotions get injected as a
+    # short anchor so the LLM doesn't invent tones the text doesn't carry.
+    emotion_grounding = ""
+    if emotion_signals:
+        top_labels = ", ".join(label for label, _ in emotion_signals[:5])
+        emotion_grounding = (
+            f"\n\nEMOTIONAL REGISTER (top GoEmotions labels by cosine similarity "
+            f"against the user's free text): {top_labels}.\n"
+            "Keep the descriptor / paragraph / bullets consistent with these "
+            "emotions. Do not introduce tones the user's text does not carry."
+        )
+    user_prompt = user_prompt_base + emotion_grounding
+
+    try:
+        raw = await route_request_structured(
+            "persona_label", user_prompt, _system_prompt(),
+            push_ids=_ALLOWED_PUSH, pull_ids=_ALLOWED_PULL,
+        )
     except Exception as e:
         logger.error("persona inference failed: %s", e, exc_info=True)
         raise HTTPException(status_code=502, detail=f"persona inference failed: {type(e).__name__}: {e}") from e
@@ -360,6 +394,8 @@ async def persona_infer(
                 "top_push":      obj["top_push"],
                 "top_interests": obj["top_interests"],
                 "pace":          _resolve_pace(constraints.pace),
+                "top_emotions":  [label for label, _ in emotion_signals],
+                "emotion_scores": {label: round(score, 4) for label, score in emotion_signals},
             },
             "travel_style_embedding": user_vector,
             "constraints":            constraints.model_dump(mode="json"),
