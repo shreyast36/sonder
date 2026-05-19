@@ -50,9 +50,10 @@ RANDOMUSER_URL = "https://randomuser.me/api/"
 PUSH_IDS = list(PUSH_DIMENSIONS.keys())
 PULL_IDS = list(PULL_DIMENSIONS.keys())
 
-# Concurrency caps. Haiku tolerates ~30 in flight; OpenAI embed batches go up
-# to 2048 inputs per call. Tuned for free-tier rate limits.
-BIO_CONCURRENCY   = 16
+# Concurrency caps. Anthropic returns 529 overloaded under bursty load and
+# route_request falls back to OpenAI with the Anthropic model name (404).
+# 6 in flight stays under the threshold; lengthens the seed by ~30s for 500.
+BIO_CONCURRENCY   = 6
 EMBED_BATCH_SIZE  = 100
 UPSERT_BATCH_SIZE = 100
 
