@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { motion, AnimatePresence, useMotionValue, useTransform, useSpring } from 'framer-motion'
+import { motion, AnimatePresence, useMotionValue, useTransform, useSpring, useMotionTemplate } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { onAuthStateChanged } from 'firebase/auth'
 import { ArrowLeft, Mail, Check, Bookmark } from 'lucide-react'
@@ -822,16 +822,18 @@ function PhoneBootScreen() {
 
 function PhoneStage({ children, scale = 1 }) {
   // Mouse-tracked 3D tilt with spring smoothing — the phone reads as a
-  // physical object the cursor is holding.
+  // physical object the cursor is holding. All hooks declared at the top
+  // of the component, no hook calls inside JSX (React 18 prod is strict).
   const rawX = useMotionValue(0)
   const rawY = useMotionValue(0)
   const x = useSpring(rawX, { stiffness: 160, damping: 24, mass: 0.6 })
   const y = useSpring(rawY, { stiffness: 160, damping: 24, mass: 0.6 })
   const rotateX = useTransform(y, [-1, 1], [10, -10])
   const rotateY = useTransform(x, [-1, 1], [-12, 12])
-  // Cursor-tracked sheen position on the rim.
-  const sheenX = useTransform(x, [-1, 1], ['0%', '100%'])
-  const sheenY = useTransform(y, [-1, 1], ['0%', '100%'])
+  const sheenX  = useTransform(x, [-1, 1], ['0%', '100%'])
+  const sheenY  = useTransform(y, [-1, 1], ['0%', '100%'])
+  // Compose a CSS background string that reactively follows the cursor.
+  const sheenBg = useMotionTemplate`radial-gradient(circle 260px at ${sheenX} ${sheenY}, rgba(240,220,176,0.22) 0%, transparent 60%)`
 
   function onMove(e) {
     const r = e.currentTarget.getBoundingClientRect()
@@ -869,10 +871,7 @@ function PhoneStage({ children, scale = 1 }) {
           style={{
             position: 'absolute', inset: 0,
             borderRadius: SCREEN_RADIUS + SCREEN_INSET,
-            background: useTransform(
-              [sheenX, sheenY],
-              ([sx, sy]) => `radial-gradient(circle 260px at ${sx} ${sy}, rgba(240,220,176,0.22) 0%, transparent 60%)`
-            ),
+            background: sheenBg,
             pointerEvents: 'none', mixBlendMode: 'screen',
             zIndex: 3,
           }}
@@ -980,23 +979,33 @@ function PhoneStatusBar() {
   }, [])
 
   // Battery: real reading when the browser supports it, otherwise a stable 1.0.
+  // Wrapped in synchronous try/catch because some mobile browsers (Firefox,
+  // Brave on Android) throw on access rather than rejecting the promise.
   const [batteryLevel, setBatteryLevel] = useState(1)
   const [charging, setCharging] = useState(false)
   useEffect(() => {
-    if (typeof navigator === 'undefined' || !navigator.getBattery) return
+    if (typeof navigator === 'undefined' || typeof navigator.getBattery !== 'function') return
     let bat
     let cancelled = false
-    navigator.getBattery().then(b => {
-      if (cancelled) return
-      bat = b
-      const sync = () => { setBatteryLevel(b.level); setCharging(b.charging) }
-      sync()
-      b.addEventListener('levelchange', sync)
-      b.addEventListener('chargingchange', sync)
-    }).catch(() => {})
+    let sync = null
+    try {
+      const p = navigator.getBattery()
+      if (p && typeof p.then === 'function') {
+        p.then(b => {
+          if (cancelled) return
+          bat = b
+          sync = () => { setBatteryLevel(b.level); setCharging(b.charging) }
+          sync()
+          b.addEventListener('levelchange', sync)
+          b.addEventListener('chargingchange', sync)
+        }).catch(() => { /* unavailable — keep defaults */ })
+      }
+    } catch { /* sync throw — keep defaults */ }
     return () => {
       cancelled = true
-      if (bat) { try { bat.removeEventListener('levelchange', () => {}); bat.removeEventListener('chargingchange', () => {}) } catch {} }
+      if (bat && sync) {
+        try { bat.removeEventListener('levelchange', sync); bat.removeEventListener('chargingchange', sync) } catch {}
+      }
     }
   }, [])
 
