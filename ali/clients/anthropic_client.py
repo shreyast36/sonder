@@ -40,6 +40,76 @@ class AnthropicSmallClient(BaseLLMClient):
         )
         return response.content[0].text
 
+    async def complete_with_tools(
+        self,
+        prompt: str,
+        system: str = "",
+        push_ids: list[str] | None = None,
+        pull_ids: list[str] | None = None,
+        max_tokens: int = 1024,
+    ) -> str:
+        """
+        Call the model with a forced tool-use JSON schema that enumerates
+        valid dimension IDs for top_push and top_interests. This prevents
+        the model from hallucinating IDs not in the allowed lists.
+        Returns the tool input as a JSON string.
+        """
+        import json as _json
+
+        push_schema: dict = {"type": "string"}
+        pull_schema: dict = {"type": "string"}
+        if push_ids:
+            push_schema = {"type": "string", "enum": push_ids}
+        if pull_ids:
+            pull_schema = {"type": "string", "enum": pull_ids}
+
+        tool = {
+            "name": "output_persona",
+            "description": "Output the structured persona inference result.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "top_push": {
+                        "type": "array",
+                        "items": push_schema,
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "description": "Exactly 2 PUSH dimension IDs.",
+                    },
+                    "top_interests": {
+                        "type": "array",
+                        "items": pull_schema,
+                        "minItems": 3,
+                        "maxItems": 3,
+                        "description": "Exactly 3 PULL dimension IDs.",
+                    },
+                    "descriptor": {"type": "string"},
+                    "paragraph": {"type": "string"},
+                    "bullets": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 3,
+                        "maxItems": 3,
+                    },
+                },
+                "required": ["top_push", "top_interests", "descriptor", "paragraph", "bullets"],
+            },
+        }
+
+        response = await _get_client().messages.create(
+            model=self.model_name,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            tools=[tool],
+            tool_choice={"type": "tool", "name": "output_persona"},
+            max_tokens=max_tokens,
+        )
+        # Extract the tool-call input block and return it as a JSON string.
+        for block in response.content:
+            if block.type == "tool_use" and block.name == "output_persona":
+                return _json.dumps(block.input)
+        raise ValueError("Anthropic response did not contain expected tool_use block")
+
     async def stream(self, prompt: str, system: str = ""):
         async with _get_client().messages.stream(
             model=self.model_name,

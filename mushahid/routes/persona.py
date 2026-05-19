@@ -30,7 +30,7 @@ from jahnvi.data.dimensions import PUSH_DIMENSIONS, PULL_DIMENSIONS
 from jahnvi.data.persona_labels import label_for
 from jahnvi.data.convert_to_embeddings import embed_persona
 from jahnvi.pipeline.module3_persona import _resolve_pace
-from ali.routing.engine import route_request
+from ali.routing.engine import route_request, route_request_structured
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -195,6 +195,22 @@ def _redistribute_pools(obj: dict) -> dict:
     new_push = list(dict.fromkeys(new_push))[:2]
     new_pull = list(dict.fromkeys(new_pull))[:3]
 
+    # Last-resort fallback: if valid items are still fewer than required after
+    # pool redistribution, fill remaining slots from the allowed lists so that
+    # structural validation can always pass (avoids a 502 on complete LLM hallucination).
+    if len(new_push) < 2:
+        for fallback in _ALLOWED_PUSH:
+            if fallback not in new_push:
+                new_push.append(fallback)
+            if len(new_push) == 2:
+                break
+    if len(new_pull) < 3:
+        for fallback in _ALLOWED_PULL:
+            if fallback not in new_pull:
+                new_pull.append(fallback)
+            if len(new_pull) == 3:
+                break
+
     obj["top_push"] = new_push
     obj["top_interests"] = new_pull
     return obj
@@ -276,7 +292,10 @@ async def persona_infer(
     # Embedding and LLM persona call run in parallel — they don't depend on each other.
     user_prompt = _user_prompt(constraints, answers)
     embed_task = embed_persona(constraints, answers)
-    llm_task   = route_request("persona_label", user_prompt, _system_prompt())
+    llm_task   = route_request_structured(
+        "persona_label", user_prompt, _system_prompt(),
+        push_ids=_ALLOWED_PUSH, pull_ids=_ALLOWED_PULL,
+    )
 
     try:
         user_vector, raw = await asyncio.gather(embed_task, llm_task)
@@ -311,7 +330,10 @@ async def persona_infer(
                 + "\n\nReturn ONLY the corrected JSON object. Re-check that top_push uses ONLY PUSH ids and top_interests uses ONLY PULL ids."
             )
             try:
-                raw_retry = await route_request("persona_label", user_prompt + correction, _system_prompt())
+                raw_retry = await route_request_structured(
+                    "persona_label", user_prompt + correction, _system_prompt(),
+                    push_ids=_ALLOWED_PUSH, pull_ids=_ALLOWED_PULL,
+                )
                 obj = json.loads(_extract_json_object(_strip_fences(raw_retry)))
             except Exception as e:
                 logger.error("persona retry failed: %s", e)
