@@ -52,8 +52,9 @@ PULL_IDS = list(PULL_DIMENSIONS.keys())
 
 # Concurrency caps. Anthropic returns 529 overloaded under bursty load and
 # route_request falls back to OpenAI with the Anthropic model name (404).
-# 6 in flight stays under the threshold; lengthens the seed by ~30s for 500.
-BIO_CONCURRENCY   = 6
+# 3 in flight + in-script retry on overload below keeps things on Anthropic.
+BIO_CONCURRENCY   = 3
+BIO_RETRIES       = 3   # extra retries beyond the SDK's, on overloaded errors
 EMBED_BATCH_SIZE  = 100
 UPSERT_BATCH_SIZE = 100
 
@@ -130,24 +131,39 @@ def _parse_bio_json(raw: str) -> tuple[str, str]:
     return str(obj.get("archetype", "")).strip(), str(obj.get("bio", "")).strip()
 
 
+def _is_overloaded(e: Exception) -> bool:
+    s = str(e).lower()
+    return "529" in s or "overloaded" in s or "model `claude" in s  # incl. cross-provider 404
+
+
 async def generate_bio(name: str, age: int, location: str, persona: dict, sem: asyncio.Semaphore) -> tuple[str, str]:
-    """Call the small LLM with a bounded concurrency semaphore. Failures fall
-    back to a templated bio so a single bad call doesn't sink the whole seed."""
+    """Call the small LLM with a bounded concurrency semaphore. Retries
+    on Anthropic 529-overloaded (and the cross-provider 404 that follows when
+    route_request falls back to OpenAI with the Anthropic model name) before
+    accepting a templated fallback so a transient blip doesn't sink the bio."""
     async with sem:
-        try:
-            raw = await route_request("persona_label", _bio_prompt(name, age, location, persona), _BIO_SYSTEM)
-            archetype, bio = _parse_bio_json(raw)
-            if not archetype or not bio:
-                raise ValueError("empty archetype or bio")
-            return archetype, bio
-        except Exception as e:
-            log.warning("  bio fallback for %s (%s): %s", name, persona.get("top_interests"), e)
-            interests_pretty = ", ".join(persona["top_interests"][:2]).replace("_", " ")
-            return (
-                "Quiet Traveller",
-                f"Tends toward {interests_pretty}, with a {persona['pace']} pace. "
-                f"Travels {persona['travel_style']} and seeks places where the rhythm slows down.",
-            )
+        last_err = None
+        for attempt in range(BIO_RETRIES + 1):
+            try:
+                raw = await route_request("persona_label", _bio_prompt(name, age, location, persona), _BIO_SYSTEM)
+                archetype, bio = _parse_bio_json(raw)
+                if not archetype or not bio:
+                    raise ValueError("empty archetype or bio")
+                return archetype, bio
+            except Exception as e:
+                last_err = e
+                if _is_overloaded(e) and attempt < BIO_RETRIES:
+                    wait = 2.5 * (attempt + 1) + random.uniform(0, 1.5)
+                    await asyncio.sleep(wait)
+                    continue
+                break
+        log.warning("  bio fallback for %s (%s): %s", name, persona.get("top_interests"), last_err)
+        interests_pretty = ", ".join(persona["top_interests"][:2]).replace("_", " ")
+        return (
+            "Quiet Traveller",
+            f"Tends toward {interests_pretty}, with a {persona['pace']} pace. "
+            f"Travels {persona['travel_style']} and seeks places where the rhythm slows down.",
+        )
 
 
 # ── Persona text for embedding (matches live user text space) ─────────────────
