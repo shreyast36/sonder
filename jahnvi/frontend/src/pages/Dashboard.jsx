@@ -7,7 +7,7 @@ import MatchCard from '../components/MatchCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
-import { getCurrentItinerary } from '../lib/api'
+import { getCurrentItinerary, getCotravellers } from '../lib/api'
 import { storage } from '../lib/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { updateProfile } from 'firebase/auth'
@@ -75,10 +75,44 @@ function deriveTripCard(itinerary) {
   }
 }
 
-const MOCK_MATCHES = [
-  { id: '1', display_name: 'Priya Mehta',  location: 'Mumbai, India',    match_score: 92, tags: ['Relaxed', 'Culture', 'Mid-range'],  avatar_url: 'https://i.pravatar.cc/80?img=47' },
-  { id: '2', display_name: 'Arjun Nair',   location: 'Bangalore, India', match_score: 87, tags: ['Adventure', 'Mid-range', 'Foodie'], avatar_url: 'https://i.pravatar.cc/80?img=12' },
-]
+// Dim id → short human label for MatchCard tags. Lifted from Jahnvi's
+// Core 12 PUSH/PULL — covers everything our seed personas + real users emit.
+const DIM_TAG = {
+  // PULL
+  nature_outdoors:   'Nature',
+  culture_history:   'Culture',
+  food_drink:        'Food',
+  nightlife_social:  'Nightlife',
+  comfort_luxury:    'Luxury',
+  exploration_local: 'Explore',
+  // PUSH (occasionally surfaced as a tag)
+  escape_reset:      'Reset',
+  adventure_novelty: 'Adventure',
+  connection:        'Connection',
+  reflection:        'Reflection',
+  curiosity:         'Curious',
+  prestige_reward:   'Milestone',
+}
+const _PACE_TAG = { relaxed: 'Relaxed', moderate: 'Moderate', packed: 'Packed' }
+const _BUDGET_TAG = { budget: 'Budget', mid_range: 'Mid-range', luxury: 'Luxury' }
+
+function matchToCard(m) {
+  // Backend returns CoTravellerMatch: { profile: {profile_id, display_name,
+  // location, interests, pace, budget_style, ...}, match_score: 0..1,
+  // match_reasons: [...] }. Flatten + humanise for MatchCard.
+  const p = m?.profile || {}
+  const dimTags = (p.interests || []).slice(0, 2).map(d => DIM_TAG[d]).filter(Boolean)
+  const paceTag = _PACE_TAG[p.pace]
+  const budgetTag = _BUDGET_TAG[p.budget_style]
+  return {
+    id:           p.profile_id || p.display_name,
+    display_name: p.display_name || 'Anonymous',
+    location:     p.location || '',
+    match_score:  Math.round((Number(m?.match_score) || 0) * 100),
+    tags:         [...dimTags, paceTag, budgetTag].filter(Boolean).slice(0, 3),
+    avatar_url:   p.avatar_url || null,
+  }
+}
 
 const spring = { type: 'spring', stiffness: 280, damping: 22 }
 const stagger = { show: { transition: { staggerChildren: 0.10 } } }
@@ -93,6 +127,8 @@ export default function Dashboard() {
   // localStorage is a same-tab cache so the dashboard renders instantly
   // while the network round-trip catches up.
   const [storedItinerary, setStoredItinerary] = useState(() => loadStoredItinerary())
+  const [matches, setMatches] = useState([])
+  const [matchesLoading, setMatchesLoading] = useState(false)
 
   const refresh = async () => {
     try {
@@ -110,6 +146,30 @@ export default function Dashboard() {
       console.warn('getCurrentItinerary failed (keeping cache):', err?.message || err)
     }
   }
+
+  // Pull real co-traveller matches once we know who the user is.
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    const itin = storedItinerary
+    const itineraryId = itin?.itinerary_id || null
+    setMatchesLoading(true)
+    getCotravellers(itineraryId)
+      .then(res => {
+        if (cancelled) return
+        const arr = Array.isArray(res) ? res : (res?.matches || [])
+        setMatches(arr.map(matchToCard))
+      })
+      .catch(err => {
+        if (cancelled) return
+        console.warn('getCotravellers failed:', err?.message || err)
+        setMatches([])
+      })
+      .finally(() => { if (!cancelled) setMatchesLoading(false) })
+    return () => { cancelled = true }
+    // Re-fetch when the saved itinerary id changes (different trip → different matches).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid, storedItinerary?.itinerary_id])
 
   useEffect(() => {
     if (!user) return
@@ -436,7 +496,7 @@ export default function Dashboard() {
               </motion.button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {MOCK_MATCHES.map((m, i) => (
+              {matches.slice(0, 4).map((m, i) => (
                 <motion.div
                   key={m.id}
                   initial={{ opacity: 0, x: 24 }}
@@ -446,6 +506,16 @@ export default function Dashboard() {
                   <MatchCard match={m} onClick={() => navigate(`/match/${m.id}`)}/>
                 </motion.div>
               ))}
+              {!matchesLoading && matches.length === 0 && (
+                <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 14, color: MUTE, padding: '20px 4px', margin: 0 }}>
+                  No matches yet — plan a trip and we'll line up companions whose rhythm fits yours.
+                </p>
+              )}
+              {matchesLoading && (
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE, padding: '20px 4px', margin: 0 }}>
+                  Finding companions…
+                </p>
+              )}
             </div>
           </div>
 
