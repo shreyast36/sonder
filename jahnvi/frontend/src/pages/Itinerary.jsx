@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { onAuthStateChanged } from 'firebase/auth'
 import { ArrowLeft, Mail, Check, Bookmark } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, HAIRLINE, ease } from '../lib/tokens'
-import { SonderNav3D } from '../components/SonderMark3D'
+import { SonderNav3D, SonderMark3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { emailItinerary, saveItineraryAsCurrent, getCurrentItinerary } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
@@ -281,11 +281,22 @@ export default function Itinerary() {
   // fades onto the page background. Mirrors the real "press to wake".
   const [booted, setBooted] = useState(false)
   const [booting, setBooting] = useState(false)
-  const powerOn = () => {
-    if (booted || booting) return
-    setBooting(true)
-    setTimeout(() => { setBooted(true); setBooting(false) }, 1700)
+  const bootTimerRef = useRef(null)
+  const togglePower = () => {
+    if (booted || booting) {
+      // Power off — clear any in-flight boot and snap back to sleep.
+      if (bootTimerRef.current) { clearTimeout(bootTimerRef.current); bootTimerRef.current = null }
+      setBooting(false)
+      setBooted(false)
+    } else {
+      setBooting(true)
+      bootTimerRef.current = setTimeout(() => {
+        setBooted(true); setBooting(false); bootTimerRef.current = null
+      }, 1700)
+    }
   }
+  // Tapping the dark screen only wakes — never powers off.
+  const powerOn = () => { if (!booted && !booting) togglePower() }
 
   // Scale the phone down on short viewports so it always fits without a page
   // scrollbar. The page itself is locked to 100vh — the phone is the only
@@ -400,7 +411,7 @@ export default function Itinerary() {
         {isWide && <Marginalia firstName={firstName} personaDescriptor={personaDescriptor} showingItinerary={showingItinerary}/>}
 
         <PhoneStage scale={phoneScale}>
-          <PhoneFrame onPowerButton={powerOn} powerButtonGlow={!booted && !booting}>
+          <PhoneFrame onPowerButton={togglePower} powerButtonGlow={!booted && !booting}>
             <PhoneStatusBar/>
             {!showingItinerary ? (
               <PhoneLoading phase={phase}/>
@@ -775,39 +786,50 @@ function PhoneBootScreen() {
           pointerEvents: 'none',
         }}
       />
+      {/* Real 3D Sonder mark — the actual brand mark, not a gilt letter. */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.82, filter: 'blur(8px)' }}
+        initial={{ opacity: 0, scale: 0.78, filter: 'blur(10px)' }}
         animate={{
           opacity: [0, 1, 1, 1],
-          scale: [0.82, 1, 1, 0.97],
-          filter: ['blur(8px)', 'blur(0px)', 'blur(0px)', 'blur(1px)'],
+          scale: [0.78, 1.02, 1, 0.99],
+          filter: ['blur(10px)', 'blur(0px)', 'blur(0px)', 'blur(0.5px)'],
         }}
-        transition={{ duration: 1.5, times: [0, 0.45, 0.78, 1], ease: 'easeOut' }}
+        transition={{ duration: 1.5, times: [0, 0.5, 0.85, 1], ease: 'easeOut' }}
         style={{
-          fontFamily: '"Cormorant Garamond",serif',
-          fontStyle: 'italic', fontWeight: 400,
-          fontSize: 132, lineHeight: 1,
-          backgroundImage: 'linear-gradient(180deg, #f0dcb0 0%, #d4b686 55%, #8a6f4a 100%)',
-          WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-          WebkitTextFillColor: 'transparent',
-          filter: 'drop-shadow(0 0 32px rgba(240,220,176,0.55))',
+          filter: 'drop-shadow(0 0 36px rgba(240,220,176,0.55))',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
       >
-        S
+        <SonderMark3D size={180}/>
       </motion.div>
-      {/* Subtle "Sonder" wordmark below the S */}
       <motion.span
         initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: [0, 0.7, 0.7, 0], y: [8, 0, 0, -4] }}
+        animate={{ opacity: [0, 0.85, 0.85, 0], y: [10, 0, 0, -4] }}
         transition={{ duration: 1.5, times: [0, 0.55, 0.85, 1], ease: 'easeOut' }}
         style={{
-          position: 'absolute', bottom: 96,
-          fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
-          letterSpacing: '0.48em', textTransform: 'uppercase',
-          color: GOLD,
+          position: 'absolute', bottom: 110,
+          fontFamily: '"Inter Tight",sans-serif',
+          fontWeight: 400, fontSize: 13,
+          letterSpacing: '0.52em', textIndent: '0.52em', textTransform: 'uppercase',
+          backgroundImage: 'linear-gradient(180deg, #F0DCB0 0%, #E8D4A8 35%, #D4B686 55%, #B89464 80%, #8A6F4A 100%)',
+          WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+          WebkitTextFillColor: 'transparent',
         }}
       >
         Sonder
+      </motion.span>
+      <motion.span
+        initial={{ opacity: 0 }}
+        animate={{ opacity: [0, 0.55, 0.55, 0] }}
+        transition={{ duration: 1.5, times: [0, 0.6, 0.85, 1], ease: 'easeOut' }}
+        style={{
+          position: 'absolute', bottom: 84,
+          fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
+          fontSize: 8, letterSpacing: '0.42em', textIndent: '0.42em',
+          textTransform: 'uppercase', color: 'rgba(244,237,224,0.55)',
+        }}
+      >
+        Travel, together
       </motion.span>
     </motion.div>
   )
@@ -918,7 +940,7 @@ function PhoneFrame({ children, onPowerButton, powerButtonGlow }) {
           ? { boxShadow: ['0 0 6px rgba(240,220,176,0.4)', '0 0 22px rgba(240,220,176,0.95)', '0 0 6px rgba(240,220,176,0.4)'] }
           : { boxShadow: '0 0 6px rgba(240,220,176,0.4)' }}
         transition={powerButtonGlow ? { duration: 2.4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 }}
-        title={onPowerButton && powerButtonGlow ? 'Power on' : ''}
+        title={onPowerButton ? (powerButtonGlow ? 'Power on' : 'Power off') : ''}
         style={{
           position: 'absolute', right: -3, top: 150,
           width: 3.5, height: 82, borderRadius: 2,
