@@ -308,32 +308,33 @@ export default function Itinerary() {
   // Tapping the dark screen only wakes — never powers off.
   const powerOn = () => { if (!booted && !booting) togglePower() }
 
-  // Scale the phone to fit BOTH dimensions so it never gets cut off — even
-  // at high browser zoom. Tight padding + no hard floor: at 200-300% zoom
-  // the device shrinks rather than overflowing. Page height comes from
-  // JS-measured vh so iOS Safari's URL-bar collapse can't change the canvas.
+  // Phone scales only to fit HORIZONTALLY. Vertical overflow becomes a
+  // page scroll instead of a tiny phone — keeps the in-screen text
+  // readable at all zoom levels.
   const phoneScale = (() => {
-    const navH = isCompact ? 56 : 60
-    const pad  = isCompact ? 12 : 20
-    const availH = Math.max(0, vh - navH - pad * 2)
+    const pad = isCompact ? 12 : 24
     const availW = Math.max(0, vw - pad * 2)
-    const fit = Math.min(availH / (PHONE_H + 16), availW / (PHONE_W + 12))
-    return Math.max(0.18, Math.min(1, fit))
+    return Math.min(1, availW / (PHONE_W + 12))
   })()
 
-  // Route every wheel event into the phone's inner scroll, so the user can
-  // mousewheel anywhere on the page and the phone scrolls — like they're
-  // looking at a device, not a webpage.
+  // Route wheel events into the phone's inner scroll when the page itself
+  // has nowhere to go vertically. If the viewport is too short to fit the
+  // phone (high zoom, short laptops), the page scrolls naturally — wheel
+  // hijack stays out of the way so the user can reach the whole device.
   const phoneScrollRef = useRef(null)
+  const mainRef = useRef(null)
   const bootedRef = useRef(false)
   useEffect(() => { bootedRef.current = booted }, [booted])
   useEffect(() => {
     const onWheel = (e) => {
       if (!bootedRef.current) return
+      const main = mainRef.current
+      // Page can scroll? Let it.
+      if (main && main.scrollHeight - main.clientHeight > 4) return
+      // Don't hijack scroll over the top nav.
+      if (e.clientY < 68) return
       const el = phoneScrollRef.current
       if (!el) return
-      // Don't hijack scroll over the top nav (so its buttons stay usable).
-      if (e.clientY < 68) return
       el.scrollTop += e.deltaY
       e.preventDefault()
     }
@@ -435,13 +436,15 @@ export default function Itinerary() {
         </div>
       </nav>
 
-      {/* Bespoke print spread. Page is exactly 100vh; the phone is the only
-          surface that scrolls. Mousewheel anywhere is routed into it. */}
-      <main style={{
+      {/* Bespoke print spread. Phone stays at a comfortable readable size;
+          when the viewport is too short to show all of it (high zoom, short
+          laptops), main scrolls vertically. The wheel hijack yields to that
+          natural page scroll automatically. */}
+      <main ref={mainRef} style={{
         flex: 1, position: 'relative', zIndex: 1,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 0,
-        overflow: 'hidden',
+        padding: isCompact ? '20px 0' : '32px 0',
+        overflowX: 'hidden', overflowY: 'auto',
       }}>
         <DestinationBackdrop city={dest?.city} visible={booted && showingItinerary}/>
         <PaperGrain/>
