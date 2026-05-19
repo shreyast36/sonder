@@ -714,32 +714,7 @@ export default function Dashboard() {
                   ))}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 28, paddingTop: 22, borderTop: `1px solid ${HAIRLINE}`, position: 'relative', gap: 14, flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (storedItinerary?.itinerary_id) navigate(`/journal/${storedItinerary.itinerary_id}`)
-                      }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: 0 }}
-                    >
-                      <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE }}>Journal</span>
-                    </motion.button>
-                    {trip?.city && (
-                      <motion.button
-                        whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          const q = trip.country ? `?country=${encodeURIComponent(trip.country)}` : ''
-                          navigate(`/destination/${encodeURIComponent(trip.city)}${q}`)
-                        }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: 0 }}
-                      >
-                        <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE }}>Notes from {trip.city}</span>
-                      </motion.button>
-                    )}
-                  </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: 28, paddingTop: 22, borderTop: `1px solid ${HAIRLINE}`, position: 'relative' }}>
                   <motion.div whileHover={{ x: 4 }} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: GOLD }}>View itinerary</span>
                     <ChevronRight size={12} style={{ color: GOLD }}/>
@@ -765,6 +740,48 @@ export default function Dashboard() {
                 <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: AMBER }}>Plan your first trip</span>
               </div>
             </motion.div>
+          )}
+
+          {/* Trip actions row — outside the clickable card so taps never
+              accidentally navigate to /itinerary. */}
+          {trip && storedItinerary?.itinerary_id && (
+            <div style={{ display: 'flex', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
+              <motion.button
+                whileHover={{ y: -2, borderColor: 'rgba(212,182,134,0.40)' }} whileTap={{ scale: 0.97 }}
+                onClick={() => navigate(`/journal/${storedItinerary.itinerary_id}`)}
+                style={{
+                  flex: '1 1 180px', padding: '12px 18px',
+                  background: 'rgba(232,212,168,0.03)',
+                  border: `1px solid ${HAIRLINE}`,
+                  borderRadius: 12, cursor: 'pointer',
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  color: GOLD, transition: 'all 0.2s',
+                }}
+              >
+                Open journal
+              </motion.button>
+              {trip.city && (
+                <motion.button
+                  whileHover={{ y: -2, borderColor: 'rgba(212,182,134,0.40)' }} whileTap={{ scale: 0.97 }}
+                  onClick={() => {
+                    const q = trip.country ? `?country=${encodeURIComponent(trip.country)}` : ''
+                    navigate(`/destination/${encodeURIComponent(trip.city)}${q}`)
+                  }}
+                  style={{
+                    flex: '1 1 180px', padding: '12px 18px',
+                    background: 'rgba(232,212,168,0.03)',
+                    border: `1px solid ${HAIRLINE}`,
+                    borderRadius: 12, cursor: 'pointer',
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                    color: GOLD, transition: 'all 0.2s',
+                  }}
+                >
+                  Notes from {trip.city}
+                </motion.button>
+              )}
+            </div>
           )}
 
           {/* Past trips carousel — shown when the user has more than one saved trip */}
