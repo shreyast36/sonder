@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useMotionValue, useTransform, useSpring } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { onAuthStateChanged } from 'firebase/auth'
 import { ArrowLeft, Mail, Check, Bookmark } from 'lucide-react'
@@ -275,8 +275,6 @@ export default function Itinerary() {
     if (raw) personaDescriptor = JSON.parse(raw)?.persona?.descriptor || null
   } catch { /* noop */ }
 
-  const totalBudget = renderTarget?.total_budget_usd
-    || days.reduce((sum, d) => sum + (d.daily_cost_usd || 0), 0)
 
   return (
     <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
@@ -337,6 +335,7 @@ export default function Itinerary() {
         minHeight: 920,
       }}>
         <PaperGrain/>
+        <GoldVignette/>
         <GhostDestination dest={dest} showingItinerary={showingItinerary}/>
         <EditionMark itinerary={itinerary || renderTarget}/>
         <Marginalia firstName={firstName} personaDescriptor={personaDescriptor} showingItinerary={showingItinerary}/>
@@ -389,8 +388,8 @@ function PaperGrain() {
 }
 
 function GhostDestination({ dest, showingItinerary }) {
-  // Show the city name behind the phone at a massive scale, like wall
-  // lettering at a private viewing. Hidden during loading.
+  // City name behind the phone — gilded text that catches a slow shimmer,
+  // like gold leaf on a gallery wall.
   if (!showingItinerary || !dest?.city) return null
   return (
     <motion.div
@@ -404,16 +403,48 @@ function GhostDestination({ dest, showingItinerary }) {
         pointerEvents: 'none', zIndex: 0, userSelect: 'none', overflow: 'hidden',
       }}
     >
-      <span style={{
-        fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
-        fontSize: 'clamp(220px, 28vw, 360px)',
-        color: BONE, opacity: 0.045,
-        letterSpacing: '-0.045em', lineHeight: 0.9, whiteSpace: 'nowrap',
-        textShadow: `0 0 64px ${GOLD}11`,
-      }}>
+      <motion.span
+        animate={{ backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'] }}
+        transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
+          fontSize: 'clamp(220px, 28vw, 380px)',
+          letterSpacing: '-0.045em', lineHeight: 0.9, whiteSpace: 'nowrap',
+          // Gilded gradient — dark gold → bright gold → dark gold, with a
+          // slow horizontal shimmer that catches the eye but never demands it.
+          backgroundImage: 'linear-gradient(110deg, #3a2d18 0%, #6a4f28 18%, #b89968 38%, #f0dcb0 50%, #b89968 62%, #6a4f28 82%, #3a2d18 100%)',
+          backgroundSize: '200% 100%',
+          WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+          opacity: 0.18,
+          filter: `drop-shadow(0 0 32px ${GOLD}22)`,
+        }}
+      >
         {dest.city}
-      </span>
+      </motion.span>
     </motion.div>
+  )
+}
+
+function GoldVignette() {
+  // Soft, rich gold radial that surrounds the phone — gives the page
+  // depth without screaming "neon glow".
+  return (
+    <>
+      <motion.div
+        animate={{ opacity: [0.55, 0.85, 0.55] }}
+        transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', top: '50%', left: '50%',
+          transform: 'translate(-50%,-50%)',
+          width: 1100, height: 1100, borderRadius: '50%',
+          background: 'radial-gradient(ellipse, rgba(240,220,176,0.13) 0%, rgba(212,182,134,0.06) 30%, transparent 65%)',
+          filter: 'blur(20px)', pointerEvents: 'none', zIndex: 0,
+        }}
+      />
+      {/* Corner gilding */}
+      <div style={{ position: 'absolute', top: -120, right: -120, width: 480, height: 480, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(240,220,176,0.10) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }}/>
+      <div style={{ position: 'absolute', bottom: -160, left: -120, width: 520, height: 520, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(184,150,104,0.09) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }}/>
+    </>
   )
 }
 
@@ -433,24 +464,43 @@ function _editionNumber(itinerary) {
 
 function EditionMark({ itinerary }) {
   const num = _editionNumber(itinerary)
+  // Gilded gradient applied via background-clip so it reads as real
+  // metal, not flat gold colour.
+  const goldText = {
+    backgroundImage: 'linear-gradient(180deg, #f0dcb0 0%, #d4b686 35%, #8a6f4a 80%, #5a4628 100%)',
+    WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+    WebkitTextFillColor: 'transparent',
+    filter: 'drop-shadow(0 0 14px rgba(240,220,176,0.32))',
+  }
   return (
     <motion.div
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.9, ease, delay: 0.4 }}
       style={{
-        position: 'absolute', top: 36, right: 56,
-        display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4,
+        position: 'absolute', top: 32, right: 56,
+        display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6,
         zIndex: 2, pointerEvents: 'none', textAlign: 'right',
       }}
     >
-      <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 12, color: MUTE, letterSpacing: '0.04em', lineHeight: 1 }}>N°</span>
-      <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 44, color: GOLD, lineHeight: 1, letterSpacing: '-0.02em' }}>
+      <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 13, letterSpacing: '0.08em', lineHeight: 1, ...goldText }}>N°</span>
+      <motion.span
+        animate={{ filter: ['drop-shadow(0 0 14px rgba(240,220,176,0.32))', 'drop-shadow(0 0 34px rgba(240,220,176,0.58))', 'drop-shadow(0 0 14px rgba(240,220,176,0.32))'] }}
+        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400,
+          fontSize: 64, lineHeight: 1, letterSpacing: '-0.025em',
+          ...goldText,
+        }}
+      >
         {num}
-      </span>
-      <div style={{ width: 28, height: 1, background: GOLD, marginTop: 6, marginBottom: 6 }}/>
-      <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.42em', textTransform: 'uppercase', color: MUTE }}>
+      </motion.span>
+      <div style={{ width: 44, height: 1, background: 'linear-gradient(to right, transparent, #f0dcb0, transparent)', marginTop: 8, marginBottom: 6, opacity: 0.85 }}/>
+      <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.48em', textTransform: 'uppercase', ...goldText }}>
         Bespoke · One of one
+      </span>
+      <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.38em', textTransform: 'uppercase', color: MUTE, marginTop: 2 }}>
+        Sonder Atelier
       </span>
     </motion.div>
   )
@@ -500,21 +550,32 @@ function CuratorNote({ dateRange, firstName, showingItinerary }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 1, ease, delay: 0.75 }}
       style={{
-        position: 'absolute', bottom: 56, left: '50%',
+        position: 'absolute', bottom: 48, left: '50%',
         transform: 'translateX(-50%)',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
         zIndex: 2, pointerEvents: 'none', textAlign: 'center',
       }}
     >
-      <div style={{ width: 1, height: 28, background: `linear-gradient(to bottom, transparent, ${GOLD}88)` }}/>
+      {/* Two-tone gold filament drop */}
+      <div style={{ width: 1, height: 36, background: 'linear-gradient(to bottom, transparent, rgba(240,220,176,0.85))' }}/>
       <p style={{
         fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
-        fontSize: 17, color: BONE, margin: 0, letterSpacing: '0.005em',
+        fontSize: 20, margin: 0, letterSpacing: '0.005em',
+        backgroundImage: 'linear-gradient(180deg, #f0dcb0 0%, #d4b686 60%, #8a6f4a 100%)',
+        WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+        WebkitTextFillColor: 'transparent',
+        filter: 'drop-shadow(0 0 14px rgba(240,220,176,0.30))',
       }}>
         — {note}
       </p>
+      {/* Decorative gold flourish: thin double rule with a centered diamond */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+        <span style={{ width: 56, height: 1, background: 'linear-gradient(to right, transparent, rgba(240,220,176,0.85))' }}/>
+        <span style={{ width: 5, height: 5, transform: 'rotate(45deg)', background: '#f0dcb0', boxShadow: '0 0 10px rgba(240,220,176,0.6)' }}/>
+        <span style={{ width: 56, height: 1, background: 'linear-gradient(to left, transparent, rgba(240,220,176,0.85))' }}/>
+      </div>
       {dateRange && (
-        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.36em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.42em', textTransform: 'uppercase', color: GOLD, margin: 0 }}>
           {dateRange}
         </p>
       )}
@@ -523,25 +584,62 @@ function CuratorNote({ dateRange, firstName, showingItinerary }) {
 }
 
 function PhoneStage({ children }) {
+  // Mouse-tracked 3D tilt with spring smoothing — the phone reads as a
+  // physical object the cursor is holding.
+  const rawX = useMotionValue(0)
+  const rawY = useMotionValue(0)
+  const x = useSpring(rawX, { stiffness: 160, damping: 24, mass: 0.6 })
+  const y = useSpring(rawY, { stiffness: 160, damping: 24, mass: 0.6 })
+  const rotateX = useTransform(y, [-1, 1], [10, -10])
+  const rotateY = useTransform(x, [-1, 1], [-12, 12])
+  // Cursor-tracked sheen position on the rim.
+  const sheenX = useTransform(x, [-1, 1], ['0%', '100%'])
+  const sheenY = useTransform(y, [-1, 1], ['0%', '100%'])
+
+  function onMove(e) {
+    const r = e.currentTarget.getBoundingClientRect()
+    rawX.set(((e.clientX - r.left) / r.width  - 0.5) * 2)
+    rawY.set(((e.clientY - r.top)  / r.height - 0.5) * 2)
+  }
+  function onLeave() {
+    rawX.set(0); rawY.set(0)
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 1, ease, delay: 0.15 }}
-      style={{ position: 'relative', zIndex: 1 }}
+      onMouseMove={onMove}
+      onMouseLeave={onLeave}
+      style={{ position: 'relative', zIndex: 1, perspective: 1600 }}
     >
-      {/* Soft pool of light beneath the phone — object on velvet */}
+      {/* Pool of warm gold light beneath the phone — velvet plinth */}
       <div style={{
-        position: 'absolute', bottom: -36, left: '50%', transform: 'translateX(-50%)',
-        width: 380, height: 80, borderRadius: '50%',
-        background: 'radial-gradient(ellipse, rgba(212,182,134,0.18) 0%, transparent 70%)',
-        filter: 'blur(20px)', pointerEvents: 'none', zIndex: 0,
+        position: 'absolute', bottom: -56, left: '50%', transform: 'translateX(-50%)',
+        width: 420, height: 110, borderRadius: '50%',
+        background: 'radial-gradient(ellipse, rgba(240,220,176,0.28) 0%, rgba(212,182,134,0.10) 40%, transparent 75%)',
+        filter: 'blur(28px)', pointerEvents: 'none', zIndex: 0,
       }}/>
       <motion.div
-        animate={{ y: [0, -5, 0] }}
+        animate={{ y: [0, -6, 0] }}
         transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+        style={{ rotateX, rotateY, transformStyle: 'preserve-3d' }}
       >
         {children}
+        {/* Cursor-tracked highlight that glides across the rim */}
+        <motion.div
+          style={{
+            position: 'absolute', inset: 0,
+            borderRadius: SCREEN_RADIUS + SCREEN_INSET,
+            background: useTransform(
+              [sheenX, sheenY],
+              ([sx, sy]) => `radial-gradient(circle 260px at ${sx} ${sy}, rgba(240,220,176,0.22) 0%, transparent 60%)`
+            ),
+            pointerEvents: 'none', mixBlendMode: 'screen',
+            zIndex: 3,
+          }}
+        />
       </motion.div>
     </motion.div>
   )
@@ -554,6 +652,19 @@ const PHONE_H = 808
 const SCREEN_INSET = 9
 const SCREEN_RADIUS = 50
 
+// Polished-gold rim: dark base + bright gilt highlight band + dark base again.
+// Layered as box-shadows so it stays sharp at the rounded corners.
+const GOLD_RIM = (
+  '0 50px 140px rgba(0,0,0,0.7), ' +
+  '0 18px 60px rgba(0,0,0,0.55), ' +
+  '0 0 80px rgba(212,182,134,0.18), ' +              // soft gold halo
+  'inset 0 0 0 1px rgba(58,45,24,0.95), ' +          // dark outer edge
+  'inset 0 0 0 2.5px rgba(240,220,176,0.85), ' +     // bright gilt
+  'inset 0 0 0 4px rgba(110,82,42,0.95), ' +         // burnt gold
+  'inset 0 0 0 5px rgba(240,220,176,0.55), ' +       // second highlight
+  'inset 0 0 0 6.5px rgba(20,16,10,0.95)'            // black just inside the rim
+)
+
 function PhoneFrame({ children }) {
   return (
     <motion.div
@@ -564,21 +675,18 @@ function PhoneFrame({ children }) {
         position: 'relative',
         width: PHONE_W, height: PHONE_H,
         borderRadius: SCREEN_RADIUS + SCREEN_INSET,
-        // Outer bezel: brushed-black sandwich with gold rim hint.
-        background: 'linear-gradient(160deg,#1a1714 0%,#0a0807 45%,#1a1714 100%)',
+        // Bezel itself: rich gold-leaf gradient that catches the sheen overlay
+        // from the PhoneStage cursor tracker.
+        background: 'linear-gradient(135deg, #3a2d18 0%, #8a6f4a 25%, #f0dcb0 48%, #b89968 60%, #6a5028 80%, #2a1f12 100%)',
         padding: SCREEN_INSET,
-        boxShadow:
-          '0 40px 120px rgba(0,0,0,0.65), ' +
-          '0 12px 40px rgba(0,0,0,0.55), ' +
-          'inset 0 0 0 1px rgba(212,182,134,0.18), ' +
-          'inset 0 0 0 2px rgba(0,0,0,0.6)',
+        boxShadow: GOLD_RIM,
       }}
     >
-      {/* Side hardware accents — power + volume buttons */}
-      <div style={{ position: 'absolute', right: -2, top: 140, width: 3, height: 78, borderRadius: 2, background: 'linear-gradient(90deg,#0a0807,#1a1714,#0a0807)' }}/>
-      <div style={{ position: 'absolute', left: -2, top: 120, width: 3, height: 30, borderRadius: 2, background: 'linear-gradient(90deg,#0a0807,#1a1714,#0a0807)' }}/>
-      <div style={{ position: 'absolute', left: -2, top: 168, width: 3, height: 56, borderRadius: 2, background: 'linear-gradient(90deg,#0a0807,#1a1714,#0a0807)' }}/>
-      <div style={{ position: 'absolute', left: -2, top: 236, width: 3, height: 56, borderRadius: 2, background: 'linear-gradient(90deg,#0a0807,#1a1714,#0a0807)' }}/>
+      {/* Side hardware accents — gilt power + volume buttons */}
+      <div style={{ position: 'absolute', right: -2.5, top: 150, width: 3.5, height: 82, borderRadius: 2, background: 'linear-gradient(90deg,#3a2d18,#f0dcb0 50%,#3a2d18)', boxShadow: '0 0 6px rgba(240,220,176,0.4)' }}/>
+      <div style={{ position: 'absolute', left: -2.5, top: 124, width: 3.5, height: 30, borderRadius: 2, background: 'linear-gradient(90deg,#3a2d18,#f0dcb0 50%,#3a2d18)' }}/>
+      <div style={{ position: 'absolute', left: -2.5, top: 174, width: 3.5, height: 58, borderRadius: 2, background: 'linear-gradient(90deg,#3a2d18,#f0dcb0 50%,#3a2d18)' }}/>
+      <div style={{ position: 'absolute', left: -2.5, top: 244, width: 3.5, height: 58, borderRadius: 2, background: 'linear-gradient(90deg,#3a2d18,#f0dcb0 50%,#3a2d18)' }}/>
 
       {/* Screen */}
       <div style={{
@@ -588,11 +696,12 @@ function PhoneFrame({ children }) {
         overflow: 'hidden',
         position: 'relative',
         display: 'flex', flexDirection: 'column',
+        boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.95), inset 0 0 24px rgba(0,0,0,0.6)',
       }}>
-        {/* Subtle screen reflection */}
-        <div style={{ position: 'absolute', inset: 0, borderRadius: SCREEN_RADIUS, background: 'linear-gradient(155deg, rgba(232,212,168,0.05) 0%, transparent 30%, transparent 70%, rgba(232,212,168,0.03) 100%)', pointerEvents: 'none', zIndex: 5 }}/>
+        {/* Glass reflection — diagonal warm highlight */}
+        <div style={{ position: 'absolute', inset: 0, borderRadius: SCREEN_RADIUS, background: 'linear-gradient(155deg, rgba(240,220,176,0.07) 0%, transparent 30%, transparent 70%, rgba(240,220,176,0.04) 100%)', pointerEvents: 'none', zIndex: 5 }}/>
         {/* Dynamic island */}
-        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', width: 112, height: 30, borderRadius: 18, background: '#000', zIndex: 6 }}/>
+        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', width: 112, height: 30, borderRadius: 18, background: '#000', boxShadow: 'inset 0 0 0 1px rgba(240,220,176,0.12)', zIndex: 6 }}/>
         {children}
       </div>
     </motion.div>
