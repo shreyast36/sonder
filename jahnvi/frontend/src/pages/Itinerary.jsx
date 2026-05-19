@@ -5,7 +5,6 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { ArrowLeft, Mail, Check, Bookmark } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D, SonderMark3D } from '../components/SonderMark3D'
-import AppBackground from '../components/AppBackground'
 import { emailItinerary, saveItineraryAsCurrent, getCurrentItinerary } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
 import { useSSE } from '../hooks/useSSE'
@@ -210,7 +209,6 @@ export default function Itinerary() {
   if (error) {
     return (
       <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48, textAlign: 'center' }}>
-        <AppBackground accent={SKY}/>
         <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 32, color: BONE, marginBottom: 16, position: 'relative', zIndex: 1 }}>Something didn't load.</p>
         <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, marginBottom: 32, maxWidth: 480, position: 'relative', zIndex: 1 }}>{error}</p>
         <motion.button
@@ -356,8 +354,6 @@ export default function Itinerary() {
 
   return (
     <div style={{ height: vh, overflow: 'hidden', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
-      <AppBackground accent={SKY}/>
-
       {/* nav — responsive: compact icons-only at <720px */}
       <nav style={{
         position: 'sticky', top: 0, zIndex: 50,
