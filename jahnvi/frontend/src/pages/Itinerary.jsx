@@ -308,16 +308,17 @@ export default function Itinerary() {
   // Tapping the dark screen only wakes — never powers off.
   const powerOn = () => { if (!booted && !booting) togglePower() }
 
-  // Scale the phone to fit BOTH dimensions so it never gets cut off. We
-  // budget the visible area, then take the smaller of horizontal/vertical
-  // fit. Page is locked at vh (JS-measured) so iOS Safari URL-bar collapse
-  // doesn't change the canvas under the user.
+  // Scale the phone to fit BOTH dimensions so it never gets cut off — even
+  // at high browser zoom. Tight padding + no hard floor: at 200-300% zoom
+  // the device shrinks rather than overflowing. Page height comes from
+  // JS-measured vh so iOS Safari's URL-bar collapse can't change the canvas.
   const phoneScale = (() => {
-    const navH = 60
-    const pad  = 28
-    const availH = vh - navH - pad * 2
-    const availW = vw - pad * 2
-    return Math.max(0.4, Math.min(1, availH / (PHONE_H + 24), availW / (PHONE_W + 16)))
+    const navH = isCompact ? 56 : 60
+    const pad  = isCompact ? 12 : 20
+    const availH = Math.max(0, vh - navH - pad * 2)
+    const availW = Math.max(0, vw - pad * 2)
+    const fit = Math.min(availH / (PHONE_H + 16), availW / (PHONE_W + 12))
+    return Math.max(0.18, Math.min(1, fit))
   })()
 
   // Route every wheel event into the phone's inner scroll, so the user can
