@@ -2,9 +2,8 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { onAuthStateChanged } from 'firebase/auth'
-import { ArrowLeft, Users, Mail, Check, Bookmark } from 'lucide-react'
-import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
-import ActivityCard from '../components/ActivityCard'
+import { ArrowLeft, Mail, Check, Bookmark } from 'lucide-react'
+import { BG, BONE, GOLD, MUTE, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { emailItinerary, saveItineraryAsCurrent, getCurrentItinerary } from '../lib/api'
@@ -242,43 +241,13 @@ export default function Itinerary() {
     total_budget_usd: 0,
   } : null)
 
-  if (!renderTarget) {
-    return (
-      <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48, textAlign: 'center' }}>
-        <AppBackground accent={SKY}/>
-        <AnimatePresence mode="wait">
-          <motion.p
-            key={phase}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.4, ease }}
-            style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 28, color: `${SKY}cc`, marginBottom: 18, position: 'relative', zIndex: 1 }}
-          >
-            {phase}…
-          </motion.p>
-        </AnimatePresence>
-        <motion.div
-          animate={{ opacity: [0.25, 0.85, 0.25] }}
-          transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-          style={{ width: 100, height: 1, background: `linear-gradient(to right, transparent, ${SKY}88, transparent)`, position: 'relative', zIndex: 1 }}
-        />
-      </div>
-    )
-  }
-
   // ── Real itinerary rendering ───────────────────────────────────────────────
-  const days = renderTarget.days || []
+  const showingItinerary = !!renderTarget
+  const days = renderTarget?.days || []
   const safeActiveDay = Math.min(activeDay, Math.max(days.length - 1, 0))
-  const day  = days[safeActiveDay]
-  if (!day) {
-    return <div style={{ minHeight: '100vh', background: BG }}/>
-  }
-
-  // Show the streaming pulse only while days are still arriving — flip off
-  // once the orchestrator signals itinerary_generated (or done).
+  const day = showingItinerary ? days[safeActiveDay] : null
   const isStreaming = !streamingDone && partialDays.length > 0
-  const dest = renderTarget.destination || {}
+  const dest = renderTarget?.destination || {}
   const dateRange = formatDateRange(tripProfile?.constraints?.start_date, tripProfile?.constraints?.end_date)
 
   return (
@@ -330,125 +299,284 @@ export default function Itinerary() {
         </div>
       </nav>
 
-      {/* destination header */}
-      <div style={{ borderBottom: `1px solid ${HAIRLINE}`, padding: '40px 48px', position: 'relative', zIndex: 1, overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse 50% 150% at 80% 50%, ${SKY}0D 0%, transparent 65%)`, pointerEvents: 'none' }}/>
-        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-          <div>
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 8 }}>Your itinerary</p>
-            <motion.h1
-              animate={{ filter: ['drop-shadow(0 0 16px rgba(212,182,134,0.18))', 'drop-shadow(0 0 40px rgba(212,182,134,0.42))', 'drop-shadow(0 0 16px rgba(212,182,134,0.18))'] }}
-              transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 52, color: BONE, lineHeight: 1, letterSpacing: '-0.02em' }}
-            >
-              {dest.city || 'Your trip'}{dest.country ? `, ${dest.country}` : ''}
-            </motion.h1>
-          </div>
-          {dateRange && (
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE }}>{dateRange}</p>
+      {/* phone center stage */}
+      <main style={{ flex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '44px 24px 80px', position: 'relative', zIndex: 1 }}>
+        <PhoneFrame>
+          <PhoneStatusBar/>
+          {!showingItinerary ? (
+            <PhoneLoading phase={phase}/>
+          ) : (
+            <PhoneItinerary
+              dest={dest}
+              dateRange={dateRange}
+              days={days}
+              safeActiveDay={safeActiveDay}
+              setDay={setDay}
+              day={day}
+              isStreaming={isStreaming}
+            />
           )}
+          <PhoneHomeIndicator/>
+        </PhoneFrame>
+      </main>
+    </div>
+  )
+}
+
+// ─── Phone-frame subcomponents ────────────────────────────────────────────────
+
+const PHONE_W = 392
+const PHONE_H = 808
+const SCREEN_INSET = 9
+const SCREEN_RADIUS = 50
+
+function PhoneFrame({ children }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 24, scale: 0.985 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.7, ease }}
+      style={{
+        position: 'relative',
+        width: PHONE_W, height: PHONE_H,
+        borderRadius: SCREEN_RADIUS + SCREEN_INSET,
+        // Outer bezel: brushed-black sandwich with gold rim hint.
+        background: 'linear-gradient(160deg,#1a1714 0%,#0a0807 45%,#1a1714 100%)',
+        padding: SCREEN_INSET,
+        boxShadow:
+          '0 40px 120px rgba(0,0,0,0.65), ' +
+          '0 12px 40px rgba(0,0,0,0.55), ' +
+          'inset 0 0 0 1px rgba(212,182,134,0.18), ' +
+          'inset 0 0 0 2px rgba(0,0,0,0.6)',
+      }}
+    >
+      {/* Side hardware accents — power + volume buttons */}
+      <div style={{ position: 'absolute', right: -2, top: 140, width: 3, height: 78, borderRadius: 2, background: 'linear-gradient(90deg,#0a0807,#1a1714,#0a0807)' }}/>
+      <div style={{ position: 'absolute', left: -2, top: 120, width: 3, height: 30, borderRadius: 2, background: 'linear-gradient(90deg,#0a0807,#1a1714,#0a0807)' }}/>
+      <div style={{ position: 'absolute', left: -2, top: 168, width: 3, height: 56, borderRadius: 2, background: 'linear-gradient(90deg,#0a0807,#1a1714,#0a0807)' }}/>
+      <div style={{ position: 'absolute', left: -2, top: 236, width: 3, height: 56, borderRadius: 2, background: 'linear-gradient(90deg,#0a0807,#1a1714,#0a0807)' }}/>
+
+      {/* Screen */}
+      <div style={{
+        width: '100%', height: '100%',
+        borderRadius: SCREEN_RADIUS,
+        background: BG,
+        overflow: 'hidden',
+        position: 'relative',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Subtle screen reflection */}
+        <div style={{ position: 'absolute', inset: 0, borderRadius: SCREEN_RADIUS, background: 'linear-gradient(155deg, rgba(232,212,168,0.05) 0%, transparent 30%, transparent 70%, rgba(232,212,168,0.03) 100%)', pointerEvents: 'none', zIndex: 5 }}/>
+        {/* Dynamic island */}
+        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', width: 112, height: 30, borderRadius: 18, background: '#000', zIndex: 6 }}/>
+        {children}
+      </div>
+    </motion.div>
+  )
+}
+
+function PhoneStatusBar() {
+  return (
+    <div style={{ height: 50, padding: '14px 28px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative', zIndex: 3 }}>
+      <span style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 600, fontSize: 14, color: BONE, letterSpacing: '-0.01em' }}>9:41</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: BONE }}>
+        {/* Signal bars */}
+        <svg width="16" height="11" viewBox="0 0 16 11" fill="none">
+          <rect x="0"  y="7" width="2.5" height="4" rx="0.5" fill="currentColor"/>
+          <rect x="4"  y="5" width="2.5" height="6" rx="0.5" fill="currentColor"/>
+          <rect x="8"  y="3" width="2.5" height="8" rx="0.5" fill="currentColor"/>
+          <rect x="12" y="0" width="2.5" height="11" rx="0.5" fill="currentColor"/>
+        </svg>
+        {/* Wifi */}
+        <svg width="15" height="11" viewBox="0 0 15 11" fill="none">
+          <path d="M7.5 2.5 C4.5 2.5 2 4 0.5 5.5 L1.8 6.8 C3 5.6 5 4.5 7.5 4.5 C10 4.5 12 5.6 13.2 6.8 L14.5 5.5 C13 4 10.5 2.5 7.5 2.5 Z" fill="currentColor"/>
+          <path d="M7.5 5.6 C5.5 5.6 4 6.4 3 7.4 L4.3 8.7 C4.9 8 6 7.6 7.5 7.6 C9 7.6 10.1 8 10.7 8.7 L12 7.4 C11 6.4 9.5 5.6 7.5 5.6 Z" fill="currentColor"/>
+          <circle cx="7.5" cy="9.6" r="1" fill="currentColor"/>
+        </svg>
+        {/* Battery */}
+        <div style={{ position: 'relative', width: 24, height: 11 }}>
+          <div style={{ position: 'absolute', inset: 0, border: `1px solid ${BONE}`, opacity: 0.45, borderRadius: 3 }}/>
+          <div style={{ position: 'absolute', right: -2.5, top: 3.5, width: 1.5, height: 4, background: BONE, opacity: 0.45, borderRadius: 1 }}/>
+          <div style={{ position: 'absolute', left: 1.5, top: 1.5, bottom: 1.5, width: 17, background: BONE, borderRadius: 1.5 }}/>
         </div>
       </div>
+    </div>
+  )
+}
 
-      {/* day tab strip */}
-      <div style={{ borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.75)', backdropFilter: 'blur(16px)', position: 'relative', zIndex: 1 }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', overflowX: 'auto' }}>
-          {days.map((d, i) => (
+function PhoneHomeIndicator() {
+  return (
+    <div style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', width: 134, height: 5, borderRadius: 3, background: BONE, opacity: 0.85, zIndex: 6 }}/>
+  )
+}
+
+function PhoneLoading({ phase }) {
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 40px', textAlign: 'center', position: 'relative' }}>
+      <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse 60% 50% at 50% 45%, ${SKY}14 0%, transparent 70%)`, pointerEvents: 'none' }}/>
+      <AnimatePresence mode="wait">
+        <motion.p
+          key={phase}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.4, ease }}
+          style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 22, color: `${SKY}cc`, marginBottom: 22, position: 'relative', zIndex: 1 }}
+        >
+          {phase}…
+        </motion.p>
+      </AnimatePresence>
+      <motion.div
+        animate={{ opacity: [0.25, 0.85, 0.25] }}
+        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+        style={{ width: 80, height: 1, background: `linear-gradient(to right, transparent, ${SKY}88, transparent)`, position: 'relative', zIndex: 1 }}
+      />
+    </div>
+  )
+}
+
+function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isStreaming }) {
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+      {/* Header */}
+      <div style={{ padding: '6px 28px 18px', borderBottom: `1px solid ${HAIRLINE}`, position: 'relative' }}>
+        <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse 90% 100% at 70% 20%, ${SKY}10 0%, transparent 70%)`, pointerEvents: 'none' }}/>
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, marginBottom: 6, position: 'relative' }}>Your itinerary</p>
+        <motion.h1
+          animate={{ filter: ['drop-shadow(0 0 12px rgba(212,182,134,0.18))', 'drop-shadow(0 0 28px rgba(212,182,134,0.42))', 'drop-shadow(0 0 12px rgba(212,182,134,0.18))'] }}
+          transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+          style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 32, color: BONE, lineHeight: 1.05, letterSpacing: '-0.02em', position: 'relative' }}
+        >
+          {dest.city || 'Your trip'}{dest.country ? `, ${dest.country}` : ''}
+        </motion.h1>
+        {dateRange && (
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: MUTE, marginTop: 8, position: 'relative' }}>{dateRange}</p>
+        )}
+      </div>
+
+      {/* Day pill strip */}
+      <div style={{ flexShrink: 0, borderBottom: `1px solid ${HAIRLINE}`, padding: '12px 16px', display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none' }}>
+        {days.map((d, i) => {
+          const active = safeActiveDay === i
+          return (
             <motion.button
               key={d.day_number}
-              whileHover={safeActiveDay !== i ? { color: BONE, transition: { duration: 0.15 } } : {}}
-              whileTap={{ scale: 0.97 }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => setDay(i)}
               style={{
-                padding: '18px 28px', background: safeActiveDay === i ? `${SKY}0F` : 'none',
-                border: 'none', cursor: 'pointer',
-                borderBottom: `2px solid ${safeActiveDay === i ? SKY : 'transparent'}`,
-                fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.14em',
-                color: safeActiveDay === i ? SKY : MUTE, whiteSpace: 'nowrap', transition: 'all 0.2s',
-                boxShadow: safeActiveDay === i ? `inset 0 1px 0 ${SKY}1A` : 'none',
+                padding: '8px 14px', borderRadius: 16,
+                background: active ? `${SKY}1A` : 'rgba(232,212,168,0.04)',
+                border: `1px solid ${active ? `${SKY}55` : HAIRLINE}`,
+                cursor: 'pointer', flexShrink: 0,
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.12em',
+                color: active ? SKY : MUTE, whiteSpace: 'nowrap', transition: 'all 0.2s',
               }}
             >
-              Day {d.day_number}{d.theme ? ` — ${d.theme}` : ''}
+              Day {d.day_number}
             </motion.button>
-          ))}
-          {isStreaming && (
-            <motion.div
-              animate={{ opacity: [0.4, 1, 0.4] }}
-              transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 22px', fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: `${SKY}cc`, whiteSpace: 'nowrap' }}
-            >
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: SKY, boxShadow: `0 0 12px ${SKY}` }}/>
-              more days coming
-            </motion.div>
-          )}
-        </div>
+          )
+        })}
+        {isStreaming && (
+          <motion.div
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', flexShrink: 0 }}
+          >
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: SKY, boxShadow: `0 0 10px ${SKY}` }}/>
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.18em', textTransform: 'uppercase', color: `${SKY}cc` }}>loading</span>
+          </motion.div>
+        )}
       </div>
 
-      {/* content */}
-      <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '0 48px', position: 'relative', zIndex: 1 }}>
-        <AnimatePresence mode="wait">
-          <motion.div key={safeActiveDay} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -14 }} transition={{ duration: 0.32, ease }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 0 }}>
-
-              {/* sidebar */}
-              <div style={{ borderRight: `1px solid ${HAIRLINE}`, padding: '52px 44px 52px 0', position: 'sticky', top: 68, alignSelf: 'start', overflow: 'hidden' }}>
-                <div style={{ position: 'absolute', top: 0, left: -44, right: 0, height: 280, background: `radial-gradient(ellipse 80% 60% at 30% 20%, ${SKY}12 0%, transparent 65%)`, pointerEvents: 'none' }}/>
-                <div style={{ position: 'relative' }}>
-                  <motion.span
-                    animate={{ filter: [`drop-shadow(0 0 20px ${SKY}22)`, `drop-shadow(0 0 60px ${SKY}55)`, `drop-shadow(0 0 20px ${SKY}22)`] }}
-                    transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-                    style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 140, lineHeight: 0.9, letterSpacing: '-0.04em', color: SKY, opacity: 0.14, userSelect: 'none', display: 'block', marginBottom: -28 }}
-                  >
-                    {day.day_number}
-                  </motion.span>
-                  {day.theme && (
-                    <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 30, color: BONE, lineHeight: 1.2, position: 'relative' }}>
-                      {day.theme}
-                    </h2>
+      {/* Scrollable content */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={safeActiveDay}
+          initial={{ opacity: 0, x: 16 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -16 }}
+          transition={{ duration: 0.28, ease }}
+          style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0 24px 40px', scrollbarWidth: 'thin' }}
+        >
+          {day && (
+            <>
+              {/* Day intro */}
+              <div style={{ padding: '22px 0 18px', borderBottom: `1px solid ${HAIRLINE}` }}>
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, marginBottom: 6 }}>Day {day.day_number}</p>
+                {day.theme && (
+                  <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 24, color: BONE, lineHeight: 1.15, margin: 0 }}>{day.theme}</h2>
+                )}
+                <div style={{ display: 'flex', gap: 14, marginTop: 12 }}>
+                  <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE }}>
+                    {(day.activities?.length ?? 0)} stops
+                  </span>
+                  {day.daily_cost_usd != null && (
+                    <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE }}>
+                      · ${Math.round(day.daily_cost_usd)} budget
+                    </span>
                   )}
-                </div>
-
-                <div style={{ marginTop: 36, display: 'flex', flexDirection: 'column', gap: 0 }}>
-                  {[
-                    { label: 'Activities', value: String(day.activities?.length ?? 0) },
-                    { label: 'Daily cost', value: day.daily_cost_usd != null ? `$${Math.round(day.daily_cost_usd)}` : '—' },
-                  ].map(({ label, value }) => (
-                    <div key={label} style={{ padding: '14px 0', borderTop: `1px solid ${HAIRLINE}` }}>
-                      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, marginBottom: 5 }}>{label}</p>
-                      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 15, fontWeight: 500, color: BONE }}>{value}</p>
-                    </div>
-                  ))}
                 </div>
               </div>
 
-              {/* activity list */}
-              <motion.div variants={stagger} initial="hidden" animate="show" style={{ padding: '52px 0 52px 52px' }}>
+              {/* Activity rows */}
+              <motion.div variants={stagger} initial="hidden" animate="show">
                 {(day.activities || []).map((ia, j) => (
-                  <motion.div key={ia.activity?.activity_id || `${day.day_number}-${j}`} variants={cardReveal}>
-                    <ActivityCard
-                      activity={ia.activity}
-                      time={ia.time}
-                      whyThis={ia.why_this}
-                      onFeedback={fb => setFb(prev => [...prev.filter(f => f.activity_id !== fb.activity_id), fb])}
-                    />
-                  </motion.div>
+                  <PhoneActivityRow
+                    key={ia.activity?.activity_id || `${day.day_number}-${j}`}
+                    ia={ia}
+                    last={j === (day.activities?.length ?? 1) - 1}
+                  />
                 ))}
-                {feedback.length > 0 && (
-                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                    <motion.button
-                      whileHover={{ y: -3, boxShadow: `0 0 64px ${SKY}55, 0 0 128px ${SKY}22`, transition: spring }}
-                      whileTap={{ scale: 0.97 }}
-                      style={{ padding: '16px 36px', background: `linear-gradient(135deg, ${SKY} 0%, #0284C7 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff', boxShadow: `0 0 48px ${SKY}44, 0 0 96px ${SKY}11`, marginTop: 8 }}
-                    >
-                      Update itinerary · {feedback.length} change{feedback.length > 1 ? 's' : ''}
-                    </motion.button>
-                  </motion.div>
-                )}
               </motion.div>
-            </div>
-          </motion.div>
-        </AnimatePresence>
-      </div>
+            </>
+          )}
+        </motion.div>
+      </AnimatePresence>
     </div>
+  )
+}
+
+function PhoneActivityRow({ ia, last }) {
+  const a = ia?.activity || {}
+  const why = ia?.why_this
+  return (
+    <motion.div
+      variants={cardReveal}
+      style={{ padding: '20px 0', borderBottom: last ? 'none' : `1px solid ${HAIRLINE}` }}
+    >
+      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.20em', textTransform: 'uppercase', color: GOLD, marginBottom: 6 }}>
+        {ia?.time || ''}
+      </p>
+      <h3 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 19, color: BONE, lineHeight: 1.25, margin: '0 0 6px' }}>
+        {a.name || 'Untitled stop'}
+      </h3>
+      {why && (
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 12, lineHeight: 1.5, color: `${BONE}b0`, margin: '0 0 10px', fontStyle: 'italic' }}>
+          {why}
+        </p>
+      )}
+      {!why && a.description && (
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 12, lineHeight: 1.5, color: MUTE, margin: '0 0 10px' }}>
+          {a.description}
+        </p>
+      )}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {a.category && (
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, padding: '3px 8px', borderRadius: 4, background: 'rgba(232,212,168,0.06)', color: MUTE, letterSpacing: '0.06em' }}>
+            {a.category}
+          </span>
+        )}
+        {typeof a.cost_usd === 'number' && a.cost_usd > 0 && (
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, padding: '3px 8px', borderRadius: 4, background: 'rgba(232,212,168,0.06)', color: MUTE, letterSpacing: '0.06em' }}>
+            ${Math.round(a.cost_usd)}
+          </span>
+        )}
+        {typeof a.duration_hours === 'number' && a.duration_hours > 0 && (
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, padding: '3px 8px', borderRadius: 4, background: 'rgba(232,212,168,0.06)', color: MUTE, letterSpacing: '0.06em' }}>
+            {a.duration_hours}h
+          </span>
+        )}
+      </div>
+    </motion.div>
   )
 }
