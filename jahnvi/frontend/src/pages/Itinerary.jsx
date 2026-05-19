@@ -442,7 +442,7 @@ export default function Itinerary() {
           natural page scroll automatically. */}
       <main ref={mainRef} style={{
         flex: 1, position: 'relative', zIndex: 1,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        display: 'flex', alignItems: 'safe center', justifyContent: 'safe center',
         padding: isCompact ? '20px 0' : '32px 0',
         overflowX: 'hidden', overflowY: 'auto',
       }}>
@@ -1070,6 +1070,10 @@ function PhoneStage({ children, scale = 1 }) {
       style={{
         position: 'relative', zIndex: 1, perspective: 1600,
         width: PHONE_W * scale, height: PHONE_H * scale,
+        // Auto margins make the phone center when there's room and snap to
+        // the top of the scroll area when it overflows — fallback for browsers
+        // that don't support align-items: safe center.
+        margin: 'auto',
       }}
     >
       <div style={{
