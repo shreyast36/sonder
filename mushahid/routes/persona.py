@@ -18,7 +18,7 @@ import json
 import logging
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
 from mushahid.auth import verify_token
@@ -243,9 +243,26 @@ def _structural_validate(obj: dict) -> list[str]:
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
+async def _bg_validate_persona(user_prompt: str, obj: dict) -> None:
+    """
+    Run the small-LLM semantic validator (NIM Nemotron Nano) after the response
+    has been sent. Logs tone/echo/scope issues for observability without
+    blocking the user flow. Never raises — failures fail open silently.
+    """
+    try:
+        valid, issues = await validate_persona(user_prompt, obj)
+        if not valid and issues:
+            logger.warning("persona semantic validator flagged (non-blocking): %s", issues)
+        else:
+            logger.info("persona semantic validator passed")
+    except Exception as e:
+        logger.warning("persona semantic validator background task error: %s", e)
+
+
 @router.post("/persona-infer", response_model=PersonaInferResponse)
 async def persona_infer(
     body: PersonaInferRequest,
+    background_tasks: BackgroundTasks,
     uid: str = Depends(verify_token),
 ) -> PersonaInferResponse:
     # Sanitize free-text before it hits the embedder or any LLM.
@@ -303,11 +320,10 @@ async def persona_infer(
                 logger.error("persona structural validation failed after retry: %s", issues)
                 raise HTTPException(status_code=502, detail=f"persona output invalid: {'; '.join(issues)}")
 
-    # Semantic validation — tone, echo, scope drift. Fails open on validator outage.
-    valid, sem_issues = await validate_persona(user_prompt, obj)
-    if not valid:
-        logger.error("persona semantic validation failed: %s", sem_issues)
-        raise HTTPException(status_code=502, detail=f"persona quality check failed: {'; '.join(sem_issues)}")
+    # Fire-and-forget semantic validator. Runs the small-tier NIM critic after
+    # FastAPI sends the response, so the user doesn't wait. Tone/echo issues
+    # land in logs for observability; the user flow isn't gated on it.
+    background_tasks.add_task(_bg_validate_persona, user_prompt, obj)
 
     return PersonaInferResponse(
         softener      = _SOFTENER,
