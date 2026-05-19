@@ -444,6 +444,8 @@ export default function Itinerary() {
       }}>
         <DestinationBackdrop city={dest?.city} visible={booted && showingItinerary}/>
         <QuietBackdrop/>
+        <AtmosphericScene/>
+        <GoldDust count={isCompact ? 6 : 12}/>
         <PaperGrain/>
         {isWide && <EditionMark itinerary={itinerary || renderTarget}/>}
 
