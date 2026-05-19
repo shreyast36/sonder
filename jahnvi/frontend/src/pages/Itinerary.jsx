@@ -672,85 +672,32 @@ function GhostDestination({ dest, showingItinerary }) {
 // Atmospheric stage: drifting light beams + horizontal mist + floor pool +
 // off-center "sun". Cinematic and motion-rich — the kind of thing you'd see
 // behind a private auction lot.
+// Fully symmetric ambient layer — no diagonal bias, no split-feeling.
+// One breathing centred glow + a centred floor pool. That's it.
 function AtmosphericScene() {
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
-      {/* Deep velvet vignette base */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        background: 'radial-gradient(ellipse 95% 95% at 50% 45%, #1a140b 0%, #0a0807 65%, #050402 100%)',
-      }}/>
-
-      {/* Off-center warm sun — upper-left light source */}
+      {/* Centred warm glow, breathing slowly */}
       <motion.div
-        animate={{ opacity: [0.7, 1, 0.7], scale: [1, 1.05, 1] }}
-        transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+        animate={{ opacity: [0.7, 0.95, 0.7], scale: [1, 1.03, 1] }}
+        transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
         style={{
-          position: 'absolute', top: '-20%', left: '15%',
-          width: 720, height: 720, borderRadius: '50%',
-          background: 'radial-gradient(circle at 50% 50%, rgba(240,220,176,0.32) 0%, rgba(212,182,134,0.18) 25%, rgba(184,150,104,0.06) 50%, transparent 70%)',
-          filter: 'blur(40px)',
+          position: 'absolute', top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: 'min(1100px, 92vw)', height: 'min(900px, 82vh)',
+          background: 'radial-gradient(ellipse, rgba(212,182,134,0.10) 0%, rgba(184,150,104,0.045) 38%, transparent 72%)',
+          filter: 'blur(36px)',
         }}
       />
-
-      {/* Counter-light from lower right — cooler amber */}
+      {/* Floor pool — symmetric warm gilt at the page bottom, gently breathing */}
       <motion.div
         animate={{ opacity: [0.55, 0.85, 0.55] }}
-        transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut', delay: 4 }}
+        transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 3 }}
         style={{
-          position: 'absolute', bottom: '-15%', right: '10%',
-          width: 680, height: 680, borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(184,150,104,0.22) 0%, rgba(110,82,42,0.10) 35%, transparent 65%)',
-          filter: 'blur(56px)',
-        }}
-      />
-
-      {/* Light beams — vertical curtains of warm light, gently swaying */}
-      <motion.div
-        animate={{ rotate: [-3, 3, -3], opacity: [0.45, 0.7, 0.45] }}
-        transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
-        style={{
-          position: 'absolute', top: '-30%', left: '8%',
-          width: 360, height: '160%',
-          background: 'linear-gradient(180deg, rgba(240,220,176,0.18) 0%, rgba(212,182,134,0.04) 40%, transparent 75%)',
-          filter: 'blur(48px)',
-          transformOrigin: 'top center',
-        }}
-      />
-      <motion.div
-        animate={{ rotate: [4, -4, 4], opacity: [0.35, 0.6, 0.35] }}
-        transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 6 }}
-        style={{
-          position: 'absolute', top: '-30%', right: '6%',
-          width: 320, height: '160%',
-          background: 'linear-gradient(180deg, rgba(212,182,134,0.14) 0%, rgba(184,150,104,0.04) 40%, transparent 75%)',
-          filter: 'blur(48px)',
-          transformOrigin: 'top center',
-        }}
-      />
-
-      {/* Mid-canvas drifting mist band */}
-      <motion.div
-        animate={{ x: ['-8%', '8%', '-8%'], opacity: [0.25, 0.5, 0.25] }}
-        transition={{ duration: 28, repeat: Infinity, ease: 'easeInOut' }}
-        style={{
-          position: 'absolute', top: '38%',
-          left: '-15%', right: '-15%',
-          height: 360,
-          background: 'radial-gradient(ellipse 55% 65% at 50% 50%, rgba(240,220,176,0.12) 0%, rgba(212,182,134,0.05) 40%, transparent 75%)',
-          filter: 'blur(64px)',
-        }}
-      />
-
-      {/* Floor pool — warm gilt light gathering at the page bottom */}
-      <motion.div
-        animate={{ opacity: [0.65, 0.95, 0.65] }}
-        transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
-        style={{
-          position: 'absolute', bottom: '-25%',
-          left: 0, right: 0, height: 600,
-          background: 'radial-gradient(ellipse 70% 60% at 50% 100%, rgba(212,182,134,0.20) 0%, rgba(184,150,104,0.10) 30%, transparent 65%)',
-          filter: 'blur(48px)',
+          position: 'absolute', bottom: '-22%',
+          left: 0, right: 0, height: 520,
+          background: 'radial-gradient(ellipse 65% 60% at 50% 100%, rgba(212,182,134,0.14) 0%, rgba(184,150,104,0.06) 35%, transparent 68%)',
+          filter: 'blur(44px)',
         }}
       />
     </div>
