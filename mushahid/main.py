@@ -60,6 +60,12 @@ async def lifespan(app: FastAPI):
             "Never run this configuration in production."
         )
 
+    # Send one Sentry event per cold-start so the dashboard sees the first
+    # event quickly (gets past the SDK-setup onboarding screen) and so each
+    # deploy registers as a release in Sentry's releases view.
+    if sentry_sdk.Hub.current.client:
+        sentry_sdk.capture_message("Sonder backend started", level="info")
+
     # Env audit — log which critical vars are present (presence only, no values).
     from shared import config as cfg
     critical = [
