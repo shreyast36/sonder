@@ -899,6 +899,12 @@ function PhoneStage({ children, scale = 1 }) {
     rawX.set(0); rawY.set(0)
   }
 
+  // Wrapper-with-scaled-dimensions: the outer motion.div takes the SCALED
+  // box size so flex centering + overflow:hidden treat it as a smaller
+  // element. The inner div renders at the natural device size but is
+  // visually scaled via transform-origin top-left, so what you see matches
+  // what the layout box reserves. Fixes the cropping when the viewport is
+  // shorter than PHONE_H (high browser zoom, short laptop screens, etc.).
   return (
     <motion.div
       initial={{ opacity: 0, y: 18 }}
@@ -906,32 +912,42 @@ function PhoneStage({ children, scale = 1 }) {
       transition={{ duration: 1, ease, delay: 0.15 }}
       onMouseMove={onMove}
       onMouseLeave={onLeave}
-      style={{ position: 'relative', zIndex: 1, perspective: 1600, transform: `scale(${scale})`, transformOrigin: 'center center' }}
+      style={{
+        position: 'relative', zIndex: 1, perspective: 1600,
+        width: PHONE_W * scale, height: PHONE_H * scale,
+      }}
     >
-      {/* Pool of warm gold light beneath the phone — velvet plinth */}
       <div style={{
-        position: 'absolute', bottom: -56, left: '50%', transform: 'translateX(-50%)',
-        width: 420, height: 110, borderRadius: '50%',
-        background: 'radial-gradient(ellipse, rgba(240,220,176,0.28) 0%, rgba(212,182,134,0.10) 40%, transparent 75%)',
-        filter: 'blur(28px)', pointerEvents: 'none', zIndex: 0,
-      }}/>
-      <motion.div
-        animate={{ y: [0, -6, 0] }}
-        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-        style={{ rotateX, rotateY, transformStyle: 'preserve-3d' }}
-      >
-        {children}
-        {/* Cursor-tracked highlight that glides across the rim */}
+        position: 'absolute', top: 0, left: 0,
+        width: PHONE_W, height: PHONE_H,
+        transform: `scale(${scale})`,
+        transformOrigin: 'top left',
+      }}>
+        {/* Pool of warm gold light beneath the phone — velvet plinth */}
+        <div style={{
+          position: 'absolute', bottom: -56, left: '50%', transform: 'translateX(-50%)',
+          width: 420, height: 110, borderRadius: '50%',
+          background: 'radial-gradient(ellipse, rgba(240,220,176,0.28) 0%, rgba(212,182,134,0.10) 40%, transparent 75%)',
+          filter: 'blur(28px)', pointerEvents: 'none', zIndex: 0,
+        }}/>
         <motion.div
-          style={{
-            position: 'absolute', inset: 0,
-            borderRadius: SCREEN_RADIUS + SCREEN_INSET,
-            background: sheenBg,
-            pointerEvents: 'none', mixBlendMode: 'screen',
-            zIndex: 3,
-          }}
-        />
-      </motion.div>
+          animate={{ y: [0, -6, 0] }}
+          transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+          style={{ rotateX, rotateY, transformStyle: 'preserve-3d' }}
+        >
+          {children}
+          {/* Cursor-tracked highlight that glides across the rim */}
+          <motion.div
+            style={{
+              position: 'absolute', inset: 0,
+              borderRadius: SCREEN_RADIUS + SCREEN_INSET,
+              background: sheenBg,
+              pointerEvents: 'none', mixBlendMode: 'screen',
+              zIndex: 3,
+            }}
+          />
+        </motion.div>
+      </div>
     </motion.div>
   )
 }
