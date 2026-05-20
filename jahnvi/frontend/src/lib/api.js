@@ -233,8 +233,22 @@ export async function addSharedNote(itineraryId, note, version) {
   return post(`/api/shared-itinerary/${itineraryId}/note`, { note, version })
 }
 
-// Returns a WebSocket — useWebSocket sends auth token as first message (first-message auth pattern).
+// Returns a WebSocket — useWebSocket sends auth token (or impersonation payload)
+// as the first message (first-message auth pattern). The /api prefix matches
+// chat.router being mounted under prefix="/api" in mushahid/main.py.
 export function openChatSocket(sessionId) {
   const wsBase = BASE.replace(/^http/, 'ws')
-  return new WebSocket(`${wsBase}/ws/chat/${sessionId}`)
+  return new WebSocket(`${wsBase}/api/ws/chat/${encodeURIComponent(sessionId)}`)
+}
+
+export async function getChatSession(sessionId) {
+  return get(`/api/chat/session/${encodeURIComponent(sessionId)}`)
+}
+
+export async function getChatMessages(sessionId) {
+  return get(`/api/chat/${encodeURIComponent(sessionId)}/messages`)
+}
+
+export async function getUserPresence(sessionId, userId) {
+  return get(`/api/chat/${encodeURIComponent(sessionId)}/presence/${encodeURIComponent(userId)}`)
 }

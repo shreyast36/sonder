@@ -243,6 +243,55 @@ async def get_chat_session(session_id: str) -> dict | None:
     return doc.to_dict() if doc.exists else None
 
 
+async def list_chat_messages(session_id: str) -> list[dict]:
+    """Return all messages for a session in time order. Falls back to an
+    empty list when the session has no messages yet."""
+    if LOCAL_MODE:
+        session_data = _store.get(f"chat:{session_id}", {})
+        return list(session_data.get("messages", []))
+    try:
+        docs = await asyncio.to_thread(
+            lambda: list(get_db()
+                .collection("chat_sessions")
+                .document(session_id)
+                .collection("messages")
+                .stream())
+        )
+        return sorted(
+            (d.to_dict() for d in docs),
+            key=lambda m: m.get("timestamp") or "",
+        )
+    except Exception as e:
+        logger.warning("list_chat_messages failed: %s", e)
+        return []
+
+
+async def write_presence(user_id: str, doc: dict) -> None:
+    """Upsert a presence document. Schema: {online: bool, last_seen: ISO8601}."""
+    if LOCAL_MODE:
+        _store[f"presence:{user_id}"] = doc
+        return
+    try:
+        await asyncio.to_thread(
+            lambda: get_db().collection("presence").document(user_id).set(doc, merge=True)
+        )
+    except Exception as e:
+        logger.warning("write_presence failed: %s", e)
+
+
+async def get_presence(user_id: str) -> dict | None:
+    if LOCAL_MODE:
+        return _store.get(f"presence:{user_id}")
+    try:
+        doc = await asyncio.to_thread(
+            lambda: get_db().collection("presence").document(user_id).get()
+        )
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        logger.warning("get_presence failed: %s", e)
+        return None
+
+
 async def append_chat_message(session_id: str, message: dict) -> None:
     if LOCAL_MODE:
         session_data = _store.get(f"chat:{session_id}", {})
