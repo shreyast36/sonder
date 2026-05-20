@@ -28,6 +28,9 @@ aioredis>=2.0.0
 # ── Rate limiting ──────────────────────────────────────────────────────────────
 slowapi>=0.1.9
 
+# ── Web Push (closed-browser push notifications) ───────────────────────────────
+pywebpush>=2.0.0
+
 # ── Monitoring ─────────────────────────────────────────────────────────────────
 sentry-sdk[fastapi]>=2.5.0
 posthog>=3.5.0

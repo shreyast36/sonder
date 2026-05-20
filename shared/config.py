@@ -71,6 +71,16 @@ EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "resend")  # resend | sendgrid | se
 EMAIL_API_KEY  = os.getenv("EMAIL_API_KEY")
 EMAIL_FROM     = os.getenv("EMAIL_FROM", "itinerary@sonder.app")
 
+# Web Push (VAPID) — closed-browser push notifications via service worker.
+# Generate once with `python -m scripts.generate_vapid_keys` and paste both
+# halves into the env. If unset, the backend silently skips web push and only
+# the in-app banner / Notification-API fallback fires.
+VAPID_PUBLIC_KEY  = os.getenv("VAPID_PUBLIC_KEY")
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
+# 'sub' claim sent to push services — mailto: address the push provider can
+# reach if your traffic looks abusive. Use a real ops mailbox in prod.
+VAPID_SUBJECT     = os.getenv("VAPID_SUBJECT", "mailto:ops@sonder.app")
+
 # CORS — comma-separated list of allowed frontend origins
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:5177,http://localhost:5178,http://localhost:5179").split(",")]
 

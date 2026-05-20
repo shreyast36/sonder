@@ -266,6 +266,71 @@ async def list_chat_messages(session_id: str) -> list[dict]:
         return []
 
 
+async def write_push_subscription(user_id: str, sub: dict) -> None:
+    """Upsert a Web Push subscription for a user, keyed by endpoint so the
+    same browser doesn't accumulate duplicates after re-permission."""
+    endpoint = sub.get("endpoint") or ""
+    if not endpoint:
+        return
+    sub_id = _hash_endpoint(endpoint)
+    record = {**sub, "user_id": user_id, "endpoint": endpoint, "sub_id": sub_id}
+    if LOCAL_MODE:
+        _store.setdefault(f"push_subs:{user_id}", {})[sub_id] = record
+        return
+    try:
+        await asyncio.to_thread(
+            lambda: get_db()
+                .collection("users").document(user_id)
+                .collection("push_subscriptions").document(sub_id)
+                .set(record, merge=True)
+        )
+    except Exception as e:
+        logger.warning("write_push_subscription failed: %s", e)
+
+
+async def list_push_subscriptions(user_id: str) -> list[dict]:
+    """Every subscription for this user (one per browser/device)."""
+    if LOCAL_MODE:
+        return list((_store.get(f"push_subs:{user_id}") or {}).values())
+    try:
+        docs = await asyncio.to_thread(
+            lambda: list(get_db()
+                .collection("users").document(user_id)
+                .collection("push_subscriptions").stream())
+        )
+        return [d.to_dict() for d in docs]
+    except Exception as e:
+        logger.warning("list_push_subscriptions failed: %s", e)
+        return []
+
+
+async def delete_push_subscription(user_id: str, endpoint: str) -> None:
+    """Remove a single subscription. Called when the push service tells us
+    the endpoint is gone (HTTP 404/410) or on explicit unsubscribe."""
+    if not endpoint:
+        return
+    sub_id = _hash_endpoint(endpoint)
+    if LOCAL_MODE:
+        bucket = _store.get(f"push_subs:{user_id}") or {}
+        bucket.pop(sub_id, None)
+        return
+    try:
+        await asyncio.to_thread(
+            lambda: get_db()
+                .collection("users").document(user_id)
+                .collection("push_subscriptions").document(sub_id)
+                .delete()
+        )
+    except Exception as e:
+        logger.warning("delete_push_subscription failed: %s", e)
+
+
+def _hash_endpoint(endpoint: str) -> str:
+    """Stable, filesystem-safe doc id derived from the endpoint URL."""
+    import hashlib
+    return hashlib.sha256(endpoint.encode()).hexdigest()[:32]
+
+
 async def write_presence(user_id: str, doc: dict) -> None:
     """Upsert a presence document. Schema: {online: bool, last_seen: ISO8601}."""
     if LOCAL_MODE:

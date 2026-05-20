@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { MessageCircle, X } from 'lucide-react'
 import { auth } from '../lib/firebase'
 import { openNotificationSocket } from '../lib/api'
+import { ensurePushSubscribed, dropPushSubscription, pushSupported } from '../lib/push'
 import { BG, BONE, MUTE } from '../lib/tokens'
 
 const ROSE = '#F43F5E'
@@ -29,6 +30,10 @@ export default function NotificationProvider({ children }) {
   const mountedRef= useRef(true)
   const locRef    = useRef(location.pathname)
   const permRef   = useRef(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
+  // True once the service worker has an active push subscription. When true,
+  // the SW receives notifications from the push service and shows them — we
+  // must NOT also call `new Notification(...)` here or the user sees two.
+  const swPushActiveRef = useRef(false)
 
   useEffect(() => { locRef.current = location.pathname }, [location.pathname])
 
@@ -43,9 +48,11 @@ export default function NotificationProvider({ children }) {
 
     setBanner({ sessionId: session_id, senderName: sender_name || 'New message', preview: preview || '' })
 
-    // OS notification when the tab is hidden. Lazily request permission the
-    // first time a message arrives — feels less invasive than asking on boot.
-    if (typeof document !== 'undefined' && document.hidden) {
+    // OS notification when the tab is hidden — but only when the service
+    // worker DIDN'T already get a push for this message. If swPushActive is
+    // true, the SW path is firing its own notification and doubling up here
+    // would show two.
+    if (typeof document !== 'undefined' && document.hidden && !swPushActiveRef.current) {
       const fire = (perm) => {
         if (perm !== 'granted') return
         try {
@@ -62,7 +69,15 @@ export default function NotificationProvider({ children }) {
       }
       if (permRef.current === 'granted') fire('granted')
       else if (permRef.current === 'default' && typeof Notification !== 'undefined') {
-        Notification.requestPermission().then(p => { permRef.current = p; fire(p) })
+        Notification.requestPermission().then(p => {
+          permRef.current = p
+          fire(p)
+          // Permission just flipped — try to upgrade to true Web Push so the
+          // user gets notifications even when the tab is closed.
+          if (p === 'granted') {
+            ensurePushSubscribed().then(sub => { swPushActiveRef.current = !!sub })
+          }
+        })
       }
     }
   }, [navigate])
@@ -99,11 +114,24 @@ export default function NotificationProvider({ children }) {
   useEffect(() => {
     mountedRef.current = true
     const unsub = auth.onAuthStateChanged((u) => {
-      if (u) connect()
-      else {
+      if (u) {
+        connect()
+        // If permission was already granted on a previous visit, attach the
+        // service-worker push subscription silently so closed-browser pushes
+        // start working immediately — no permission prompt needed.
+        if (
+          pushSupported() &&
+          typeof Notification !== 'undefined' &&
+          Notification.permission === 'granted'
+        ) {
+          ensurePushSubscribed().then(sub => { swPushActiveRef.current = !!sub })
+        }
+      } else {
         clearInterval(pingRef.current)
         wsRef.current?.close()
         wsRef.current = null
+        swPushActiveRef.current = false
+        dropPushSubscription()
       }
     })
     return () => {

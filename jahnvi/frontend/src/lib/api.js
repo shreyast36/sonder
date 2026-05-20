@@ -259,3 +259,22 @@ export async function getChatMessages(sessionId) {
 export async function getUserPresence(sessionId, userId) {
   return get(`/api/chat/${encodeURIComponent(sessionId)}/presence/${encodeURIComponent(userId)}`)
 }
+
+// ── Web Push ───────────────────────────────────────────────────────────────
+
+// Public endpoint that doesn't require auth — the SW needs the VAPID key
+// before it can subscribe. Fetch directly (no auth header) and let the
+// caller swallow 503 when web push isn't configured server-side.
+export async function getVapidPublicKey() {
+  const res = await fetch(`${BASE}/api/push/vapid-public-key`)
+  if (!res.ok) throw Object.assign(new Error(res.statusText), { status: res.status })
+  return res.json()
+}
+
+export async function registerPushSubscription(subscription) {
+  return post('/api/push/subscribe', subscription)
+}
+
+export async function unregisterPushSubscription(endpoint) {
+  return post('/api/push/unsubscribe', { endpoint })
+}

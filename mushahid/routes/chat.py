@@ -213,10 +213,15 @@ async def _push_chat_notification(
     sender_id: str,
     preview: str,
 ) -> None:
-    """Fan out a chat notification to the recipient's global channels. Best-
-    effort — if they have no channel open (offline / different device), it
-    silently no-ops. Sender info + preview let the client render the banner
-    without a follow-up REST hit."""
+    """Fan out a chat notification on both channels:
+
+    1. WebSocket /ws/notifications — drives the in-app banner / Notification-
+       API fallback while the SPA is open in any tab.
+    2. Web Push (VAPID) — reaches the user even when the browser is closed,
+       via the service worker's push handler.
+
+    Both calls are best-effort. If the recipient has no global socket open
+    OR no push subscription, the corresponding channel silently no-ops."""
     if not recipient_user_id:
         return
     sender_name = sender_id
@@ -227,14 +232,29 @@ async def _push_chat_notification(
             sender_name = cand.display_name
     except Exception:
         pass
+
+    short_preview = preview[:140]
+    timestamp     = datetime.now(timezone.utc).isoformat()
+
+    # In-app channel.
     await manager.notify_user(recipient_user_id, {
-        "type": "chat_notification",
-        "session_id": session_id,
-        "sender_id": sender_id,
+        "type":        "chat_notification",
+        "session_id":  session_id,
+        "sender_id":   sender_id,
         "sender_name": sender_name,
-        "preview": preview[:140],
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "preview":     short_preview,
+        "timestamp":   timestamp,
     })
+
+    # Closed-browser push. Runs concurrently with the WS notify so the
+    # in-app banner doesn't have to wait on a push service round-trip.
+    from mushahid.realtime.web_push import send_web_push
+    asyncio.create_task(send_web_push(recipient_user_id, {
+        "title": sender_name,
+        "body":  short_preview,
+        "url":   f"/chat/{session_id}",
+        "tag":   f"sonder-chat-{session_id}",
+    }))
 
 
 async def _typing_keepalive(session_id: str, profile_id: str) -> None:
