@@ -67,6 +67,30 @@ export default function Itinerary() {
   const [companionPromptDismissed, setCompanionPromptDismissed] = useState(false)
   const [error, setError]         = useState(null)
   const startedRef                = useRef(false)
+  // Tracks which itinerary id we've auto-persisted, so the SSE 'done' and
+  // 'itinerary_generated' handlers don't both fire saves and so a re-render
+  // doesn't double-persist the same trip.
+  const autoSavedIdRef            = useRef(null)
+
+  // Auto-save the generated trip to the user's trip history. Without this,
+  // users have to remember to click "Save itinerary" — and if they don't,
+  // every new generation overwrites the dashboard hero (via localStorage)
+  // and the Past Trips carousel stays empty forever.
+  async function autoSaveTrip(it) {
+    const id = it?.itinerary_id
+    if (!id || autoSavedIdRef.current === id) return
+    autoSavedIdRef.current = id
+    try {
+      await saveItineraryAsCurrent(id)
+      try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(it)) } catch { /* noop */ }
+      setSaved(true)
+    } catch (err) {
+      // Don't surface — the explicit Save button is still there as a manual
+      // retry path. Just unblock a future attempt.
+      console.warn('auto-save itinerary failed:', err?.message || err)
+      autoSavedIdRef.current = null
+    }
+  }
 
   const handlers = useMemo(() => {
     const base = {
@@ -95,6 +119,11 @@ export default function Itinerary() {
           // Cache so the user can navigate to /dashboard → "View itinerary"
           // and still see this trip even if they haven't clicked Save yet.
           try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(data.itinerary)) } catch {}
+          // Safety-net auto-save — if validation/refinement hangs the
+          // 'done' event never lands, but the trip is still on the
+          // dashboard via localStorage. Persist it now too. autoSaveTrip
+          // dedupes by id so 'done' won't double-save.
+          autoSaveTrip(data.itinerary)
         }
         // Invite them to meet new people for this trip, with a beat so the
         // last day lands first.
@@ -107,6 +136,9 @@ export default function Itinerary() {
         if (data?.itinerary) {
           setItinerary(data.itinerary)
           try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(data.itinerary)) } catch {}
+          // Persist to trip history immediately so it shows up in Past Trips
+          // even if the user navigates away without clicking Save.
+          autoSaveTrip(data.itinerary)
         }
       },
     }
