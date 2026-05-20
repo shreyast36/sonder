@@ -207,6 +207,36 @@ async def deny_match(session_id: str, _uid: str = Depends(verify_token)):
         return {"status": "denied"}
 
 
+async def _push_chat_notification(
+    recipient_user_id: str,
+    session_id: str,
+    sender_id: str,
+    preview: str,
+) -> None:
+    """Fan out a chat notification to the recipient's global channels. Best-
+    effort — if they have no channel open (offline / different device), it
+    silently no-ops. Sender info + preview let the client render the banner
+    without a follow-up REST hit."""
+    if not recipient_user_id:
+        return
+    sender_name = sender_id
+    try:
+        from shreyas.retrieval.search import get_cotraveller_by_id
+        cand = await get_cotraveller_by_id(sender_id)
+        if cand and cand.display_name:
+            sender_name = cand.display_name
+    except Exception:
+        pass
+    await manager.notify_user(recipient_user_id, {
+        "type": "chat_notification",
+        "session_id": session_id,
+        "sender_id": sender_id,
+        "sender_name": sender_name,
+        "preview": preview[:140],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+
+
 async def _typing_keepalive(session_id: str, profile_id: str) -> None:
     """Re-emit typing every 2s. The frontend clears its indicator after 3.5s,
     so without this the indicator vanishes while the LLM is still thinking."""
@@ -220,7 +250,12 @@ async def _typing_keepalive(session_id: str, profile_id: str) -> None:
         return
 
 
-async def _send_synthetic_reply(session_id: str, session_meta: dict, last_message: str) -> None:
+async def _send_synthetic_reply(
+    session_id: str,
+    session_meta: dict,
+    last_message: str,
+    user_message_id: str,
+) -> None:
     """
     Drive a reply from the synthetic co-traveller (profile_id side).
 
@@ -247,6 +282,16 @@ async def _send_synthetic_reply(session_id: str, session_meta: dict, last_messag
         # Tiny pause before the typing dots appear so it doesn't fire in the
         # same tick as the user's message — feels more natural.
         await asyncio.sleep(random.uniform(*_REPLY_BEFORE_TYPING_S))
+
+        # Synthetic user "reads" the message before starting to reply — flips
+        # the user's bubble to "Seen" right as the typing dots appear.
+        if user_message_id:
+            await manager.broadcast_to_session(session_id, {
+                "type": "seen",
+                "message_id": user_message_id,
+                "user_id": profile_id,
+            })
+
         keepalive = asyncio.create_task(_typing_keepalive(session_id, profile_id))
 
         history = await list_chat_messages(session_id)
@@ -269,11 +314,47 @@ async def _send_synthetic_reply(session_id: str, session_meta: dict, last_messag
         }
         await append_chat_message(session_id, outgoing)
         await manager.broadcast_to_session(session_id, outgoing)
+
+        # Notify the human via their global channel so they get a banner /
+        # OS notification when they navigated away from the chat page.
+        await _push_chat_notification(
+            session_meta.get("user_id") or "", session_id, profile_id, reply_text,
+        )
     except Exception as e:
         logger.warning("synthetic reply failed for %s: %s", session_id, e)
     finally:
         if keepalive is not None:
             keepalive.cancel()
+
+
+@router.websocket("/ws/notifications")
+async def notifications_websocket(websocket: WebSocket):
+    """
+    Global per-user channel. The frontend opens this once on app boot (from
+    the root layout) and keeps it alive across navigation. Backend pushes
+    chat_notification events here whenever a new message arrives in any of
+    the user's sessions. First-message auth, same shape as chat.
+    """
+    await websocket.accept()
+    try:
+        auth_msg = await asyncio.wait_for(_receive_json_checked(websocket), timeout=10.0)
+        uid = verify_token_string(auth_msg.get("token", ""))
+    except Exception:
+        await websocket.close(code=4001, reason="Authentication failed")
+        return
+
+    await manager.connect_user_channel(websocket, uid)
+    try:
+        # We don't expect inbound traffic on this channel, but keep the loop
+        # alive so the client can ping for liveness if it wants.
+        while True:
+            msg = await _receive_json_checked(websocket)
+            if msg.get("type") == "ping":
+                await manager.handle_ping(uid)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect_user_channel(websocket, uid)
 
 
 @router.websocket("/ws/chat/{session_id}")
@@ -300,6 +381,14 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
     await manager.connect(websocket, session_id, uid)
     await set_online(uid)
     await manager.send_presence(session_id, uid, True)
+
+    # Synthetic co-traveller is always "online" while a session is open — they
+    # have no WebSocket of their own, so without this the user sees them as
+    # offline forever. Broadcast once on connect so the UI flips immediately.
+    synthetic_id = session_meta["profile_id"] if uid == session_meta["user_id"] else None
+    if synthetic_id:
+        await set_online(synthetic_id)
+        await manager.send_presence(session_id, synthetic_id, True)
 
     try:
         while True:
@@ -336,10 +425,19 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
                 await append_chat_message(session_id, outgoing)
                 await manager.broadcast_to_session(session_id, outgoing)
 
+                # Notify the recipient via their global channel — they get a
+                # banner/OS push when they're not on this chat page. We send
+                # regardless of room presence; the client suppresses the
+                # banner when it's already on /chat/{session_id}.
+                recipient = session_meta["profile_id"] if uid == session_meta["user_id"] else session_meta["user_id"]
+                await _push_chat_notification(recipient, session_id, uid, content)
+
                 # If the human sent it, the synthetic co-traveller replies.
                 # Fire-and-forget — the WS handler keeps reading inbound.
                 if uid == session_meta["user_id"]:
-                    asyncio.create_task(_send_synthetic_reply(session_id, session_meta, content))
+                    asyncio.create_task(_send_synthetic_reply(
+                        session_id, session_meta, content, outgoing["message_id"],
+                    ))
     except WebSocketDisconnect:
         pass
     finally:

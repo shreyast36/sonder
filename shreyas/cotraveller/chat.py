@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 class ConnectionManager:
     def __init__(self):
         self.rooms: dict[str, list[tuple[WebSocket, str]]] = {}
+        # Per-user notification channels — sockets opened from the global app
+        # shell (any page) so we can push "you got a message" events when the
+        # user isn't on the matching /chat/:sessionId page.
+        self.user_channels: dict[str, list[WebSocket]] = {}
 
     async def connect(self, websocket: WebSocket, session_id: str, user_id: str) -> None:
         # Socket is already accepted by the route (first-message auth runs before connect).
@@ -93,6 +97,31 @@ class ConnectionManager:
     async def handle_ping(self, user_id: str) -> None:
         from shreyas.cotraveller.presence import heartbeat
         await heartbeat(user_id)
+
+    # ── Notification channels ──────────────────────────────────────────────
+
+    async def connect_user_channel(self, websocket: WebSocket, user_id: str) -> None:
+        """Register a global notification socket for a user. Called from
+        /ws/notifications after auth."""
+        self.user_channels.setdefault(user_id, []).append(websocket)
+
+    def disconnect_user_channel(self, websocket: WebSocket, user_id: str) -> None:
+        chans = self.user_channels.get(user_id)
+        if not chans:
+            return
+        self.user_channels[user_id] = [w for w in chans if w is not websocket]
+        if not self.user_channels[user_id]:
+            self.user_channels.pop(user_id, None)
+
+    async def notify_user(self, user_id: str, event: dict) -> None:
+        """Push an event to all of a user's global notification sockets."""
+        for ws in list(self.user_channels.get(user_id, [])):
+            await self.send_to_socket(ws, event)
+
+    def user_has_open_session(self, user_id: str, session_id: str) -> bool:
+        """True if the user is currently connected to this chat session room
+        — used to suppress notifications for the page they're actively on."""
+        return user_id in (uid for _, uid in self.rooms.get(session_id, []))
 
 
 # Singleton — every route imports this same instance.

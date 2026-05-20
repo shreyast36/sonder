@@ -20,6 +20,7 @@ import Discover               from './pages/Discover'
 import TravellerCompatibility from './pages/TravellerCompatibility'
 import LuxCursor              from './components/LuxCursor'
 import { ToastProvider } from './components/Toast'
+import NotificationProvider from './components/NotificationProvider'
 
 function Page({ children }) {
   return (
@@ -45,6 +46,7 @@ export default function App() {
 
   return (
     <ToastProvider>
+      <NotificationProvider>
       <ScrollToTop/>
       <LuxCursor/>
       <AnimatePresence mode="wait">
@@ -70,6 +72,7 @@ export default function App() {
           <Route path="*"                   element={<Navigate to="/" replace/>}/>
         </Routes>
       </AnimatePresence>
+      </NotificationProvider>
     </ToastProvider>
   )
 }

@@ -241,6 +241,13 @@ export function openChatSocket(sessionId) {
   return new WebSocket(`${wsBase}/api/ws/chat/${encodeURIComponent(sessionId)}`)
 }
 
+// Global per-user notification channel. One socket per app session — used by
+// the NotificationProvider to receive chat_notification events anywhere.
+export function openNotificationSocket() {
+  const wsBase = BASE.replace(/^http/, 'ws')
+  return new WebSocket(`${wsBase}/api/ws/notifications`)
+}
+
 export async function getChatSession(sessionId) {
   return get(`/api/chat/session/${encodeURIComponent(sessionId)}`)
 }
