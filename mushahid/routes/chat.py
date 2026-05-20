@@ -1,10 +1,12 @@
 import asyncio
 import json
+import logging
+import random
 import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 from shared.schemas import ChatSession, ChatStartResponse, ApprovalStatus
-from shared.config import LOCAL_MODE
 from mushahid.auth import verify_token, verify_token_string
 from mushahid.utils.sanitize import sanitize_user_input
 from mushahid.realtime.firestore import (
@@ -15,11 +17,16 @@ from shreyas.cotraveller.chat import manager
 from shreyas.cotraveller.presence import set_online, set_offline, is_online
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-# In-memory session store (Firestore replaces this in production)
+# In-memory session store; mirrors Firestore for the WS hot path.
 _sessions: dict = {}
 
 _MAX_WS_MSG_BYTES = 64 * 1024  # 64 KB per message
+
+# Synthetic-user reply pacing — feels human, doesn't melt the LLM bill.
+_REPLY_TYPING_LAG_S = (1.4, 2.6)
+_REPLY_THINK_LAG_S  = (0.8, 1.6)
 
 
 async def _receive_json_checked(websocket: WebSocket) -> dict:
@@ -30,21 +37,42 @@ async def _receive_json_checked(websocket: WebSocket) -> dict:
     return json.loads(text)
 
 
+class ChatStartRequest(BaseModel):
+    profile_id: str
+    itinerary_id: str
+
+
 @router.post("/chat/start", response_model=ChatStartResponse)
-async def start_chat(profile_id: str, itinerary_id: str, uid: str = Depends(verify_token)):
+async def start_chat(body: ChatStartRequest, uid: str = Depends(verify_token)):
     from ali.generation.topics import generate_topics, generate_icebreaker
     from shared.schemas import UserProfile, CoTravellerMatch, CoTravellerProfile, Itinerary, Destination
     from shared.schemas import PacePreference, BudgetStyle, TravelStyle
 
+    profile_id   = body.profile_id
+    itinerary_id = body.itinerary_id
+
     user_profile = UserProfile(user_id=uid, display_name=uid, constraints=None, persona_answers=None)
 
-    match = CoTravellerMatch(
-        profile=CoTravellerProfile(
+    # Best-effort fetch of the real synthetic profile so the icebreaker has
+    # something to anchor on. Fall back to a neutral CoTravellerMatch when
+    # Pinecone is unreachable so chat still starts.
+    candidate = None
+    try:
+        from shreyas.retrieval.search import get_cotraveller_by_id
+        candidate = await get_cotraveller_by_id(profile_id)
+    except Exception as e:
+        logger.warning("get_cotraveller_by_id failed for %s: %s", profile_id, e)
+
+    if candidate is None:
+        candidate = CoTravellerProfile(
             profile_id=profile_id, display_name=profile_id,
             age=25, location="Unknown", archetype="Explorer",
             interests=[], pace=PacePreference.moderate,
             budget_style=BudgetStyle.mid_range, travel_style=TravelStyle.solo,
-        ),
+        )
+
+    match = CoTravellerMatch(
+        profile=candidate,
         match_score=0.85,
         match_reasons=["Similar travel interests"],
         compatibility_breakdown={},
@@ -82,7 +110,7 @@ async def start_chat(profile_id: str, itinerary_id: str, uid: str = Depends(veri
 
 
 async def _assert_participant(session_id: str, uid: str) -> None:
-    """Raise 403/404 if uid is not a participant. Falls back to Firestore when session not in memory."""
+    """Raise 403/404 if uid is not a participant."""
     session_data = _sessions.get(session_id)
     if session_data:
         s = session_data["session"]
@@ -99,21 +127,23 @@ async def _assert_participant(session_id: str, uid: str) -> None:
         raise HTTPException(status_code=403, detail="Not a participant in this session")
 
 
-async def _load_session(session_id: str) -> dict:
-    """Return {'user_id', 'profile_id'} for a session, from memory or Firestore. 404 otherwise."""
+async def _load_session_safe(session_id: str) -> dict | None:
     cached = _sessions.get(session_id)
     if cached:
         s = cached["session"]
         return {"user_id": s.user_id, "profile_id": s.profile_id}
-    stored = await get_chat_session(session_id)
+    try:
+        stored = await get_chat_session(session_id)
+    except Exception:
+        return None
     if stored is None:
-        raise HTTPException(status_code=404, detail="Session not found")
+        return None
     return {"user_id": stored.get("user_id"), "profile_id": stored.get("profile_id")}
 
 
 @router.get("/chat/session/{session_id}")
 async def get_session(session_id: str, uid: str = Depends(verify_token)):
-    """Session metadata for the chat page to know its profile_id, status, etc."""
+    """Session metadata so the chat page knows its profile_id, status, etc."""
     await _assert_participant(session_id, uid)
     cached = _sessions.get(session_id)
     if cached:
@@ -121,7 +151,6 @@ async def get_session(session_id: str, uid: str = Depends(verify_token)):
     stored = await get_chat_session(session_id)
     if stored is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    # Strip the messages list — the dedicated endpoint returns those.
     return {k: v for k, v in stored.items() if k != "messages"}
 
 
@@ -130,7 +159,6 @@ async def get_messages(session_id: str, uid: str = Depends(verify_token)):
     """Replay history when the chat page mounts (so refresh doesn't lose the thread)."""
     await _assert_participant(session_id, uid)
     msgs = await list_chat_messages(session_id)
-    # Honour in-memory store too (LOCAL_MODE non-Firestore path).
     cached = _sessions.get(session_id)
     if cached and not msgs:
         msgs = list(cached.get("messages", []))
@@ -176,73 +204,76 @@ async def deny_match(session_id: str, _uid: str = Depends(verify_token)):
         return {"status": "denied"}
 
 
-async def _authenticate_ws(websocket: WebSocket, session_id: str) -> str | None:
+async def _send_synthetic_reply(session_id: str, session_meta: dict, last_message: str) -> None:
     """
-    Run first-message auth. Returns the effective uid for the connection, or
-    None if auth failed (and the socket has been closed).
+    Drive a reply from the synthetic co-traveller (profile_id side).
 
-    Auth message shape:
-        Normal:        {"type": "auth", "token": "<firebase_id_token>"}
-        Impersonation: {"type": "auth", "impersonate_profile_id": "<profile_id>"}
-                       — only honoured when LOCAL_MODE=true; lets the dev open
-                       a second window posing as the synthetic co-traveller.
+    Fires after the human's message has been broadcast. Emits a typing
+    indicator immediately, sleeps for a brief humanising delay, calls the
+    LLM in character, then broadcasts + persists the reply.
+
+    Failures are logged and dropped — chat stays usable even if the LLM
+    or Pinecone is down.
     """
+    profile_id = session_meta.get("profile_id")
+    user_id    = session_meta.get("user_id")
+    if not profile_id:
+        return
     try:
-        auth_msg = await asyncio.wait_for(_receive_json_checked(websocket), timeout=10.0)
-    except Exception:
-        await websocket.close(code=4001, reason="Authentication timed out")
-        return None
+        from shreyas.retrieval.search import get_cotraveller_by_id
+        from ali.generation.topics import generate_chat_reply
 
-    impersonate = auth_msg.get("impersonate_profile_id")
-    if impersonate:
-        if not LOCAL_MODE:
-            await websocket.close(code=4003, reason="Impersonation only allowed in LOCAL_MODE")
-            return None
-        session = await _load_session_safe(session_id)
-        if session is None:
-            await websocket.close(code=4004, reason="Session not found")
-            return None
-        if impersonate != session["profile_id"]:
-            await websocket.close(code=4003, reason="Impersonation profile_id mismatch")
-            return None
-        return impersonate
+        candidate = await get_cotraveller_by_id(profile_id)
+        if candidate is None:
+            logger.warning("synthetic reply: no profile in Pinecone for %s", profile_id)
+            return
 
-    token = auth_msg.get("token", "")
-    try:
-        uid = verify_token_string(token)
-    except Exception:
-        await websocket.close(code=4001, reason="Authentication failed")
-        return None
+        # Typing indicator while we think — gives the UI a real-time feel.
+        await manager.broadcast_to_session(session_id, {"type": "typing", "user_id": profile_id})
+        await asyncio.sleep(random.uniform(*_REPLY_THINK_LAG_S))
 
-    session = await _load_session_safe(session_id)
-    if session is None:
-        await websocket.close(code=4004, reason="Session not found")
-        return None
-    if uid not in (session["user_id"], session["profile_id"]):
-        await websocket.close(code=4003, reason="Not a participant in this session")
-        return None
-    return uid
+        history = await list_chat_messages(session_id)
+        reply_text = await generate_chat_reply(candidate, last_message, history, user_id or "")
+        if not reply_text:
+            return
 
+        # Small additional pause so the "Seen" + reply don't fire in the same tick.
+        await asyncio.sleep(random.uniform(*_REPLY_TYPING_LAG_S))
 
-async def _load_session_safe(session_id: str) -> dict | None:
-    cached = _sessions.get(session_id)
-    if cached:
-        s = cached["session"]
-        return {"user_id": s.user_id, "profile_id": s.profile_id}
-    try:
-        stored = await get_chat_session(session_id)
-    except Exception:
-        return None
-    if stored is None:
-        return None
-    return {"user_id": stored.get("user_id"), "profile_id": stored.get("profile_id")}
+        outgoing = {
+            "type": "message",
+            "message_id": str(uuid.uuid4()),
+            "session_id": session_id,
+            "sender_id": profile_id,
+            "content": reply_text,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "seen": False,
+        }
+        await append_chat_message(session_id, outgoing)
+        await manager.broadcast_to_session(session_id, outgoing)
+    except Exception as e:
+        logger.warning("synthetic reply failed for %s: %s", session_id, e)
 
 
 @router.websocket("/ws/chat/{session_id}")
 async def chat_websocket(websocket: WebSocket, session_id: str):
     await websocket.accept()
-    uid = await _authenticate_ws(websocket, session_id)
-    if uid is None:
+
+    # First-message auth — tokens never travel in query params (server logs).
+    try:
+        auth_msg = await asyncio.wait_for(_receive_json_checked(websocket), timeout=10.0)
+        token = auth_msg.get("token", "")
+        uid = verify_token_string(token)
+    except Exception:
+        await websocket.close(code=4001, reason="Authentication failed")
+        return
+
+    session_meta = await _load_session_safe(session_id)
+    if session_meta is None:
+        await websocket.close(code=4004, reason="Session not found")
+        return
+    if uid not in (session_meta["user_id"], session_meta["profile_id"]):
+        await websocket.close(code=4003, reason="Not a participant in this session")
         return
 
     await manager.connect(websocket, session_id, uid)
@@ -283,11 +314,15 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
                 }
                 await append_chat_message(session_id, outgoing)
                 await manager.broadcast_to_session(session_id, outgoing)
+
+                # If the human sent it, the synthetic co-traveller replies.
+                # Fire-and-forget — the WS handler keeps reading inbound.
+                if uid == session_meta["user_id"]:
+                    asyncio.create_task(_send_synthetic_reply(session_id, session_meta, content))
     except WebSocketDisconnect:
         pass
     finally:
         manager.disconnect(websocket, session_id)
-        # Only mark this uid offline if they have no other live sockets in the room.
         if uid not in manager.participants(session_id):
             await set_offline(uid)
             await manager.send_presence(session_id, uid, False)

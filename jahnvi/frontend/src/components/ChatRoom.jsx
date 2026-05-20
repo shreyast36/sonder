@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Send, Check, MapPin, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Send, Check, MapPin } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
@@ -61,29 +61,20 @@ function OnlineDot({ online }) {
 }
 
 /**
- * ChatRoom renders a chat session from either side of the conversation.
- *
- * Props:
- *   sessionId            — chat session id (URL param)
- *   selfId               — uid (or impersonated profile_id) acting in this window
- *   impersonateProfileId — set on the second dev window to auth as the fake user
- *   showImpersonateLink  — render a "Open as them" button (the real-user window)
+ * ChatRoom renders a chat session for the signed-in user. The synthetic
+ * co-traveller replies automatically server-side — no second window.
  */
-export default function ChatRoom({ sessionId, selfId, impersonateProfileId, showImpersonateLink }) {
+export default function ChatRoom({ sessionId, selfId }) {
   const navigate = useNavigate()
-  const [session,    setSession]    = useState(null)
-  const [other,      setOther]      = useState(null)   // CoTravellerMatch
-  const [input,      setInput]      = useState('')
+  const [session, setSession] = useState(null)
+  const [other,   setOther]   = useState(null)   // CoTravellerMatch
+  const [input,   setInput]   = useState('')
   const bottomRef = useRef(null)
 
-  const wsOpts = useMemo(
-    () => (impersonateProfileId ? { impersonateProfileId } : {}),
-    [impersonateProfileId],
-  )
   const {
     messages, sendMessage, sendTyping, sendSeen, seedMessages,
     connected, typingUsers, seenIds, presence,
-  } = useWebSocket(sessionId, wsOpts)
+  } = useWebSocket(sessionId)
 
   // Hydrate session + history + other-side profile on mount.
   useEffect(() => {
@@ -161,12 +152,6 @@ export default function ChatRoom({ sessionId, selfId, impersonateProfileId, show
     return (other?.match_reasons || []).slice(0, 4)
   }, [other])
 
-  function openImpersonationWindow() {
-    if (!session || !session.profile_id) return
-    const url = `/chat-as/${encodeURIComponent(sessionId)}/${encodeURIComponent(session.profile_id)}`
-    window.open(url, '_blank', 'width=720,height=900')
-  }
-
   return (
     <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
       <AppBackground accent={VIOLET}/>
@@ -175,53 +160,21 @@ export default function ChatRoom({ sessionId, selfId, impersonateProfileId, show
       <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
         <motion.button
           whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-          onClick={() => (window.opener ? window.close() : navigate(-1))}
+          onClick={() => navigate(-1)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTE, padding: 0, lineHeight: 0, display: 'flex', alignItems: 'center', gap: 8 }}
         >
           <ArrowLeft size={18}/>
-          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
-            {impersonateProfileId ? 'Close' : 'Back'}
-          </span>
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Back</span>
         </motion.button>
         <SonderNav3D markSize={32}/>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {impersonateProfileId && (
-            <span style={{
-              fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase',
-              color: VIOLET, border: `1px solid ${VIOLET}44`, borderRadius: 20, padding: '6px 12px',
-              background: `${VIOLET}10`,
-            }}>
-              Dev — as {otherName || 'them'}
-            </span>
-          )}
-          {showImpersonateLink && session?.profile_id && (
-            <motion.button
-              whileHover={{ scale: 1.05, borderColor: `${VIOLET}88` }}
-              whileTap={{ scale: 0.95 }}
-              onClick={openImpersonationWindow}
-              title="Open a second window to chat back as the synthetic companion"
-              style={{
-                background: 'none', border: `1px solid ${VIOLET}44`, borderRadius: 20,
-                padding: '8px 14px', cursor: 'pointer',
-                fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
-                letterSpacing: '0.18em', textTransform: 'uppercase', color: VIOLET,
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}
-            >
-              <ExternalLink size={11}/> Reply as them
-            </motion.button>
-          )}
-          {!impersonateProfileId && (
-            <motion.button
-              whileHover={{ background: `${ROSE}18`, borderColor: `${ROSE}55` }}
-              whileTap={{ scale: 0.96 }}
-              onClick={() => navigate(`/approve/${sessionId}`)}
-              style={{ background: 'none', border: `1px solid ${ROSE}44`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: ROSE }}
-            >
-              Review match
-            </motion.button>
-          )}
-        </div>
+        <motion.button
+          whileHover={{ background: `${ROSE}18`, borderColor: `${ROSE}55` }}
+          whileTap={{ scale: 0.96 }}
+          onClick={() => navigate(`/approve/${sessionId}`)}
+          style={{ background: 'none', border: `1px solid ${ROSE}44`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: ROSE }}
+        >
+          Review match
+        </motion.button>
       </nav>
 
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '320px 1fr', maxWidth: 1100, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1, minHeight: 0 }}>
@@ -343,7 +296,7 @@ export default function ChatRoom({ sessionId, selfId, impersonateProfileId, show
                 value={input}
                 onChange={e => onChangeInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') send() }}
-                placeholder={impersonateProfileId ? `Reply as ${otherName || 'them'}…` : `Message ${otherName || 'them'}…`}
+                placeholder={`Message ${otherName || 'them'}…`}
                 style={{ flex: 1, padding: '14px 20px', background: 'rgba(232,212,168,0.04)', border: `1px solid ${HAIRLINE}`, borderRadius: 24, color: BONE, outline: 'none', fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 300 }}
                 onFocus={e => { e.currentTarget.style.borderColor = `${ROSE}55`; e.currentTarget.style.boxShadow = `0 0 0 3px ${ROSE}0F` }}
                 onBlur={e => { e.currentTarget.style.borderColor = HAIRLINE; e.currentTarget.style.boxShadow = 'none' }}

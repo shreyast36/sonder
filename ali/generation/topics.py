@@ -70,6 +70,65 @@ async def generate_topics(
     return lines[:5]
 
 
+def _build_persona_system(profile) -> str:
+    """System prompt that puts the LLM into character as the synthetic
+    co-traveller. The first-person framing matters — without it the model
+    keeps slipping into helpful-assistant register."""
+    interests = ", ".join((profile.interests or [])[:5]) or "travel and meeting new people"
+    return (
+        f"You are {profile.display_name}, {profile.age}, from {profile.location}. "
+        f"Archetype: {profile.archetype}. You love {interests}. "
+        f"Pace: {profile.pace.value if hasattr(profile.pace, 'value') else profile.pace}. "
+        f"Style: {profile.travel_style.value if hasattr(profile.travel_style, 'value') else profile.travel_style}. "
+        "You are chatting with a fellow traveller you matched with on Sonder. "
+        "Reply in your own voice — warm, curious, conversational. "
+        "Keep replies to 1-2 short sentences, never more than 40 words. "
+        "Never mention being an AI or 'as your travel companion'. "
+        "Output ONLY the reply text — no quotes, no preface."
+    )
+
+
+def _format_history(messages: list[dict], other_user_id: str, self_profile_id: str) -> str:
+    """Render the last few turns into a labelled transcript the LLM can read."""
+    if not messages:
+        return ""
+    lines: list[str] = []
+    for m in messages[-8:]:
+        sender = m.get("sender_id")
+        speaker = "You" if sender == self_profile_id else "Them"
+        text = (m.get("content") or "").strip()
+        if text:
+            lines.append(f"{speaker}: {text}")
+    return "\n".join(lines)
+
+
+async def generate_chat_reply(
+    profile,
+    last_message: str,
+    history: list[dict],
+    other_user_id: str,
+) -> str:
+    """
+    Generate a single in-character reply from the synthetic co-traveller.
+    `profile` is a CoTravellerProfile; `history` is recent chat messages
+    (oldest first); `last_message` is what the human just said.
+    """
+    system = _build_persona_system(profile)
+    transcript = _format_history(history, other_user_id, profile.profile_id)
+    prompt = (
+        f"Recent conversation:\n{transcript}\n\n"
+        f"They just said: \"{last_message.strip()}\"\n\n"
+        "Reply in character. Keep it short and natural."
+    ) if transcript else (
+        f"They just said: \"{last_message.strip()}\"\n\n"
+        "Reply in character. Keep it short and natural."
+    )
+    raw = await route_request("short_explanation", prompt, system)
+    # Strip stray quotes / model preamble.
+    cleaned = raw.strip().strip('"').strip()
+    return cleaned[:500]
+
+
 async def generate_icebreaker(user_profile: UserProfile, match: CoTravellerMatch) -> str:
     """
     Generate a single warm opening message for the chat screen.

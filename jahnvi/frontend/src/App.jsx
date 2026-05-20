@@ -13,7 +13,6 @@ import Journal         from './pages/Journal'
 import Destination     from './pages/Destination'
 import MatchDetail     from './pages/MatchDetail'
 import Chat            from './pages/Chat'
-import ChatAsFake      from './pages/ChatAsFake'
 import ApproveDeny     from './pages/ApproveDeny'
 import SharedItinerary from './pages/SharedItinerary'
 import Notes           from './pages/Notes'
@@ -63,7 +62,6 @@ export default function App() {
           <Route path="/destination/:city"       element={<Page><Destination/></Page>}/>
           <Route path="/match/:id"          element={<Page><MatchDetail/></Page>}/>
           <Route path="/chat/:sessionId"    element={<Page><Chat/></Page>}/>
-          <Route path="/chat-as/:sessionId/:profileId" element={<Page><ChatAsFake/></Page>}/>
           <Route path="/approve/:sessionId" element={<Page><ApproveDeny/></Page>}/>
           <Route path="/shared/:id"         element={<Page><SharedItinerary/></Page>}/>
           <Route path="/notes/:id"          element={<Page><Notes/></Page>}/>

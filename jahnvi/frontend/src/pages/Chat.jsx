@@ -6,11 +6,5 @@ export default function Chat() {
   const { sessionId } = useParams()
   const { user } = useAuth()
   if (!user || !sessionId) return null
-  return (
-    <ChatRoom
-      sessionId={sessionId}
-      selfId={user.uid}
-      showImpersonateLink
-    />
-  )
+  return <ChatRoom sessionId={sessionId} selfId={user.uid} />
 }

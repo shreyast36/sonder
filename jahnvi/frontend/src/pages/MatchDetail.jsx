@@ -5,7 +5,7 @@ import { ArrowLeft, MapPin, Check, MessageCircle } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import { useAuth } from '../hooks/useAuth'
-import { getCurrentItinerary, getCotravellerProfile } from '../lib/api'
+import { getCurrentItinerary, getCotravellerProfile, startChat } from '../lib/api'
 
 // vivid violet — accent for the match-detail screen
 const VIOLET = '#8B5CF6'
@@ -101,6 +101,9 @@ export default function MatchDetail() {
   const [data, setData]       = useState(null)   // {profile, match_score, match_reasons, compatibility_breakdown}
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
+  const [currentItineraryId, setCurrentItineraryId] = useState(null)
+  const [starting, setStarting] = useState(false)
+  const [startError, setStartError] = useState(null)
 
   // Pull whatever current itinerary so the matching call has trip context
   // (companion prefs are scoped per-trip).
@@ -119,6 +122,7 @@ export default function MatchDetail() {
         const res = await getCotravellerProfile(id, itineraryId)
         if (cancelled) return
         setData(res)
+        setCurrentItineraryId(itineraryId)
       } catch (err) {
         if (cancelled) return
         setError(err?.message || 'Could not load this profile')
@@ -250,22 +254,38 @@ export default function MatchDetail() {
           {/* CTAs */}
           <div style={{ marginTop: 44, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <motion.button
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              disabled
-              title="Available once this traveller joins Sonder"
+              whileHover={!starting ? { y: -2, boxShadow: `0 12px 32px ${VIOLET}55` } : {}}
+              whileTap={!starting ? { scale: 0.98 } : {}}
+              disabled={starting}
+              onClick={async () => {
+                if (starting) return
+                setStarting(true)
+                setStartError(null)
+                try {
+                  const { session } = await startChat(profile.profile_id, currentItineraryId || '')
+                  navigate(`/chat/${session.session_id}`)
+                } catch (e) {
+                  setStartError(e?.message || 'Could not start the chat')
+                  setStarting(false)
+                }
+              }}
               style={{ width: '100%', padding: '17px 0',
-                background: `linear-gradient(135deg, ${VIOLET}66 0%, #6D28D966 100%)`,
-                border: 'none', borderRadius: 12, cursor: 'not-allowed',
+                background: `linear-gradient(135deg, ${VIOLET} 0%, #6D28D9 100%)`,
+                border: 'none', borderRadius: 12, cursor: starting ? 'wait' : 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
                 fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em',
-                textTransform: 'uppercase', fontWeight: 500, color: 'rgba(255,255,255,0.7)' }}
+                textTransform: 'uppercase', fontWeight: 500, color: '#fff',
+                boxShadow: `0 6px 24px ${VIOLET}44`,
+                opacity: starting ? 0.7 : 1 }}
             >
-              <MessageCircle size={13}/> Available when they join
+              <MessageCircle size={13}/>
+              {starting ? 'Opening chat…' : `Start chat with ${profile.display_name.split(' ')[0]}`}
             </motion.button>
-            <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 12, color: MUTE, textAlign: 'center', margin: 0, lineHeight: 1.5 }}>
-              Sonder-curated traveller — chat unlocks when {profile.display_name.split(' ')[0]} signs up.
-            </p>
+            {startError && (
+              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: '#F87171', textAlign: 'center', margin: 0 }}>
+                {startError}
+              </p>
+            )}
           </div>
         </motion.div>
 
