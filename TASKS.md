@@ -42,8 +42,8 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Real-time Layer
 
-- [ ] `shreyas/cotraveller/chat.py` — `ConnectionManager` WebSocket engine (connect, disconnect, send, broadcast, 30s ping/heartbeat)
-- [ ] `shreyas/cotraveller/presence.py` — `set_online()`, `set_offline()`, `is_online()`, `cleanup_stale_presence()`
+- [x] `shreyas/cotraveller/chat.py` — `ConnectionManager` WebSocket engine (connect, disconnect, send, broadcast, 30s ping/heartbeat)
+- [x] `shreyas/cotraveller/presence.py` — `set_online()`, `set_offline()`, `is_online()`, `cleanup_stale_presence()`
 - [ ] `shreyas/cotraveller/shared_itinerary.py` — `create_shared_itinerary()`, `add_note()`, `add_activity()`, `sync_changes()` with optimistic locking (version field)
 - [ ] `shreyas/cotraveller/approval.py` — `approve_match()`, `deny_match()`, `get_approval_status()`
 
