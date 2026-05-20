@@ -25,8 +25,11 @@ _sessions: dict = {}
 _MAX_WS_MSG_BYTES = 64 * 1024  # 64 KB per message
 
 # Synthetic-user reply pacing — feels human, doesn't melt the LLM bill.
-_REPLY_TYPING_LAG_S = (1.4, 2.6)
-_REPLY_THINK_LAG_S  = (0.8, 1.6)
+# Frontend clears its typing indicator after 3.5s, so the keepalive task
+# re-emits typing every 2s while the LLM is thinking.
+_REPLY_BEFORE_TYPING_S  = (0.6, 1.4)   # short pause before the indicator appears
+_REPLY_AFTER_REPLY_S    = (0.6, 1.2)   # small pause between LLM finish and broadcast
+_TYPING_KEEPALIVE_S     = 2.0
 
 
 async def _receive_json_checked(websocket: WebSocket) -> dict:
@@ -204,21 +207,34 @@ async def deny_match(session_id: str, _uid: str = Depends(verify_token)):
         return {"status": "denied"}
 
 
+async def _typing_keepalive(session_id: str, profile_id: str) -> None:
+    """Re-emit typing every 2s. The frontend clears its indicator after 3.5s,
+    so without this the indicator vanishes while the LLM is still thinking."""
+    try:
+        while True:
+            await manager.broadcast_to_session(
+                session_id, {"type": "typing", "user_id": profile_id}
+            )
+            await asyncio.sleep(_TYPING_KEEPALIVE_S)
+    except asyncio.CancelledError:
+        return
+
+
 async def _send_synthetic_reply(session_id: str, session_meta: dict, last_message: str) -> None:
     """
     Drive a reply from the synthetic co-traveller (profile_id side).
 
-    Fires after the human's message has been broadcast. Emits a typing
-    indicator immediately, sleeps for a brief humanising delay, calls the
-    LLM in character, then broadcasts + persists the reply.
-
-    Failures are logged and dropped — chat stays usable even if the LLM
-    or Pinecone is down.
+    Fetches the candidate's persona from Pinecone, builds the full chat
+    history, calls the LLM in-character (LARGE tier — needed for
+    multi-turn consistency), and broadcasts + persists the reply. Keeps
+    the typing indicator alive throughout the LLM call so the UI feels
+    real-time. Failures are logged and dropped.
     """
     profile_id = session_meta.get("profile_id")
-    user_id    = session_meta.get("user_id")
     if not profile_id:
         return
+
+    keepalive: asyncio.Task | None = None
     try:
         from shreyas.retrieval.search import get_cotraveller_by_id
         from ali.generation.topics import generate_chat_reply
@@ -228,17 +244,19 @@ async def _send_synthetic_reply(session_id: str, session_meta: dict, last_messag
             logger.warning("synthetic reply: no profile in Pinecone for %s", profile_id)
             return
 
-        # Typing indicator while we think — gives the UI a real-time feel.
-        await manager.broadcast_to_session(session_id, {"type": "typing", "user_id": profile_id})
-        await asyncio.sleep(random.uniform(*_REPLY_THINK_LAG_S))
+        # Tiny pause before the typing dots appear so it doesn't fire in the
+        # same tick as the user's message — feels more natural.
+        await asyncio.sleep(random.uniform(*_REPLY_BEFORE_TYPING_S))
+        keepalive = asyncio.create_task(_typing_keepalive(session_id, profile_id))
 
         history = await list_chat_messages(session_id)
-        reply_text = await generate_chat_reply(candidate, last_message, history, user_id or "")
+        reply_text = await generate_chat_reply(candidate, last_message, history)
         if not reply_text:
             return
 
-        # Small additional pause so the "Seen" + reply don't fire in the same tick.
-        await asyncio.sleep(random.uniform(*_REPLY_TYPING_LAG_S))
+        # Hold typing for a beat after the LLM finishes so the reply doesn't
+        # appear instantaneously with the indicator still showing.
+        await asyncio.sleep(random.uniform(*_REPLY_AFTER_REPLY_S))
 
         outgoing = {
             "type": "message",
@@ -253,6 +271,9 @@ async def _send_synthetic_reply(session_id: str, session_meta: dict, last_messag
         await manager.broadcast_to_session(session_id, outgoing)
     except Exception as e:
         logger.warning("synthetic reply failed for %s: %s", session_id, e)
+    finally:
+        if keepalive is not None:
+            keepalive.cancel()
 
 
 @router.websocket("/ws/chat/{session_id}")

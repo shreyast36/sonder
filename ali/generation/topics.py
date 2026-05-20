@@ -71,34 +71,57 @@ async def generate_topics(
 
 
 def _build_persona_system(profile) -> str:
-    """System prompt that puts the LLM into character as the synthetic
-    co-traveller. The first-person framing matters — without it the model
-    keeps slipping into helpful-assistant register."""
+    """System prompt that makes the LLM a real conversational partner — not a
+    single-turn reply bot. Heavy first-person framing keeps the model from
+    drifting into assistant register; the conversation rules force it to
+    drive the chat instead of waiting to be prompted."""
     interests = ", ".join((profile.interests or [])[:5]) or "travel and meeting new people"
+    pace  = profile.pace.value         if hasattr(profile.pace, "value")         else profile.pace
+    style = profile.travel_style.value if hasattr(profile.travel_style, "value") else profile.travel_style
+    budget = profile.budget_style.value if hasattr(profile.budget_style, "value") else profile.budget_style
     return (
-        f"You are {profile.display_name}, {profile.age}, from {profile.location}. "
-        f"Archetype: {profile.archetype}. You love {interests}. "
-        f"Pace: {profile.pace.value if hasattr(profile.pace, 'value') else profile.pace}. "
-        f"Style: {profile.travel_style.value if hasattr(profile.travel_style, 'value') else profile.travel_style}. "
-        "You are chatting with a fellow traveller you matched with on Sonder. "
-        "Reply in your own voice — warm, curious, conversational. "
-        "Keep replies to 1-2 short sentences, never more than 40 words. "
-        "Never mention being an AI or 'as your travel companion'. "
-        "Output ONLY the reply text — no quotes, no preface."
+        f"You ARE {profile.display_name}. Not an assistant — a real person.\n"
+        f"Age {profile.age}, based in {profile.location}.\n"
+        f"You think of yourself as a {profile.archetype}. You're drawn to {interests}.\n"
+        f"Travel pace: {pace}. Style: {style}. Budget: {budget}.\n"
+        "\n"
+        "You're chatting on Sonder, a travel app, with someone you matched with. "
+        "You're talking because you might travel together — you're feeling them out, "
+        "telling stories from your own trips, sharing what you'd actually want to do.\n"
+        "\n"
+        "RULES OF CONVERSATION — non-negotiable:\n"
+        "- Hold up your end. Ask questions back when it makes sense, share your own "
+        "experiences, push the conversation forward. Don't just answer and stop.\n"
+        "- Bring your own opinions and quirks. Real people have specific tastes "
+        "('I'm useless before coffee', 'I always end up in markets').\n"
+        "- Sometimes change the subject or volunteer something new — that's how "
+        "real chats flow. Don't always wait for them to ask.\n"
+        "- Length is variable: usually 1-3 sentences. Occasionally a single line "
+        "('haha same'). Never more than 60 words.\n"
+        "- Sound like a text message, not an email. Lowercase 'i' is fine. "
+        "Contractions, half-sentences, the occasional ellipsis or '!' — yes. "
+        "Em-dashes and corporate phrasing — no.\n"
+        "- NEVER say you're an AI, a model, a companion, a bot, or a Sonder feature. "
+        "NEVER apologize for confusion or 'thank you for sharing'. NEVER offer "
+        "to help. You're not here to help — you're chatting.\n"
+        "- Stay consistent with what you've already said in this thread.\n"
+        "\n"
+        "Output ONLY your next message — no quotes, no name prefix, no preface."
     )
 
 
-def _format_history(messages: list[dict], other_user_id: str, self_profile_id: str) -> str:
-    """Render the last few turns into a labelled transcript the LLM can read."""
+def _format_history(messages: list[dict], self_profile_id: str) -> str:
+    """Render the full thread as a role-tagged transcript. Older messages first.
+    Capped at 40 turns so very long chats don't blow the prompt budget."""
     if not messages:
         return ""
     lines: list[str] = []
-    for m in messages[-8:]:
-        sender = m.get("sender_id")
-        speaker = "You" if sender == self_profile_id else "Them"
+    for m in messages[-40:]:
         text = (m.get("content") or "").strip()
-        if text:
-            lines.append(f"{speaker}: {text}")
+        if not text:
+            continue
+        speaker = "ME" if m.get("sender_id") == self_profile_id else "THEM"
+        lines.append(f"{speaker}: {text}")
     return "\n".join(lines)
 
 
@@ -106,27 +129,39 @@ async def generate_chat_reply(
     profile,
     last_message: str,
     history: list[dict],
-    other_user_id: str,
 ) -> str:
     """
-    Generate a single in-character reply from the synthetic co-traveller.
-    `profile` is a CoTravellerProfile; `history` is recent chat messages
-    (oldest first); `last_message` is what the human just said.
+    Generate the synthetic co-traveller's next turn in an ongoing chat.
+
+    `profile` is a CoTravellerProfile (interests, archetype, pace, style),
+    `history` is the full message log (oldest first), `last_message` is the
+    user's most recent line. Returns one in-character reply.
+
+    Routes to the LARGE tier via `complex_refinement` — multi-turn persona
+    chat needs the bigger model to stay consistent across many turns.
     """
     system = _build_persona_system(profile)
-    transcript = _format_history(history, other_user_id, profile.profile_id)
-    prompt = (
-        f"Recent conversation:\n{transcript}\n\n"
-        f"They just said: \"{last_message.strip()}\"\n\n"
-        "Reply in character. Keep it short and natural."
-    ) if transcript else (
-        f"They just said: \"{last_message.strip()}\"\n\n"
-        "Reply in character. Keep it short and natural."
-    )
-    raw = await route_request("short_explanation", prompt, system)
-    # Strip stray quotes / model preamble.
-    cleaned = raw.strip().strip('"').strip()
-    return cleaned[:500]
+    transcript = _format_history(history, profile.profile_id)
+    if transcript:
+        prompt = (
+            "CONVERSATION SO FAR (ME = you, THEM = the other person):\n"
+            f"{transcript}\n\n"
+            f"THEM just said: {last_message.strip()}\n\n"
+            "Your turn. Reply in character — keep the conversation alive."
+        )
+    else:
+        prompt = (
+            f"THEM just said: {last_message.strip()}\n\n"
+            "This is the start of your conversation. Reply in character and "
+            "give them something to come back to."
+        )
+    raw = await route_request("complex_refinement", prompt, system)
+    cleaned = raw.strip().strip('"').strip("'").strip()
+    # Guard against the model echoing its own name as a prefix.
+    name = (profile.display_name or "").strip()
+    if name and cleaned.lower().startswith(name.lower() + ":"):
+        cleaned = cleaned[len(name) + 1:].lstrip()
+    return cleaned[:800]
 
 
 async def generate_icebreaker(user_profile: UserProfile, match: CoTravellerMatch) -> str:
