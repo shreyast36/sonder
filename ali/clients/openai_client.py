@@ -1,7 +1,7 @@
 import openai
 from ali.clients.base import BaseLLMClient
 from shared.schemas import ModelTier
-from shared.config import OPENAI_API_KEY, SMALL_MODEL_NAME, LARGE_MODEL_NAME
+from shared.config import OPENAI_API_KEY, OPENAI_SMALL_MODEL, OPENAI_LARGE_MODEL
 
 _client: openai.AsyncOpenAI | None = None
 
@@ -23,7 +23,7 @@ class OpenAISmallClient(BaseLLMClient):
 
     @property
     def model_name(self) -> str:
-        return SMALL_MODEL_NAME
+        return OPENAI_SMALL_MODEL
 
     @property
     def tier(self) -> ModelTier:
@@ -66,7 +66,7 @@ class OpenAILargeClient(BaseLLMClient):
 
     @property
     def model_name(self) -> str:
-        return LARGE_MODEL_NAME
+        return OPENAI_LARGE_MODEL
 
     @property
     def tier(self) -> ModelTier:

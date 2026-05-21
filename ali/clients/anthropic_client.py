@@ -1,7 +1,7 @@
 import anthropic
 from ali.clients.base import BaseLLMClient
 from shared.schemas import ModelTier
-from shared.config import ANTHROPIC_API_KEY, LARGE_MODEL_NAME, SMALL_MODEL_NAME
+from shared.config import ANTHROPIC_API_KEY, ANTHROPIC_SMALL_MODEL, ANTHROPIC_LARGE_MODEL
 
 _client: anthropic.AsyncAnthropic | None = None
 
@@ -21,7 +21,7 @@ class AnthropicSmallClient(BaseLLMClient):
 
     @property
     def model_name(self) -> str:
-        return SMALL_MODEL_NAME
+        return ANTHROPIC_SMALL_MODEL
 
     @property
     def tier(self) -> ModelTier:
@@ -131,7 +131,7 @@ class AnthropicLargeClient(BaseLLMClient):
 
     @property
     def model_name(self) -> str:
-        return LARGE_MODEL_NAME
+        return ANTHROPIC_LARGE_MODEL
 
     @property
     def tier(self) -> ModelTier:
@@ -139,7 +139,7 @@ class AnthropicLargeClient(BaseLLMClient):
 
     @property
     def cost_per_1k_input_tokens(self) -> float:
-        return 0.003000  # claude-sonnet-4-5: $3.00 per 1M input tokens
+        return 0.003000  # claude-sonnet-4-6: $3.00 per 1M input tokens
 
     async def complete(self, prompt: str, system: str = "", max_tokens: int = 16384) -> str:
         response = await _get_client().messages.create(

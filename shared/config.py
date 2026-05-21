@@ -18,10 +18,39 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
 # LLM model selection — Ali decides Small + Large; Mushahid decides validators
+# *_MODEL_PROVIDER picks the primary provider for the tier. The engine still
+# falls back to the other provider on failure, but each client now uses its
+# OWN model name (not the primary's) so the fallback can't accidentally send
+# an Anthropic model id to OpenAI or vice-versa.
 SMALL_MODEL_PROVIDER = os.getenv("SMALL_MODEL_PROVIDER")
-SMALL_MODEL_NAME     = os.getenv("SMALL_MODEL_NAME")
 LARGE_MODEL_PROVIDER = os.getenv("LARGE_MODEL_PROVIDER")
-LARGE_MODEL_NAME     = os.getenv("LARGE_MODEL_NAME")
+
+# Legacy single-name vars — kept so existing .env files don't break. Used as
+# a tier-wide default when the provider-specific var isn't set AND the
+# legacy provider matches.
+SMALL_MODEL_NAME = os.getenv("SMALL_MODEL_NAME")
+LARGE_MODEL_NAME = os.getenv("LARGE_MODEL_NAME")
+
+def _per_provider_model(env_var: str, provider: str, fallback: str) -> str:
+    """Resolve a per-provider model name. Order of precedence:
+    1. The dedicated env var (e.g. ANTHROPIC_SMALL_MODEL).
+    2. Legacy {TIER}_MODEL_NAME — only if {TIER}_MODEL_PROVIDER matches.
+    3. Hardcoded sensible default for the provider/tier."""
+    v = os.getenv(env_var)
+    if v:
+        return v
+    legacy_provider = SMALL_MODEL_PROVIDER if "SMALL" in env_var else LARGE_MODEL_PROVIDER
+    legacy_name     = SMALL_MODEL_NAME     if "SMALL" in env_var else LARGE_MODEL_NAME
+    if legacy_name and legacy_provider == provider:
+        return legacy_name
+    return fallback
+
+# Per-provider model ids — clients read these directly, so a fallback from
+# the primary to the alternate provider always sends a valid id.
+ANTHROPIC_SMALL_MODEL = _per_provider_model("ANTHROPIC_SMALL_MODEL", "anthropic", "claude-haiku-4-5-20251001")
+ANTHROPIC_LARGE_MODEL = _per_provider_model("ANTHROPIC_LARGE_MODEL", "anthropic", "claude-sonnet-4-6")
+OPENAI_SMALL_MODEL    = _per_provider_model("OPENAI_SMALL_MODEL",    "openai",    "gpt-4o-mini")
+OPENAI_LARGE_MODEL    = _per_provider_model("OPENAI_LARGE_MODEL",    "openai",    "gpt-4o")
 
 # Validator LLMs — Mushahid owns these (called directly from validation/critic.py)
 SMALL_VALIDATOR_PROVIDER   = os.getenv("SMALL_VALIDATOR_PROVIDER")
