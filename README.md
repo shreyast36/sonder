@@ -12,12 +12,13 @@ Sonder takes a user from zero to a fully personalised, day-by-day itinerary and 
 
 **User journey:**
 1. Enter trip basics (destination, dates, budget in any currency, must-haves)
-2. Answer preference questions (travel style, pace, interests)
-3. Receive a live-generated itinerary with "Why this?" explanations per activity
-4. Refine with free-text feedback or tap individual activities to swap/remove them
-5. Get matched with a compatible co-traveller (AI scoring + persona archetypes)
-6. Chat with AI-generated icebreakers and conversation starters
-7. Approve, build a shared itinerary together in real time, then email or download it as PDF
+2. Answer five oblique persona questions (social role, trip feeling, friction response, ideal atmosphere, plus a free-text "small thing that made you happy lately")
+3. Get a persona reveal — descriptor, paragraph, bullets, and an emotional-tone subtitle — backed by inferred push/pull dimensions + an emotional signature
+4. Receive a live-generated itinerary with "Why this?" explanations per activity, auto-saved to your trip history
+5. Browse Past Trips on the dashboard, write Journal entries, and explore the Destination Discovery feed (public entries from other travellers in your city)
+6. Get matched with compatible synthetic co-travellers (LLM-designed personas with stylised AI portraits + assigned voices)
+7. Chat in real time with presence indicators, typing dots, read receipts, in-app banner notifications when away from the chat, and OS push notifications when the browser is closed
+8. Approve, build a shared itinerary together, then email or download it as PDF
 
 ---
 
@@ -25,10 +26,10 @@ Sonder takes a user from zero to a fully personalised, day-by-day itinerary and 
 
 | Person | Role | Owns |
 |---|---|---|
-| **Jahnvi** | Lead Product, UX & Frontend | User input schemas (`UserProfile`, `TripConstraints`, `PersonaQuestionAnswers`) · User input pipeline (constraints → preferences → persona) · 10-screen React frontend |
-| **Shreyas** | Lead AI Systems & Real-time | Co-traveller + chat schemas · Candidate **selection** (embeddings + search + ranking) · Co-traveller matching algorithms · Real-time layer (chat, presence, shared itinerary, approval) |
-| **Ali** | Lead AI Intelligence | Trip/itinerary schemas · Pinecone vector database · All LLM clients + routing · Itinerary generation · RAG **explanation** ("Why this?") · Chat topics |
-| **Mushahid** | Lead Backend & Infrastructure | API + validation schemas · FastAPI app · Pipeline orchestrator · Validation + refinement loop · Firebase real-time layer · Deployment |
+| **Jahnvi** | Lead Product, UX & Frontend | User input schemas (`UserProfile`, `TripConstraints`, `PersonaQuestionAnswers`) · User input pipeline · GoEmotions classifier · React frontend |
+| **Shreyas** | Lead AI Systems & Real-time | Co-traveller + chat schemas · Candidate **selection** (embeddings + search + ranking) · Co-traveller matching · Real-time layer (chat, presence, shared itinerary, approval) |
+| **Ali** | Lead AI Intelligence | Trip/itinerary schemas · Pinecone vector database · All LLM clients + routing · Itinerary generation · RAG **explanation** ("Why this?") · Chat topics + icebreaker + persona reply |
+| **Mushahid** | Lead Backend & Infrastructure | API + validation schemas · FastAPI app · Pipeline orchestrator · Validation + refinement loop · Firebase + Web Push real-time layer · Emotional signature inference · Deployment |
 
 ### Shreyas vs. Ali — the key distinction
 
@@ -51,73 +52,93 @@ Ali's RAG retriever calls Shreyas's search functions — Shreyas provides the in
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18 + Vite + Tailwind CSS + Framer Motion |
-| Auth | Firebase Auth (Google OAuth) |
-| Real-time DB | Cloud Firestore |
+| Frontend | React 18 + Vite + Framer Motion |
+| Auth | Firebase Auth (Google + email/password) |
+| Real-time DB | Cloud Firestore (named DB via `FIRESTORE_DATABASE_ID`) |
 | Backend API | FastAPI (Python 3.11) on Render |
 | Vector DB | Pinecone — owned and managed by Ali |
-| AI — Small models | Ali's decision (`SMALL_MODEL_PROVIDER` + `SMALL_MODEL_NAME` in `.env`) |
-| AI — Large models | Ali's decision (`LARGE_MODEL_PROVIDER` + `LARGE_MODEL_NAME` in `.env`) |
-| AI — Small Validator | Mushahid's decision (`SMALL_VALIDATOR_PROVIDER` + `SMALL_VALIDATOR_MODEL_NAME` in `.env`) |
-| AI — Large Validator | Mushahid's decision (`LARGE_VALIDATOR_PROVIDER` + `LARGE_VALIDATOR_MODEL_NAME` in `.env`) |
+| AI — Small models | Per-provider config: `ANTHROPIC_SMALL_MODEL` / `OPENAI_SMALL_MODEL` (defaults baked in `shared/config.py`) |
+| AI — Large models | Per-provider config: `ANTHROPIC_LARGE_MODEL` / `OPENAI_LARGE_MODEL` |
+| AI — Validators | `SMALL_VALIDATOR_PROVIDER` + `LARGE_VALIDATOR_PROVIDER` (Mushahid) |
+| AI — Image | OpenAI `gpt-image-1` (only used at seed time for synthetic co-traveller portraits) |
+| AI — Voice (planned) | OpenAI TTS — voices pre-assigned per synthetic persona via deterministic hash |
+| AI — Emotion classifier | GoEmotions 27-label cosine classifier (in-memory; backs the emotional-signature inferrer) |
+| Embeddings | OpenAI `text-embedding-3-small` (1536-dim) |
 | Email | Resend / SendGrid / SES — set `EMAIL_PROVIDER` in `.env` |
+| Web Push | Service worker (`public/sw.js`) + VAPID + `pywebpush` (backend) |
 | Frontend hosting | Vercel |
 | Backend hosting | Render |
 | Monitoring | Sentry (errors) + PostHog (analytics) |
+
+### Tier router
+
+Provider selection per tier is independent from model name. `SMALL_MODEL_PROVIDER` / `LARGE_MODEL_PROVIDER` pick the primary (`anthropic` | `openai`); each provider client reads its own model name (`ANTHROPIC_SMALL_MODEL`, `OPENAI_SMALL_MODEL`, etc) so the engine can fall back to the alternate provider without leaking the wrong model id across vendors. Legacy single-name vars (`SMALL_MODEL_NAME` / `LARGE_MODEL_NAME`) are still honored for backward-compat as a fallback for the matching provider.
 
 ### Folder Structure
 
 ```
 sonder/
 ├── shared/                  # Config, utilities, schema aggregator
-│   ├── schemas.py           # Re-exports all models from all four schema folders — import from here
+│   ├── schemas.py           # Re-exports all models — import from here
 │   ├── config.py            # All env var reads — never call os.getenv() outside here
 │   ├── currency.py          # Multi-currency conversion (live rates + fallback)
-│   └── email.py             # Transactional email (Resend / SendGrid / SES)
+│   └── email.py             # Transactional email
 │
 ├── jahnvi/                  # User Pipeline + User Schemas + Frontend
-│   ├── schemas/             # User input models only: TripConstraints, PersonaQuestionAnswers, UserProfile, user-input enums
-│   ├── pipeline/            # Modules 1–3: constraints → preferences → persona/emotion
-│   ├── data/                # Persona archetype templates
-│   └── frontend/            # React + Vite app (10 screens, hooks, Firebase client)
+│   ├── schemas/             # TripConstraints, PersonaQuestionAnswers, UserProfile
+│   ├── pipeline/            # Modules 1–3: constraints → preferences → persona
+│   ├── data/                # persona_labels.py, dimensions.py, emotions.py, classify_emotions.py
+│   └── frontend/            # React + Vite app, hooks, Firebase client, service worker
+│       └── public/sw.js     # Web Push service worker
 │
 ├── shreyas/                 # Candidate Selection + Real-time
 │   ├── schemas/             # CoTraveller + Chat models, ApprovalStatus enum
-│   ├── retrieval/           # Embeddings + Pinecone search (SELECTION — finds candidates)
-│   ├── ranking/             # Filters, scores, and ranks candidates
-│   └── cotraveller/         # Matching algorithms, WebSocket chat, presence,
-│                            #   shared itinerary sync, approval
+│   ├── retrieval/           # Embeddings + Pinecone search
+│   ├── ranking/             # Filters, scores, ranks candidates
+│   └── cotraveller/         # Matching, ConnectionManager (WS rooms + user channels),
+│                            #   presence, shared itinerary, approval
 │
 ├── ali/                     # AI Intelligence Layer
 │   ├── schemas/             # Trip/Itinerary models, ModelTier enum
-│   ├── vector/              # Pinecone index setup — get_pinecone_index() used by Shreyas
-│   ├── clients/             # LLM provider wrappers (one file per provider)
+│   ├── vector/              # Pinecone index setup + batched embeddings
+│   ├── clients/             # LLM provider wrappers
 │   ├── routing/             # Task classifier + multi-model routing engine
-│   ├── generation/          # Itinerary generation, prompts, output parser, chat topics
-│   └── rag/                 # retriever.py fetches context about chosen activities;
-│                            #   explainer.py passes that context to LLM → "Why this?" text
+│   ├── generation/          # Itinerary generation, chat topics/icebreaker/reply,
+│   │                        #   PPM context engineering, output cleanup
+│   └── rag/                 # retriever.py + explainer.py (Why this?)
 │
 ├── mushahid/                # Backend API + Orchestration + Validation
-│   ├── schemas/             # API request/response models, ValidationResult, VisaRequirement enum
+│   ├── schemas/             # API request/response models, ValidationResult
 │   ├── main.py              # FastAPI app entry point
-│   ├── auth.py              # Firebase ID token verification
+│   ├── auth.py              # Firebase ID token verification (header + first-message WS)
 │   ├── routes/              # All HTTP + WebSocket endpoints
-│   ├── pipeline/            # Orchestrator: runs all steps in sequence, streams SSE
+│   ├── persona/             # taxonomy.py + emotional_signature.py — inference module
+│   ├── pipeline/            # Orchestrator: runs all steps, streams SSE
 │   ├── validation/          # LLM critic + deterministic rule checks
 │   ├── refinement/          # Closed-loop regeneration until validator approves
-│   └── realtime/            # Firestore state, SSE helpers, push notifications
+│   └── realtime/            # firestore.py, sse.py, web_push.py (VAPID send helper)
 │
 ├── scripts/
-│   └── seed_pinecone.py     # Seeds Pinecone with destination + activity data (Ali runs this)
+│   ├── seed_pinecone.py             # Destinations + activities (Ali's namespaces)
+│   ├── seed_cotravellers.py         # LLM-designed personas + gpt-image-1 portraits
+│   └── generate_vapid_keys.py       # One-time VAPID keypair generator for Web Push
 │
 ├── .env.example
 ├── requirements.txt
-└── TASKS.md                 # Full task checklist with per-person ownership
+└── TASKS.md
 ```
 
 ### Pipeline — How It All Connects
 
 ```
+POST /persona-infer
+│  embed user text  ┐
+│  GoEmotions class ┴── asyncio.gather
+│  emotion register injected into both LLM calls
+│  ┌─ persona LLM (descriptor / paragraph / bullets / top_push / top_interests)
+│  └─ emotional_signature inferrer (taxonomy × evidence × goemotions)
+│  merge → compatibility_signals + emotional_tone surfaced to UI
+
 POST /plan-trip
 │
 ├── [Jahnvi]   Module 1 — capture_constraints()       convert budget to USD, parse dates
@@ -125,14 +146,14 @@ POST /plan-trip
 ├── [Jahnvi]   Module 3 — infer_persona/emotion()     classify archetype + emotional intent
 │                                                      → SSE: persona_inferring / persona_inferred
 │
-├── [Shreyas]  search_destinations/activities()        SELECTION — query Pinecone for top candidates
+├── [Shreyas]  search_destinations/activities()        SELECTION — query Pinecone for candidates
 │                                                      → SSE: retrieving / retrieval_done
-├── [Shreyas]  rank_destinations/activities()          score + filter candidates by budget/pace/persona
+├── [Shreyas]  rank_destinations/activities()          score + filter by budget/pace/persona
 │                                                      → SSE: ranking / ranked
 │
 ├── [Ali]      generate_itinerary()                    LARGE model — stream itinerary JSON tokens
 │                                                      → SSE: generating / itinerary_generated
-├── [Ali]      explain_itinerary()                     RAG — fetch context per activity, write Why This
+├── [Ali]      explain_itinerary()                     RAG — fetch context, write "Why this?"
 │              retriever calls Shreyas's search.py     → SSE: explaining
 │
 ├── [Mushahid] run_all_checks() + validate_large_output()  rule checks + Large Validator critic
@@ -142,33 +163,46 @@ POST /plan-trip
 ├── [Shreyas]  search_cotravellers() + get_top_matches()  match compatible users
 │                                                      → SSE: matching_cotravellers / matched
 │
-└── → SSE: done { PlanTripResponse }
+└── → SSE: done { PlanTripResponse }   (auto-saved to trip history client-side)
 ```
 
 ### LLM Architecture
 
-Four LLM slots total — Ali owns two, Mushahid owns two:
-
 | Slot | Owner | Purpose | Config |
 |---|---|---|---|
-| **Small** | Ali | Fast tasks — chat topics, icebreaker, persona label, quick edits | `SMALL_MODEL_PROVIDER` + `SMALL_MODEL_NAME` |
-| **Large** | Ali | Complex tasks — itinerary generation, RAG explanation, conflict resolution | `LARGE_MODEL_PROVIDER` + `LARGE_MODEL_NAME` |
-| **Small Validator** | Mushahid | Verifies Small model outputs (persona labels, topics) | `SMALL_VALIDATOR_PROVIDER` + `SMALL_VALIDATOR_MODEL_NAME` |
-| **Large Validator** | Mushahid | Verifies Large model outputs (full itineraries) | `LARGE_VALIDATOR_PROVIDER` + `LARGE_VALIDATOR_MODEL_NAME` |
+| **Small** | Ali | Chat topics, icebreaker, persona label, quick edits, emotional-signature inference, "Why this?" | `ANTHROPIC_SMALL_MODEL` or `OPENAI_SMALL_MODEL` |
+| **Large** | Ali | Itinerary generation, complex refinement, chat reply (multi-turn persona) | `ANTHROPIC_LARGE_MODEL` or `OPENAI_LARGE_MODEL` |
+| **Small Validator** | Mushahid | Verifies Small outputs (persona labels, topics) | `SMALL_VALIDATOR_PROVIDER` + `SMALL_VALIDATOR_MODEL_NAME` |
+| **Large Validator** | Mushahid | Verifies Large outputs (full itineraries) | `LARGE_VALIDATOR_PROVIDER` + `LARGE_VALIDATOR_MODEL_NAME` |
+| **Image** | seed-time only | Synthetic co-traveller portraits via `images.generate(model="gpt-image-1")` | `OPENAI_API_KEY` |
 
-Ali creates one file per provider he uses (e.g. `ali/clients/openai_client.py`), each subclassing `BaseLLMClient`. The routing engine picks which instance to use based on task type. Mushahid's critic instantiates its validator clients directly — not through Ali's routing engine. Providers can be mixed across slots.
+The router engine reads provider per tier from env; each provider client reads its own model name so cross-provider fallback can't 404.
 
 ### Real-Time Layer
 
 | Feature | Transport | Owner |
 |---|---|---|
-| Itinerary generation progress | SSE | Mushahid |
-| Push notifications (match found, itinerary ready) | Firestore | Mushahid |
-| Real-time chat | WebSockets | Shreyas |
-| Typing indicators + seen receipts | WebSockets | Shreyas |
-| Co-traveller presence / online status | Firestore | Shreyas |
+| Itinerary generation progress | SSE (`/api/plan-trip`) | Mushahid |
+| Real-time chat messages | WebSocket (`/api/ws/chat/{session_id}`, first-message auth) | Shreyas |
+| Typing indicators + seen receipts | WebSocket | Shreyas |
+| Co-traveller presence (TTL-based) | WebSocket broadcast + Firestore `presence/{uid}` | Shreyas |
+| In-app banner notifications (any page, while app is open) | WebSocket (`/api/ws/notifications`) | Mushahid |
+| OS / browser push notifications (closed tab or browser) | Web Push (VAPID + service worker + `pywebpush`) | Mushahid |
+| Shared itinerary edits | Firestore + optimistic locking via `version` field | Shreyas |
 | Approval status (live) | Firestore | Shreyas |
-| Shared itinerary edits | Firestore | Shreyas |
+
+WebSocket auth uses the first-message pattern (token in initial JSON payload, never in query string). Web Push silently no-ops when VAPID keys aren't configured — the in-app banner + Notification API fallback still work.
+
+### Synthetic Co-Travellers
+
+The matching pool is seeded with LLM-designed personas (no randomuser.me / stock photos). For each diversity-matrix slot (emotional signature × age bracket × home city), the LARGE LLM writes a full persona JSON — all four PPM radio answers, the free-text `small_thing`, a recent-trip memory ("voice anchor" for chat grounding), 1–2 quirks. Each persona then gets:
+
+- A stylised cinematic portrait from `gpt-image-1` (painterly, explicitly not photoreal, so the persona's syntheticness stays visible)
+- A stable voice id from a deterministic hash of `profile_id` against the OpenAI TTS whitelist
+- An emotional signature via the same inferrer real users hit
+- A rich embedding text (PPM answers + voice anchor + quirks + signature/tone) upserted to the `cotravellers` Pinecone namespace
+
+Every record carries `is_seed: True` for "Sonder Curated" disclosure. Seed cost is ~$2–4 for 50 personas (gpt-image-1 dominates).
 
 ---
 
@@ -180,7 +214,8 @@ Ali creates one file per provider he uses (e.g. `ali/clients/openai_client.py`),
 - Node.js 20+
 - Firebase project (Auth + Firestore enabled)
 - Pinecone account
-- LLM API keys (Ali's choice of providers)
+- OpenAI + Anthropic API keys
+- (Optional) VAPID keypair for Web Push
 
 ### Backend
 
@@ -192,8 +227,15 @@ pip install -r requirements.txt
 cp .env.example .env
 # Fill in all keys
 
-# Seed Pinecone (Ali runs this once)
+# (Optional) Generate VAPID keys for closed-browser push notifications:
+python -m scripts.generate_vapid_keys
+# Paste the printed VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY into .env
+
+# Seed Pinecone destinations + activities (Ali runs this once per environment)
 python -m scripts.seed_pinecone --namespace all
+
+# Seed synthetic co-travellers (LLM personas + gpt-image-1 portraits)
+python -m scripts.seed_cotravellers --count 50
 
 uvicorn mushahid.main:app --reload --port 8000
 ```
@@ -209,42 +251,120 @@ npm run dev
 # → http://localhost:5173
 ```
 
+Avatars generated by `seed_cotravellers.py` land under `seed_assets/cotraveller_avatars/` (gitignored). Point your static-file CDN at that directory in deployments — the `avatar_url` stored on each persona is a relative path you'll prefix with your CDN host.
+
 ---
 
 ## API Reference
 
-| Method | Route | Auth | Returns |
-|---|---|---|---|
-| `GET` | `/health` | None | `{"status": "healthy"\|"degraded", "services": {...}}` |
-| `GET` | `/visa-check?destination_country=X&nationality=Y` | None | `VisaInfo` |
-| `GET` | `/users/profile` | Firebase token | `UserProfile` — 404 if not yet created |
-| `POST` | `/users/profile` | Firebase token | `UserProfile` — creates on first login |
-| `POST` | `/plan-trip` | Firebase token | SSE stream → `PlanTripResponse` |
-| `POST` | `/update-trip` | Firebase token | `UpdateTripResponse` — free-text or per-activity `ActivityFeedback` |
-| `POST` | `/cotraveller` | Firebase token | `list[CoTravellerMatch]` |
-| `POST` | `/cotraveller/regenerate` | Firebase token | `list[CoTravellerMatch]` — excludes prior profiles |
-| `POST` | `/chat/start` | Firebase token | `ChatStartResponse` (session + icebreaker + 5 topics) |
-| `POST` | `/chat/approve` | Firebase token | `{"status": "approved"\|"pending"}` |
-| `POST` | `/chat/deny` | Firebase token | `{"status": "denied"}` |
-| `WS` | `/ws/chat/{session_id}` | Firebase token (query param) | Real-time chat stream |
-| `POST` | `/export/email` | Firebase token | `{"sent_to": [...]}` |
-| `GET` | `/export/pdf/{itinerary_id}` | Firebase token (query param) | PDF stream |
+### Auth / Users
+| Method | Route | Returns |
+|---|---|---|
+| `GET` | `/api/users/profile` | `UserProfile` — 404 if not yet created |
+| `POST` | `/api/users/profile` | Creates profile on first login |
+| `POST` | `/api/auth/password-reset` (public) | Public — silently succeeds to prevent account enumeration |
+
+### Trip planning
+| Method | Route | Returns |
+|---|---|---|
+| `POST` | `/api/persona-infer` | Descriptor / paragraph / bullets + top_push / top_interests + `emotional_tone` |
+| `POST` | `/api/plan-trip` | SSE stream → `PlanTripResponse` |
+| `POST` | `/api/update-trip` | `UpdateTripResponse` — free-text or per-activity feedback |
+| `GET`  | `/api/visa-check?destination_country=X&nationality=Y` (public) | `VisaInfo` |
+
+### Itineraries / trip history
+| Method | Route | Returns |
+|---|---|---|
+| `GET`  | `/api/itineraries/current` | The user's active dashboard trip (or `{itinerary: null}`) |
+| `GET`  | `/api/itineraries/list` | All saved trips, newest first (slim summaries) |
+| `POST` | `/api/itineraries/{id}/save` | Append to history + mark current |
+| `POST` | `/api/itineraries/set-current` | Switch hero trip (must already be saved) |
+| `GET`  | `/api/itineraries/{id}/companion-prefs` | Per-trip companion intake answers |
+| `POST` | `/api/itineraries/{id}/companion-prefs` | Persist intake answers (sanitised) |
+
+### Journal + destination discovery
+| Method | Route | Returns |
+|---|---|---|
+| `GET`  | `/api/itineraries/{id}/journal` | All journal entries for a trip |
+| `POST` | `/api/itineraries/{id}/journal` | Create/update an entry (private or public) |
+| `DELETE` | `/api/journal/{entry_id}` | Soft-delete |
+| `GET`  | `/api/destinations/{city}/journal` | Public entries from the destination feed |
+
+### Co-traveller matching + chat
+| Method | Route | Returns |
+|---|---|---|
+| `POST` | `/api/cotraveller` | `list[CoTravellerMatch]` |
+| `POST` | `/api/cotraveller/regenerate` | Fresh matches, excludes prior profiles |
+| `GET`  | `/api/cotraveller/profile/{profile_id}` | Single `CoTravellerMatch` for the detail page |
+| `POST` | `/api/chat/start` | `ChatStartResponse` (session + icebreaker + 5 topics) |
+| `GET`  | `/api/chat/session/{session_id}` | Session metadata |
+| `GET`  | `/api/chat/{session_id}/messages` | Full message history |
+| `GET`  | `/api/chat/{session_id}/presence/{user_id}` | Online + last_seen |
+| `POST` | `/api/chat/approve` | `{"status": "approved" \| "pending"}` |
+| `POST` | `/api/chat/deny` | `{"status": "denied"}` |
+| `WS`   | `/api/ws/chat/{session_id}` | Chat stream — first-message auth |
+| `WS`   | `/api/ws/notifications` | Global notification channel — first-message auth |
+
+### Web Push
+| Method | Route | Returns |
+|---|---|---|
+| `GET`  | `/api/push/vapid-public-key` (public) | `{key}` — 503 when web push isn't configured |
+| `POST` | `/api/push/subscribe` | Upserts the browser's `PushSubscription` for the user |
+| `POST` | `/api/push/unsubscribe` | Drops a subscription by endpoint |
+
+### Export
+| Method | Route | Returns |
+|---|---|---|
+| `POST` | `/api/export/email` | `{"sent_to": [...]}` |
+| `POST` | `/api/export/email/test` | Self-test send |
+| `GET`  | `/api/export/pdf/{itinerary_id}?token=…` | PDF stream |
+
+### Health
+| Method | Route | Returns |
+|---|---|---|
+| `GET`  | `/health` (public) | `{"status": "healthy" \| "degraded", "services": {...}}` |
 
 ---
 
 ## Key Design Decisions
 
+### Persona inference — five oblique questions, no archetype labels
+
+The trip-preferences form asks five questions designed to surface latent travel psychology without ever naming the dimensions:
+
+| Field | Question | Surfaces |
+|---|---|---|
+| `social_role` | "On a trip, people usually end up relying on you for…" | social role + emotional regulation under chaos |
+| `trip_feeling` | "The best trips usually leave you feeling…" | cleanest push/pull/motivation signal (stimulation / escape / narrative / reset) |
+| `friction_response` | "Something goes wrong halfway through the day. Your instinct is to…" | resilience, control orientation, anxiety style |
+| `ideal_atmosphere` | "You instantly feel at home in places that are…" | stimulation threshold, introversion/extroversion |
+| `small_thing` | Free text — "a tiny thing that made life feel unusually good recently" | metaphor + aesthetic cadence ground truth |
+
+The persona-infer endpoint runs the main LLM and the emotional-signature inferrer in parallel via `asyncio.gather`, both grounded in the same GoEmotions top-5 labels classified from the user's answers.
+
+### Emotional signature — private framing for prompts, not user-facing vocabulary
+
+`mushahid/persona/taxonomy.py` defines an 8-key closed taxonomy (`reset_seeker`, `stimulation_seeker`, `story_collector`, `connection_seeker`, `belonging_seeker`, `quiet_observer`, `aesthetic_hunter`, `self_expander`). The inferred signature lands on `user_profile.compatibility_signals` and feeds five downstream consumers — chat reply persona prompt, icebreaker, topic chips, "Why this?" explainer, persona reveal — as private framing. The raw key is **never** surfaced in user-facing text; the generated `emotional_tone` phrase ("soft afternoon energy") is the only thing the UI shows.
+
 ### Multi-currency
-All internal cost fields (`budget_usd`, `cost_usd`, `avg_daily_cost_usd`) are always USD. Conversion happens once at the input boundary in `capture_constraints()` via `shared/currency.py`. The frontend sends `budget_amount` + `budget_currency` (ISO 4217).
+
+All internal cost fields (`budget_usd`, `cost_usd`, `avg_daily_cost_usd`) are always USD. Conversion happens once at the input boundary in `capture_constraints()` via `shared/currency.py`.
 
 ### Per-activity feedback
+
 `POST /update-trip` accepts both free-text feedback and a list of `ActivityFeedback` objects `{activity_id, action: "swap"|"remove"|"adjust_time", reason?}`. The refinement loop applies targeted changes instead of rewriting the whole itinerary.
 
-### Persona archetypes
-Five archetypes (Cultural Explorer, Adventure Seeker, Relaxed Wanderer, Party Traveller, Foodie) defined in `jahnvi/data/persona_templates.py`. Used by both `infer_persona()` and the Pinecone seeding script — same vocabulary ensures embedding consistency.
+### Auto-save trips
+
+Every generated trip persists to the user's `saved_itinerary_ids` list on the SSE `done` event (with a safety-net save on `itinerary_generated`). The dashboard's Past Trips carousel renders all saved trips; the explicit "Save itinerary" button stays as a re-save / set-as-current shortcut for switching between trips.
 
 ### Optimistic locking on shared itinerary
+
 Every write to `shared_itineraries/{id}` checks `client_version == current_version` in Firestore. Mismatch returns HTTP 409 — client must re-fetch and re-apply. Prevents silent overwrites when both co-travellers edit simultaneously.
+
+### Cross-provider model fallback safety
+
+Per-provider model env vars (`ANTHROPIC_SMALL_MODEL` / `OPENAI_SMALL_MODEL` / etc) so the engine fallback can't accidentally send an Anthropic model id to OpenAI on retry. Defaults baked in `shared/config.py` so missing env still works.
 
 ---
 
@@ -254,14 +374,18 @@ Every write to `shared_itineraries/{id}` checks `client_version == current_versi
 1. Connect GitHub repo
 2. Build: `pip install -r requirements.txt`
 3. Start: `uvicorn mushahid.main:app --host 0.0.0.0 --port 8000`
-4. Add all env vars from `.env.example`
+4. Add all env vars from `.env.example` (including VAPID keys + per-provider model names)
 5. Health check path: `/health`
 
 ### Frontend → Vercel
 1. Root directory: `jahnvi/frontend`
 2. Framework: Vite
 3. Add all `VITE_` env vars
-4. Update `vercel.json` API rewrite URL to your Render backend URL once Mushahid has it
+4. Update `vercel.json` API rewrite URL to your Render backend URL
+5. **HTTPS required** for Web Push (localhost is exempt; Vercel / Render handle this by default)
+
+### Cotraveller avatars
+After running `seed_cotravellers.py`, upload `seed_assets/cotraveller_avatars/*.png` to your static host (Firebase Storage, Cloudfront, etc) and update the URL prefix in Pinecone metadata or serve `/seed_assets/` from your CDN.
 
 ---
 
