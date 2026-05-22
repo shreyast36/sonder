@@ -22,52 +22,52 @@ const STEP_LABELS = ['Destination', 'Dates', 'Travel style', 'Budget', 'Your gro
 const PERSONA_SCREENS = [
   {
     type: 'radio',
-    key: 'friends_would_say',
-    q: 'Your friends call you the one who:',
+    key: 'social_role',
+    q: 'On a trip, people usually end up relying on you for:',
     options: [
-      { key: 'knows_someone',      label: 'Knows someone everywhere' },
-      { key: 'line_friends',       label: 'Makes new friends in every line they stand in' },
-      { key: 'vanishes_for_story', label: 'Vanishes for an hour and comes back with a story' },
-      { key: 'planner',            label: 'Has the spreadsheet, the playlist, and the backup plan' },
+      { key: 'place_finder',  label: 'Finding the place everyone talks about for years after' },
+      { key: 'social_bridge', label: 'Talking to strangers nobody else would approach' },
+      { key: 'day_anchor',    label: 'Keeping the day from completely falling apart' },
+      { key: 'pace_reader',   label: 'Noticing when everyone needs to slow down' },
     ],
   },
   {
     type: 'radio',
-    key: 'restaurant_order',
-    q: "At a restaurant you've never been to, you:",
+    key: 'trip_feeling',
+    q: 'The best trips usually leave you feeling:',
     options: [
-      { key: 'cant_miss',        label: "Ask the server what you absolutely can't miss" },
-      { key: 'order_for_table',  label: 'Order for the table before anyone else is ready' },
-      { key: 'drink_and_sides',  label: "Get a drink and three sides, somehow that's dinner" },
-      { key: 'find_familiar',    label: 'Find the one familiar thing and commit to it' },
+      { key: 'brain_louder',    label: 'Like your brain got louder in a good way' },
+      { key: 'disappeared',     label: 'Like you disappeared from your normal life for a bit' },
+      { key: 'story_collector', label: "Like you collected stories you'll tell forever" },
+      { key: 'exhaled',         label: 'Like you finally exhaled properly' },
     ],
   },
   {
     type: 'radio',
-    key: 'what_you_notice',
-    q: 'Walking into a new place, the first thing you clock:',
+    key: 'friction_response',
+    q: 'Something goes wrong halfway through the day. Your instinct is to:',
     options: [
-      { key: 'light_feel',  label: 'The light and the way the room feels' },
-      { key: 'sounds',      label: 'The sounds — music, voices, kitchen clatter' },
-      { key: 'smell',       label: 'The smell — bread, candles, something on the fire' },
-      { key: 'people_move', label: 'What people are wearing and how they move' },
+      { key: 'regroup',  label: 'Find somewhere good to sit and regroup' },
+      { key: 'pivot',    label: 'Turn the detour into the new plan' },
+      { key: 'fix_fast', label: 'Fix it immediately before it gets worse' },
+      { key: 'mask',     label: "Pretend it's fine until someone notices" },
     ],
   },
   {
     type: 'textarea',
     key: 'small_thing',
-    q: "A small thing that's made you weirdly happy lately.",
-    hint: 'the 4pm light, cold sheets, a perfectly timed green light — anything',
+    q: "What's a tiny thing that made life feel unusually good recently?",
+    hint: 'a warm plate, a perfectly timed train, hearing someone laugh from another room — anything',
   },
   {
     type: 'radio',
     key: 'ideal_atmosphere',
-    q: "Pick the vibe you'd be most at home in:",
+    q: 'You instantly feel at home in places that are:',
     options: [
-      { key: 'wood_bar',       label: 'Wood-panelled bar, low lighting, nobody rushing you out' },
-      { key: 'loud_lunch',     label: 'Bright sun, loud lunch, two bottles already on the table' },
-      { key: 'concrete_neon',  label: 'Concrete, neon, music you feel in your ribs' },
-      { key: 'quiet_morning',  label: 'Quiet morning, open windows, nowhere to be for hours' },
+      { key: 'loud_anonymous',  label: 'Loud enough that nobody notices your conversation' },
+      { key: 'quiet_attentive', label: 'Quiet enough to hear glasses and footsteps' },
+      { key: 'lively_chaos',    label: 'Slightly chaotic, but in a way that feels alive' },
+      { key: 'slow_sunlit',     label: 'Slow, sunlit, and impossible to rush through' },
     ],
   },
 ]
@@ -164,11 +164,11 @@ export default function TripPreferences() {
 
   // ── Persona answers (survey + freeform mix) ──
   const [persona, setPersona] = useState({
-    friends_would_say: '',
-    restaurant_order:  '',
-    what_you_notice:   '',
-    small_thing:       '',
-    ideal_atmosphere:  '',
+    social_role:        '',
+    trip_feeling:       '',
+    friction_response:  '',
+    small_thing:        '',
+    ideal_atmosphere:   '',
   })
 
   const [step, setStep]         = useState(0)
@@ -218,9 +218,9 @@ export default function TripPreferences() {
         pace,
         must_haves:          styles,
         avoid_list:          [],
-        friends_would_say:   persona.friends_would_say || null,
-        restaurant_order:    persona.restaurant_order || null,
-        what_you_notice:     persona.what_you_notice || null,
+        social_role:         persona.social_role || null,
+        trip_feeling:        persona.trip_feeling || null,
+        friction_response:   persona.friction_response || null,
         ideal_atmosphere:    persona.ideal_atmosphere || null,
       },
       persona_answers: {

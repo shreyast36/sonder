@@ -84,6 +84,13 @@ PULL dimensions are DESTINATION ATTRIBUTES — what they want at the place. Pick
 
 These two pools are STRICTLY SEPARATE. Never put a PULL id into top_push, never put a PUSH id into top_interests. If unsure, re-read which pool a label belongs to before placing it.
 
+How to read the radio answers (use these as your strongest signals, not your only ones):
+- "The best trips leave them feeling…" is the CLEANEST push signal — "brain got louder" → stimulation/curiosity, "disappeared from normal life" → escape/reset, "collected stories" → narrative/social, "exhaled properly" → recovery/reset. Anchor at least one top_push here.
+- "On a trip people rely on them for…" reveals social role + emotional regulation under chaos. Use it to disambiguate between similar PUSH dimensions and to inform the descriptor.
+- "When something goes wrong mid-day they…" reveals resilience and control orientation — not a dimension label itself, but a strong texture signal for the paragraph + bullets. Surface it as concrete behaviour.
+- "They instantly feel at home in places that are…" is the strongest stimulation-threshold + atmosphere signal — maps directly to PULL ids about scene/energy.
+- The free-text small thing is gold for metaphor and aesthetic register. Echo a fragment of it into one bullet when possible.
+
 PUSH ids (use ONLY these in top_push):
 
 {push_vocab}
@@ -121,9 +128,9 @@ def _user_prompt(
     constraints: TripConstraints,
     answers: PersonaQuestionAnswers,
 ) -> str:
-    friends    = label_for("friends_would_say", constraints.friends_would_say) or "—"
-    restaurant = label_for("restaurant_order",  constraints.restaurant_order)  or "—"
-    notice     = label_for("what_you_notice",   constraints.what_you_notice)   or "—"
+    social     = label_for("social_role",       constraints.social_role)       or "—"
+    feeling    = label_for("trip_feeling",      constraints.trip_feeling)      or "—"
+    friction   = label_for("friction_response", constraints.friction_response) or "—"
     atmosphere = label_for("ideal_atmosphere",  constraints.ideal_atmosphere)  or "—"
     small      = (answers.small_thing or "").strip() or "—"
     pace       = _resolve_pace(constraints.pace)
@@ -137,10 +144,10 @@ Pace: {pace}
 Travelling with: {who}
 
 Their persona answers:
-- Friends say they're the one who: {friends}
-- At a new restaurant they: {restaurant}
-- First thing they notice in a new place: {notice}
-- Most at home in: {atmosphere}
+- On a trip people rely on them for: {social}
+- The best trips leave them feeling: {feeling}
+- When something goes wrong mid-day they: {friction}
+- They instantly feel at home in places that are: {atmosphere}
 - A small thing that made them happy lately: "{small}"
 
 Return the JSON."""
@@ -311,9 +318,9 @@ async def persona_infer(
         # picker labels concatenated when small_thing is empty.
         (answers.small_thing or "").strip() or
         " ".join(filter(None, [
-            label_for("friends_would_say", constraints.friends_would_say),
-            label_for("restaurant_order",  constraints.restaurant_order),
-            label_for("what_you_notice",   constraints.what_you_notice),
+            label_for("social_role",       constraints.social_role),
+            label_for("trip_feeling",      constraints.trip_feeling),
+            label_for("friction_response", constraints.friction_response),
             label_for("ideal_atmosphere",  constraints.ideal_atmosphere),
         ])),
         top_k=5,

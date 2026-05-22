@@ -29,7 +29,7 @@ def build_persona_text(
     if constraints:
         if constraints.must_haves:
             parts.extend(constraints.must_haves)
-        for field in ("friends_would_say", "restaurant_order", "what_you_notice", "ideal_atmosphere"):
+        for field in ("social_role", "trip_feeling", "friction_response", "ideal_atmosphere"):
             label = label_for(field, getattr(constraints, field, None))
             if label:
                 parts.append(label)

@@ -9,10 +9,15 @@ from jahnvi.schemas.enums import (
 class TripConstraints(BaseModel):
     """
     Hard constraints + personality probes from the trip preferences form.
-    Personality probes (friends_would_say, restaurant_order, what_you_notice,
-    ideal_atmosphere) are non-travel single-select reveals that shape
-    ranking; the embedding from PersonaQuestionAnswers handles vibe-level
-    matching. pace is structured (not inferred from text).
+
+    Personality probes (social_role, trip_feeling, friction_response,
+    ideal_atmosphere) are oblique single-select questions designed to
+    surface latent travel psychology — social role, push/pull/motivation,
+    resilience, and stimulation threshold — without ever asking those
+    dimensions directly. Free-text texture lives on
+    PersonaQuestionAnswers.small_thing.
+
+    pace is structured (not inferred from text).
     """
     destination_query:    str = ""
     destination_type:     str = ""
@@ -28,10 +33,11 @@ class TripConstraints(BaseModel):
     must_haves:           list[str] = Field(default_factory=list)
     avoid_list:           list[str] = Field(default_factory=list)
 
-    # Personality probes — non-travel single-select reveals
-    friends_would_say:    Optional[str] = None
-    restaurant_order:     Optional[str] = None
-    what_you_notice:      Optional[str] = None
+    # Personality probes — oblique single-select questions. See module
+    # docstring + jahnvi/data/persona_labels.py for question + option text.
+    social_role:          Optional[str] = None
+    trip_feeling:         Optional[str] = None
+    friction_response:    Optional[str] = None
     ideal_atmosphere:     Optional[str] = None
 
 
