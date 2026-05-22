@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 
 from shreyas.retrieval.client import get_pinecone_index
@@ -7,6 +8,21 @@ from jahnvi.data.convert_to_embeddings import build_persona_text
 from shared.schemas import UserProfile, Destination, Activity, CoTravellerProfile
 
 logger = logging.getLogger(__name__)
+
+
+def _json_decode(value):
+    """Pinecone metadata can't hold nested objects, so the seed writes the
+    rich fields (persona_answers, compatibility_signals) as JSON strings.
+    Decode defensively — missing / malformed values become an empty dict."""
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    try:
+        decoded = json.loads(value) if isinstance(value, str) else {}
+        return decoded if isinstance(decoded, dict) else {}
+    except (json.JSONDecodeError, ValueError):
+        return {}
 
 
 def search_destinations(user_profile: UserProfile, top_k: int = 10) -> list[dict]:
@@ -142,6 +158,12 @@ async def get_cotraveller_by_id(profile_id: str) -> "CoTravellerProfile | None":
             budget_style = BudgetStyle(md.get("budget_style", "mid_range")),
             travel_style = TravelStyle(md.get("travel_style", "solo")),
             avatar_url   = md.get("avatar_url"),
+            preferred_destination = md.get("preferred_destination"),
+            persona_answers       = _json_decode(md.get("persona_answers_json")),
+            voice_anchor          = md.get("voice_anchor"),
+            quirks                = list(md.get("quirks") or []),
+            voice_id              = md.get("voice_id"),
+            compatibility_signals = _json_decode(md.get("compatibility_signals_json")),
         )
     except Exception as e:
         logger.warning("get_cotraveller_by_id parse failed for %s: %s", profile_id, e)
@@ -212,6 +234,12 @@ async def search_cotravellers(
                 budget_style = BudgetStyle(md.get("budget_style", "mid_range")),
                 travel_style = TravelStyle(md.get("travel_style", "solo")),
                 avatar_url   = md.get("avatar_url"),
+                preferred_destination = md.get("preferred_destination"),
+                persona_answers       = _json_decode(md.get("persona_answers_json")),
+                voice_anchor          = md.get("voice_anchor"),
+                quirks                = list(md.get("quirks") or []),
+                voice_id              = md.get("voice_id"),
+                compatibility_signals = _json_decode(md.get("compatibility_signals_json")),
             ))
         except Exception as e:
             logger.warning("skipping malformed cotraveller %s: %s", match.id, e)

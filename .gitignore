@@ -47,6 +47,9 @@ logs/
 scripts/output/
 scripts/*.json
 
+# Seed assets (generated cotraveller avatars from gpt-image-1)
+seed_assets/
+
 # AWS
 .aws/
 

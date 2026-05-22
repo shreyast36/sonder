@@ -7,6 +7,18 @@ class CoTravellerProfile(BaseModel):
     """
     A synthetic or real co-traveller profile stored in Pinecone and Firestore.
 
+    The original v1 fields (archetype + interests + pace/budget/style) were
+    the thin schema we built from randomuser.me identities. Real users now
+    produce richer signals (PPM dimensions, an emotional signature, a
+    free-text small_thing, etc.), so the extended fields below were added
+    so synthetic profiles can compete symmetrically in matching + grounding
+    the chat reply LLM in the same persona shape as a real user.
+
+    Persona answer keys must align with PERSONA_QUESTION_CATALOG in
+    mushahid/persona/taxonomy.py. compatibility_signals follows the same
+    shape user_profile.compatibility_signals does (top_push, top_interests,
+    emotional_signature, emotional_tone, etc).
+
     Example:
         CoTravellerProfile(
             profile_id   = "maya_001",
@@ -19,6 +31,17 @@ class CoTravellerProfile(BaseModel):
             budget_style = BudgetStyle.mid_range,
             travel_style = TravelStyle.couple,
             avatar_url   = "https://...",
+            preferred_destination = "Lisbon, Portugal",
+            persona_answers = {"social_role": "place_finder", ...},
+            voice_anchor    = "Just got back from 3 days in Lisbon — still dream "
+                              "about the egg tarts at Manteigaria.",
+            quirks          = ["allergic to crowded beaches", "always ends up in markets"],
+            voice_id        = "shimmer",
+            compatibility_signals = {
+                "top_push": ["...", "..."], "top_interests": [...],
+                "emotional_signature": "story_collector",
+                "emotional_tone": "soft chaos energy",
+            },
             embedding    = [0.031, ...]
         )
     """
@@ -33,6 +56,14 @@ class CoTravellerProfile(BaseModel):
     travel_style: TravelStyle
     avatar_url:   Optional[str] = None
     embedding:    Optional[list[float]] = None
+
+    # ── Extended fields for symmetric matching + multi-turn chat grounding ──
+    preferred_destination: Optional[str] = None
+    persona_answers:       dict          = Field(default_factory=dict)
+    voice_anchor:          Optional[str] = None
+    quirks:                list[str]     = Field(default_factory=list)
+    voice_id:              Optional[str] = None
+    compatibility_signals: dict          = Field(default_factory=dict)
 
 
 class CompanionPrefs(BaseModel):
