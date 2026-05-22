@@ -57,6 +57,10 @@ class PersonaInferResponse(BaseModel):
     top_interests: list[str]
     pace:          str
     user_vector:   list[float]
+    # Emotional signature — private framing only. The raw key is never shown
+    # to the user (downstream consumers use it to shape tone), but the human-
+    # readable emotional_tone phrase can be surfaced as flavor copy.
+    emotional_tone: str | None = None
 
 
 # ── Prompt scaffolding ────────────────────────────────────────────────────────
@@ -345,11 +349,33 @@ async def persona_infer(
         )
     user_prompt = user_prompt_base + emotion_grounding
 
+    # Run the main persona LLM and the emotional-signature classifier in
+    # parallel. Both consume the same goemotions output, so the signature
+    # inferrer reuses ours via precomputed_goemotions to avoid a second
+    # text-embed call.
+    from mushahid.persona.emotional_signature import infer_emotional_signature
+    from mushahid.persona.taxonomy import (
+        EMOTIONAL_SIGNATURE_TAXONOMY, PERSONA_QUESTION_CATALOG,
+    )
+    signature_inputs = {
+        "social_role":       constraints.social_role,
+        "trip_feeling":      constraints.trip_feeling,
+        "friction_response": constraints.friction_response,
+        "ideal_atmosphere":  constraints.ideal_atmosphere,
+        "small_thing":       (answers.small_thing or "").strip(),
+    }
+    main_persona_task = route_request_structured(
+        "persona_label", user_prompt, _system_prompt(),
+        push_ids=_ALLOWED_PUSH, pull_ids=_ALLOWED_PULL,
+    )
+    signature_task = infer_emotional_signature(
+        signature_inputs,
+        question_catalog=PERSONA_QUESTION_CATALOG,
+        signature_taxonomy=EMOTIONAL_SIGNATURE_TAXONOMY,
+        precomputed_goemotions=emotion_signals,
+    )
     try:
-        raw = await route_request_structured(
-            "persona_label", user_prompt, _system_prompt(),
-            push_ids=_ALLOWED_PUSH, pull_ids=_ALLOWED_PULL,
-        )
+        raw, signature_result = await asyncio.gather(main_persona_task, signature_task)
     except Exception as e:
         logger.error("persona inference failed: %s", e, exc_info=True)
         raise HTTPException(status_code=502, detail=f"persona inference failed: {type(e).__name__}: {e}") from e
@@ -406,14 +432,19 @@ async def persona_infer(
     # (which made every match score the same ~28%).
     try:
         from mushahid.realtime.firestore import update_user_profile
+        compat_signals: dict = {
+            "top_push":       obj["top_push"],
+            "top_interests":  obj["top_interests"],
+            "pace":           _resolve_pace(constraints.pace),
+            "top_emotions":   [label for label, _ in emotion_signals],
+            "emotion_scores": {label: round(score, 4) for label, score in emotion_signals},
+        }
+        # Layer the emotional signature on top — chat reply, why_this,
+        # icebreaker, topics, and the persona card all read these keys as
+        # private framing (the raw signature key is never user-facing).
+        compat_signals.update(signature_result.to_compatibility_signals())
         await update_user_profile(uid, {
-            "compatibility_signals": {
-                "top_push":      obj["top_push"],
-                "top_interests": obj["top_interests"],
-                "pace":          _resolve_pace(constraints.pace),
-                "top_emotions":  [label for label, _ in emotion_signals],
-                "emotion_scores": {label: round(score, 4) for label, score in emotion_signals},
-            },
+            "compatibility_signals": compat_signals,
             "travel_style_embedding": user_vector,
             "constraints":            constraints.model_dump(mode="json"),
             "persona_answers":        answers.model_dump(mode="json"),
@@ -422,12 +453,13 @@ async def persona_infer(
         logger.warning("persist persona to user_profile failed: %s", e)
 
     return PersonaInferResponse(
-        softener      = _SOFTENER,
-        descriptor    = obj["descriptor"].strip(),
-        paragraph     = obj["paragraph"].strip(),
-        bullets       = [b.strip() for b in obj["bullets"]],
-        top_push      = obj["top_push"],
-        top_interests = obj["top_interests"],
-        pace          = _resolve_pace(constraints.pace),
-        user_vector   = user_vector,
+        softener       = _SOFTENER,
+        descriptor     = obj["descriptor"].strip(),
+        paragraph      = obj["paragraph"].strip(),
+        bullets        = [b.strip() for b in obj["bullets"]],
+        top_push       = obj["top_push"],
+        top_interests  = obj["top_interests"],
+        pace           = _resolve_pace(constraints.pace),
+        user_vector    = user_vector,
+        emotional_tone = signature_result.emotional_tone,
     )

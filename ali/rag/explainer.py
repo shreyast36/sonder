@@ -43,12 +43,28 @@ def _build_explain_prompt(
     interest_str  = ", ".join(top_interests) if top_interests else "—"
     push_str      = ", ".join(top_push) if top_push else "—"
 
+    # Emotional signature is private framing only — never surfaces as a label
+    # in the user-visible sentence. Used by the LLM to choose which moments
+    # to highlight and what pacing to write at.
+    emotional_signature = (cs.get("emotional_signature") or "").strip()
+    emotional_tone      = (cs.get("emotional_tone") or "").strip()
+
     small_thing = ""
     if user_profile.persona_answers and user_profile.persona_answers.small_thing:
         small_thing = user_profile.persona_answers.small_thing.strip()
 
     mood = user_profile.emotion_intent.value if user_profile.emotion_intent else "excited"
     context_block = "\n".join(f"- {c}" for c in context) if context else "No additional context available."
+
+    framing_block = ""
+    if emotional_signature or emotional_tone:
+        framing_block = (
+            "\nPRIVATE EMOTIONAL FRAMING (never expose these words):\n"
+            f"- signature: {emotional_signature or '—'}\n"
+            f"- tone: {emotional_tone or '—'}\n"
+            "Let this shape which moment of the activity you highlight and the\n"
+            "cadence of the sentence — not its vocabulary.\n"
+        )
 
     return f"""ACTIVITY: {activity.name}
 TYPE: {activity.category} · {activity.duration_hours}h · ~${activity.cost_usd:.0f}
@@ -63,11 +79,11 @@ TRAVELLER:
 - Drawn to (PULL): {interest_str}
 - Travelling because (PUSH): {push_str}
 - Something they said: "{small_thing or "—"}"
-
+{framing_block}
 Write one sentence under 22 words. Lead with a specific detail of THIS
 activity (from description or context), not with the traveller's profile.
 Only mention persona if it adds a non-generic bridge. Follow all BANNED-
-phrase rules from the system."""
+phrase rules from the system. NEVER use the signature key as a word."""
 
 
 async def explain_activity(

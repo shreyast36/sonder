@@ -9,6 +9,7 @@ TASK_TIER_MAP: dict[str, ModelTier] = {
     "chat_topics":          ModelTier.small,
     "icebreaker":           ModelTier.small,
     "persona_label":        ModelTier.small,
+    "persona_emotional_signature": ModelTier.small,
     "preference_parse":     ModelTier.small,
     "quick_edit":           ModelTier.small,
     "notification_message": ModelTier.small,

@@ -131,9 +131,15 @@ export default function PersonaReveal() {
                 {state.persona.softener}
               </p>
 
-              <h1 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 48, lineHeight: 1.2, color: BONE, marginBottom: 28 }}>
+              <h1 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 48, lineHeight: 1.2, color: BONE, marginBottom: state.persona.emotional_tone ? 14 : 28 }}>
                 {state.persona.descriptor}
               </h1>
+
+              {state.persona.emotional_tone && (
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.30em', textTransform: 'uppercase', color: `${BONE}88`, marginBottom: 28 }}>
+                  {state.persona.emotional_tone}
+                </p>
+              )}
 
               <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 16, lineHeight: 1.7, color: `${BONE}d0`, marginBottom: 44, maxWidth: 560, marginLeft: 'auto', marginRight: 'auto' }}>
                 {state.persona.paragraph}

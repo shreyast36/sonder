@@ -772,6 +772,8 @@ async def generate_topics(
     alignment, friction = _alignment_and_friction(user_profile, match)
     match_profile = _match_ppm_profile(match)
 
+    user_signature_block = _emotional_signature_block(user_profile, label="USER")
+
     prompt = (
         f"DESTINATION: {destination}\n"
         f"TRIP SHAPE: {trip_shape}\n"
@@ -781,25 +783,52 @@ async def generate_topics(
         f"LIKELY FRICTION: {friction}\n\n"
         f"{_ppm_block('USER', user_profile)}\n"
         f"{_ppm_block('MATCH', match_profile)}\n\n"
+        f"{user_signature_block}"
         "Generate 5 tappable chat prompts. Each prompt should turn one alignment, "
         "friction point, motivation, or concrete itinerary scene into a natural "
-        "travel conversation chip. Do not mention the dimension labels."
+        "travel conversation chip. Do not mention the dimension labels or the "
+        "emotional signature."
     )
 
     raw = await route_request("chat_topics", prompt, _TOPICS_SYSTEM)
     return _clean_topics(raw, destination, activities, shared)
 
 
+def _emotional_signature_block(profile: Any, *, label: str) -> str:
+    """Render the private EMOTIONAL SIGNATURE / TONE framing for a profile,
+    or an empty string when neither field is set. Synthetic Pinecone profiles
+    don't carry these yet, so the block is fully optional."""
+    signals = getattr(profile, "compatibility_signals", None) or {}
+    if isinstance(signals, dict):
+        sig  = _clean_text(signals.get("emotional_signature"))
+        tone = _clean_text(signals.get("emotional_tone"))
+    else:
+        sig  = _clean_text(getattr(signals, "emotional_signature", ""))
+        tone = _clean_text(getattr(signals, "emotional_tone", ""))
+    if not sig and not tone:
+        return ""
+    return (
+        f"PRIVATE EMOTIONAL FRAMING for {label} (never expose these words):\n"
+        f"- signature: {sig or '—'}\n"
+        f"- tone: {tone or '—'}\n"
+        "Let this shape cadence, warmth, pacing, what you notice, and how "
+        "you react to stress, spontaneity, and plans — never the vocabulary.\n"
+    )
+
+
 def _build_persona_system(profile: Any) -> str:
     """Build a persona system prompt for a synthetic co-traveller.
 
     Heavy first-person framing keeps the model from drifting into assistant
-    register. PPM is included as private psychology, not vocabulary to surface.
+    register. PPM and emotional signature are included as private psychology,
+    not vocabulary to surface.
     """
+    signature_block = _emotional_signature_block(profile, label="YOU")
     return (
         f"You ARE {_clean_text(getattr(profile, 'display_name', ''), 'this person')}.\n"
         f"PROFILE: {_profile_snapshot(profile)}\n\n"
         f"PRIVATE TRAVEL PSYCHOLOGY:\n{_ppm_block('YOU', profile)}\n\n"
+        f"{signature_block}"
         f"{_PERSONA_CHAT_STYLE_RULES}"
     )
 
@@ -876,6 +905,8 @@ async def generate_icebreaker(user_profile: UserProfile, match: CoTravellerMatch
     destination = _destination_from_user_profile(user_profile)
     alignment, friction = _alignment_and_friction(user_profile, match)
 
+    from_signature_block = _emotional_signature_block(user_profile, label="FROM")
+
     prompt = (
         f"FROM: {sender}\n"
         f"TO: {receiver}\n"
@@ -886,10 +917,11 @@ async def generate_icebreaker(user_profile: UserProfile, match: CoTravellerMatch
         f"LIKELY FRICTION: {friction}\n\n"
         f"{_ppm_block('FROM', user_profile)}\n"
         f"{_ppm_block('TO', match_profile)}\n\n"
+        f"{from_signature_block}"
         "Write the opening message from FROM to TO. Anchor it in the destination, "
         "a concrete travel behavior, or a shared interest turned into a scene. "
         "The message should reveal one instinct from FROM and invite TO to reveal "
-        "theirs. Do not mention the dimension labels."
+        "theirs. Do not mention the dimension labels or the emotional signature."
     )
 
     raw = await route_request("icebreaker", prompt, _ICEBREAKER_SYSTEM)
