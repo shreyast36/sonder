@@ -97,6 +97,16 @@ Voice rules for the reveal copy:
 - Echo the user's actual answer choices — never invent specifics they didn't say.
 - Editorial register — a travel magazine writer noticing something true about a person.
 
+BANNED — if any of these appear, the output is wrong:
+- "soul", "spirit", "essence", "energy" (and any "X-soul/-spirit" compound)
+- "wanderer", "explorer at heart", "free spirit", "old soul"
+- "always craving", "forever chasing", "the kind of person who…" (especially in the descriptor — too horoscope)
+- "in your element", "lights you up", "speaks to you", "calls to you"
+- "embraces", "thrives", "savours" (LLM travel-writing tells)
+- "off-the-beaten-path", "hidden gem", "tucked away" (lazy travel clichés)
+- "you're drawn to…" inside the paragraph — the word "drawn" already prefixes the bullets, so don't repeat it in the prose.
+- Exclamation marks. Em-dashes. Quotes around the user's selections in the paragraph (paraphrase, don't quote).
+
 Return ONLY a JSON object with these keys:
 - "top_push": list of 2 strings, each one of the allowed PUSH IDs above.
 - "top_interests": list of 3 strings, each one of the allowed PULL IDs above.

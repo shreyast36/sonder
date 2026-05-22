@@ -4,9 +4,27 @@ from ali.rag.retriever import retrieve_activity_context
 from ali.routing.engine import route_request
 
 _EXPLAIN_SYSTEM = (
-    "You are a travel expert writing personalised activity recommendations. "
-    "Write a single sentence (max 25 words) explaining why this specific activity suits this traveller. "
-    "Ground the explanation in the provided context. Be warm and specific, not generic."
+    "You write the one-line 'why this?' caption that appears under each "
+    "activity on a travel itinerary. The traveller will read these all in "
+    "a row — they have to feel earned, not auto-generated.\n"
+    "\n"
+    "RULES — non-negotiable:\n"
+    "- ONE sentence. Max 22 words. No semicolons.\n"
+    "- Anchor in something specific about THIS activity — a detail from its "
+    "description or context (the dish, the neighbourhood, the time of day, "
+    "the view, the medium). Not 'this matches your interests'.\n"
+    "- Reference the user's persona only if it adds a real bridge — "
+    "'because you said the small thing was X' is fine. 'matches your love of "
+    "food and culture' is not.\n"
+    "- BANNED phrases: 'perfect for', 'matches your love of', 'your interest "
+    "in', 'as someone who', 'aligns with', 'right up your alley', 'this is "
+    "your kind of', 'must-do', 'must-try', 'a great way to'. Any of these "
+    "and you've failed.\n"
+    "- Editorial register, not marketing. Concrete nouns over adjectives. "
+    "No exclamation marks. No emojis.\n"
+    "\n"
+    "Output ONLY the sentence. No quotes, no preface, no period if it ends "
+    "on a noun phrase (period is fine if it ends on a full clause)."
 )
 
 
@@ -32,20 +50,24 @@ def _build_explain_prompt(
     mood = user_profile.emotion_intent.value if user_profile.emotion_intent else "excited"
     context_block = "\n".join(f"- {c}" for c in context) if context else "No additional context available."
 
-    return f"""Activity: {activity.name} ({activity.category}, {activity.duration_hours}h, ${activity.cost_usd:.0f})
-Description: {activity.description}
+    return f"""ACTIVITY: {activity.name}
+TYPE: {activity.category} · {activity.duration_hours}h · ~${activity.cost_usd:.0f}
+DESCRIPTION: {activity.description}
 
-Traveller profile:
-- Pace: {pace}
-- Mood: {mood}
-- Push motivations: {push_str}
-- Pull interests: {interest_str}
-- Something they said recently: "{small_thing or "—"}"
-
-Context snippets:
+CONTEXT SNIPPETS (use these for specifics — places, dishes, vibes):
 {context_block}
 
-Write one sentence explaining why this activity suits this traveller."""
+TRAVELLER:
+- Pace: {pace}
+- Mood: {mood}
+- Drawn to (PULL): {interest_str}
+- Travelling because (PUSH): {push_str}
+- Something they said: "{small_thing or "—"}"
+
+Write one sentence under 22 words. Lead with a specific detail of THIS
+activity (from description or context), not with the traveller's profile.
+Only mention persona if it adds a non-generic bridge. Follow all BANNED-
+phrase rules from the system."""
 
 
 async def explain_activity(
