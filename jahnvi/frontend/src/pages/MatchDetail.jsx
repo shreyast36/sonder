@@ -268,7 +268,11 @@ export default function MatchDetail() {
                 setStarting(true)
                 setStartError(null)
                 try {
-                  const { session } = await startChat(profile.profile_id, currentItineraryId || '')
+                  const { session } = await startChat(
+                    profile.profile_id,
+                    currentItineraryId || '',
+                    typeof data?.match_score === 'number' ? data.match_score : null,
+                  )
                   navigate(`/chat/${session.session_id}`)
                 } catch (e) {
                   setStartError(e?.message || 'Could not start the chat')

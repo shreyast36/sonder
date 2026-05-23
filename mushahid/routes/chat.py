@@ -43,6 +43,11 @@ async def _receive_json_checked(websocket: WebSocket) -> dict:
 class ChatStartRequest(BaseModel):
     profile_id: str
     itinerary_id: str
+    # Optional: the match_score the user saw on MatchDetail when they
+    # initiated the chat. Persisted on ChatSession so the persona's
+    # reciprocal approval can use the same ground-truth number instead
+    # of guessing at decision time.
+    match_score: float | None = None
 
 
 @router.post("/chat/start", response_model=ChatStartResponse)
@@ -162,6 +167,7 @@ async def start_chat(body: ChatStartRequest, uid: str = Depends(verify_token)):
         itinerary_id=itinerary_id,
         approval_status=ApprovalStatus.pending,
         created_at=datetime.now(timezone.utc).isoformat(),
+        match_score=body.match_score,
     )
     _sessions[session_id] = {"session": session, "messages": []}
     await write_chat_session(session)
@@ -320,24 +326,27 @@ async def _apply_decision(session_id: str, *, side: str, decision: ApprovalStatu
 async def _schedule_persona_decision(session_id: str, profile_id: str) -> None:
     """Simulate the synthetic persona's reciprocal decision. A short
     randomised delay sells the "they're reviewing" UI state; the verdict
-    is gated on whether the candidate's compatibility cleared a reasonable
-    bar. Falls back to "approved" when match data is missing — better
-    than leaving the user stuck on a permanent pending screen."""
+    is gated on the match_score the user actually saw on MatchDetail
+    (persisted to ChatSession.match_score at /chat/start). When no score
+    was passed through, default to approved — personas only surface as
+    matches if ranking already liked them."""
     try:
         await asyncio.sleep(random.uniform(2.4, 5.0))
 
         verdict = ApprovalStatus.approved
-        try:
-            from shreyas.retrieval.search import get_cotraveller_by_id
-            cand = await get_cotraveller_by_id(profile_id)
-            score = getattr(cand, "match_score", None) if cand else None
-            # If retrieval doesn't expose a per-candidate score, default
-            # to approved. Personas surfaced by ranking are already a
-            # filtered-up shortlist.
-            if isinstance(score, (int, float)) and score < 0.55:
-                verdict = ApprovalStatus.denied
-        except Exception:
-            pass
+        sess_meta = _sessions.get(session_id)
+        if sess_meta:
+            score = sess_meta["session"].match_score
+        else:
+            stored = await get_chat_session(session_id)
+            score = stored.get("match_score") if stored else None
+        # 0.55 floor is calibrated against the cotraveller policy's
+        # 6-feature equal-weight scoring — features each in [0,1] mean
+        # the typical curated match lands in the 0.55-0.85 band, so
+        # this threshold denies the bottom ~15-20% of surfaced matches.
+        # See shreyas/ranking/policies/cotraveller.py for the feature set.
+        if isinstance(score, (int, float)) and score < 0.55:
+            verdict = ApprovalStatus.denied
 
         updated = await _apply_decision(session_id, side="profile", decision=verdict)
         if updated is None:

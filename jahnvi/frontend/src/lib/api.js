@@ -146,8 +146,15 @@ export async function getCotravellerProfile(profileId, itineraryId) {
   return get(`/api/cotraveller/profile/${encodeURIComponent(profileId)}${q}`)
 }
 
-export async function startChat(profileId, itineraryId) {
-  return post('/api/chat/start', { profile_id: profileId, itinerary_id: itineraryId })
+// `matchScore` is the 0..1 value from CoTravellerMatch — persisted on the
+// session so the persona's reciprocal approval can read the same ground
+// truth instead of guessing at decision time. Optional for back-compat.
+export async function startChat(profileId, itineraryId, matchScore = null) {
+  return post('/api/chat/start', {
+    profile_id:   profileId,
+    itinerary_id: itineraryId,
+    match_score:  matchScore,
+  })
 }
 
 // uid is read from the Auth token on the backend — do not send user_id.

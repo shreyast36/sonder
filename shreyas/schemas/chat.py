@@ -56,6 +56,13 @@ class ChatSession(BaseModel):
     # show "you've decided, waiting for them" progress states.
     user_decision:    ApprovalStatus = ApprovalStatus.pending
     profile_decision: ApprovalStatus = ApprovalStatus.pending
+    # The match_score that surfaced this candidate (0..1, weighted mean of
+    # 6 ranking features from shreyas/ranking/policies/cotraveller.py).
+    # Persisted at /chat/start so the persona's reciprocal decision can
+    # honestly read the same number the user saw on MatchDetail — instead
+    # of fabricating a verdict at decision time. None means "unknown" and
+    # the persona defaults to approve.
+    match_score:      float | None   = None
 
 
 class SharedItinerary(BaseModel):
