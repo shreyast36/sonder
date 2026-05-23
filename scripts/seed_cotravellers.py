@@ -266,20 +266,65 @@ def _llm_a_prompt(slot: dict) -> str:
     )
 
 
-_JSON_OBJ_RE = re.compile(r"\{[\s\S]+\}", re.DOTALL)
-
-
 def _parse_json_object(raw: str) -> dict:
+    """Lenient JSON parser — LLMs are creative with trailing commas, stray
+    fences, and post-object commentary. The strict json.loads path tries
+    first; balanced-brace extraction + trailing-comma stripping picks up
+    the long tail of "almost valid" responses that the previous regex
+    couldn't handle."""
     raw = (raw or "").strip()
-    if raw.startswith("```"):
-        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.DOTALL).strip()
+    # Strip wrapping code fences anywhere (start, end, both).
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```\s*$", "", raw).strip()
+
+    # Happy path — strict JSON.
     try:
-        return json.loads(raw)
+        result = json.loads(raw)
+        if isinstance(result, dict):
+            return result
     except json.JSONDecodeError:
-        m = _JSON_OBJ_RE.search(raw)
-        if not m:
-            raise
-        return json.loads(m.group(0))
+        pass
+
+    # Find the outermost {...} via balanced-brace counting. Tolerates
+    # LLM preamble ("Here is the JSON:\n{...}") and post-object text
+    # ("...}\n\nDone!") that broke the greedy regex.
+    start = raw.find("{")
+    if start == -1:
+        raise ValueError("no JSON object found in LLM output")
+
+    depth = 0
+    in_string = False
+    escape = False
+    end = -1
+    for i in range(start, len(raw)):
+        c = raw[i]
+        if escape:
+            escape = False
+            continue
+        if c == "\\":
+            escape = True
+            continue
+        if c == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+
+    if end == -1:
+        raise ValueError("unclosed JSON object in LLM output")
+
+    candidate = raw[start:end + 1]
+    # Strip trailing commas before } or ] — Python's json.loads rejects
+    # them but LLMs love producing them.
+    candidate = re.sub(r",(\s*[}\]])", r"\1", candidate)
+    return json.loads(candidate)
 
 
 def _coerce_llm_a(obj: dict, slot: dict) -> dict:
@@ -330,16 +375,21 @@ def _coerce_llm_a(obj: dict, slot: dict) -> dict:
 
 async def llm_a_generate(slot: dict, sem: asyncio.Semaphore) -> dict | None:
     """Run LLM-A blind to the tag vocabulary. Retries twice on parse / API
-    failure before giving up on this slot."""
+    failure before giving up on this slot. Mid-attempt failures log at
+    DEBUG (transient and recoverable); only the final-attempt failure
+    logs at WARNING."""
     async with sem:
+        last_err: Exception | None = None
         for attempt in range(3):
             try:
                 raw = await route_request("complex_refinement", _llm_a_prompt(slot), _LLM_A_SYSTEM)
                 return _coerce_llm_a(_parse_json_object(raw), slot)
             except Exception as e:
-                log.warning("  LLM-A attempt %d failed for slot %s: %s", attempt + 1, slot["profile_id"][-6:], e)
+                last_err = e
                 if attempt < 2:
+                    log.debug("  LLM-A attempt %d retrying for slot %s: %s", attempt + 1, slot["profile_id"][-6:], e)
                     await asyncio.sleep(2.0 + random.uniform(0, 1.5))
+        log.warning("  LLM-A failed for slot %s after 3 attempts: %s", slot["profile_id"][-6:], last_err)
     return None
 
 
@@ -381,8 +431,12 @@ def _build_persona_inference_prompt(persona: dict) -> str:
 async def persona_infer(persona: dict, sem: asyncio.Semaphore) -> dict | None:
     """Run the synthetic's "answers" through the same persona-infer LLM
     call real users hit. Returns the structured persona dict with
-    top_push / top_interests / descriptor / paragraph / bullets."""
+    top_push / top_interests / descriptor / paragraph / bullets.
+
+    Mid-attempt failures log at DEBUG; only final-attempt failure logs at
+    WARNING (most retries succeed)."""
     async with sem:
+        last_err: Exception | None = None
         for attempt in range(3):
             try:
                 user_prompt = _build_persona_inference_prompt(persona)
@@ -397,9 +451,11 @@ async def persona_infer(persona: dict, sem: asyncio.Semaphore) -> dict | None:
                     raise ValueError(f"structural issues: {issues}")
                 return obj
             except Exception as e:
-                log.warning("  persona-infer attempt %d failed (%s): %s", attempt + 1, persona.get("display_name", "?"), e)
+                last_err = e
                 if attempt < 2:
+                    log.debug("  persona-infer attempt %d retrying (%s): %s", attempt + 1, persona.get("display_name", "?"), e)
                     await asyncio.sleep(2.0 + random.uniform(0, 1.5))
+        log.warning("  persona-infer failed for %s after 3 attempts: %s", persona.get("display_name", "?"), last_err)
     return None
 
 
