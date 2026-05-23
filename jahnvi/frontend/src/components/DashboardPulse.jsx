@@ -1,0 +1,833 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  MapPin, Users, Send, Loader2, Trash2, MessageCircle,
+  Sparkles, Plus, Check, Radio,
+} from 'lucide-react'
+import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
+import {
+  listOpenTrips, requestToJoin,
+  listFeed, createPost, deletePost as apiDeletePost,
+  listComments, addComment,
+} from '../lib/api'
+
+const VIOLET = '#8B5CF6'
+const ROSE   = '#F43F5E'
+const GREEN  = '#10B981'
+const AMBER  = '#F59E0B'
+const spring = { type: 'spring', stiffness: 280, damping: 22 }
+
+// ── helpers ──────────────────────────────────────────────────────────────
+
+function timeAgo(iso) {
+  if (!iso) return ''
+  const ms = Date.now() - new Date(iso).getTime()
+  if (ms < 30_000)    return 'just now'
+  if (ms < 3600_000)  return `${Math.floor(ms / 60_000)}m`
+  if (ms < 86400_000) return `${Math.floor(ms / 3600_000)}h`
+  return `${Math.floor(ms / 86400_000)}d`
+}
+
+function fmtRange(start, end) {
+  if (!start && !end) return ''
+  try {
+    const fmt = d => d ? new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''
+    if (start && end) return `${fmt(start)} – ${fmt(end)}`
+    return fmt(start || end)
+  } catch { return '' }
+}
+
+function initials(name) {
+  return (name || '?').split(/\s+/).slice(0, 2).map(s => s[0]?.toUpperCase()).join('')
+}
+
+// ── Section header ───────────────────────────────────────────────────────
+
+function SectionHeader({ eyebrow, title, accent, right }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 22, gap: 16 }}>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <motion.span
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+            style={{
+              width: 6, height: 6, borderRadius: '50%', background: accent,
+              boxShadow: `0 0 10px ${accent}`,
+            }}
+          />
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+            {eyebrow}
+          </p>
+        </div>
+        <h3 style={{
+          fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
+          fontSize: 28, color: BONE, lineHeight: 1.05, margin: 0,
+        }}>
+          {title}
+        </h3>
+      </div>
+      {right}
+    </div>
+  )
+}
+
+// ── Open trip card (compact, luxurious) ──────────────────────────────────
+
+function OpenTripCard({ trip, onRequestJoin }) {
+  const isYours = !!trip.is_yours
+  const status  = trip.your_request_status
+  const where = trip.destination_city
+    ? trip.destination_country
+      ? `${trip.destination_city}, ${trip.destination_country}`
+      : trip.destination_city
+    : 'Somewhere new'
+  const dateRange = fmtRange(trip.start_date, trip.end_date)
+  const accent = isYours ? GOLD : VIOLET
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 14, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.98 }}
+      transition={{ duration: 0.45, ease }}
+      whileHover={{ y: -3 }}
+      style={{
+        padding: 1, borderRadius: 18,
+        background: `linear-gradient(145deg, ${accent}33 0%, rgba(232,212,168,0.04) 35%, rgba(8,8,7,0) 70%, ${accent}22 100%)`,
+        boxShadow: `0 12px 32px rgba(0,0,0,0.45)`,
+      }}
+    >
+      <div style={{
+        position: 'relative', overflow: 'hidden',
+        background: 'linear-gradient(160deg, rgba(22,18,12,0.98) 0%, rgba(10,9,7,1) 100%)',
+        borderRadius: 17, padding: '20px 22px',
+        display: 'flex', flexDirection: 'column', gap: 14,
+      }}>
+        {/* ambient corner glow */}
+        <div style={{
+          position: 'absolute', top: -90, right: -90,
+          width: 220, height: 220, borderRadius: '50%',
+          background: `radial-gradient(circle, ${accent}18 0%, transparent 65%)`,
+          pointerEvents: 'none',
+        }}/>
+
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, position: 'relative' }}>
+          {/* avatar */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div style={{
+              position: 'absolute', inset: -3, borderRadius: '50%',
+              background: `linear-gradient(135deg, ${accent} 0%, transparent 60%)`,
+              opacity: 0.6, filter: 'blur(6px)',
+            }}/>
+            <div style={{
+              position: 'relative',
+              width: 46, height: 46, borderRadius: '50%', overflow: 'hidden',
+              background: 'rgba(212,182,134,0.06)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: `1px solid ${accent}55`,
+            }}>
+              {trip.owner_avatar
+                ? <img src={trip.owner_avatar} alt={trip.owner_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                : <span style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 19, color: accent, fontStyle: 'italic' }}>
+                    {initials(trip.owner_name)}
+                  </span>}
+            </div>
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{
+              fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+              fontSize: 20, color: BONE, margin: 0, lineHeight: 1.1,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>
+              {where}
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE, letterSpacing: '0.04em' }}>
+                {isYours ? 'Your trip' : `${trip.owner_name}'s trip`}
+              </span>
+              {dateRange && (
+                <>
+                  <span style={{ color: DIM }}>·</span>
+                  <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE }}>{dateRange}</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {trip.note && (
+          <p style={{
+            fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+            fontSize: 13.5, color: 'rgba(244,237,224,0.78)', lineHeight: 1.5,
+            margin: 0, padding: '0 2px',
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          }}>
+            "{trip.note}"
+          </p>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Users size={10} style={{ color: accent }}/>
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: MUTE, letterSpacing: '0.06em' }}>
+              {trip.confirmed_companions} / {trip.join_capacity}
+            </span>
+          </div>
+          {isYours && (
+            <span style={{
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 8.5,
+              letterSpacing: '0.24em', textTransform: 'uppercase',
+              color: GOLD, padding: '5px 11px', borderRadius: 12,
+              background: 'rgba(212,182,134,0.06)', border: `1px solid ${GOLD}44`,
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+            }}>
+              <Radio size={8}/> Yours · live
+            </span>
+          )}
+          {!isYours && status === null && (
+            <motion.button
+              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}
+              onClick={() => onRequestJoin?.(trip)}
+              style={{
+                padding: '7px 14px', borderRadius: 16,
+                background: `linear-gradient(135deg, ${VIOLET} 0%, #6D28D9 100%)`,
+                border: 'none', cursor: 'pointer', color: '#fff',
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 8.5, fontWeight: 500,
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+                boxShadow: `0 4px 14px ${VIOLET}55`,
+              }}
+            >
+              Request
+            </motion.button>
+          )}
+          {!isYours && status === 'proposed' && (
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8.5, letterSpacing: '0.24em', textTransform: 'uppercase', color: AMBER, padding: '5px 11px', borderRadius: 12, background: `${AMBER}10`, border: `1px solid ${AMBER}55` }}>
+              Requested
+            </span>
+          )}
+          {!isYours && status === 'approved' && (
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8.5, letterSpacing: '0.24em', textTransform: 'uppercase', color: GREEN, padding: '5px 11px', borderRadius: 12, background: `${GREEN}10`, border: `1px solid ${GREEN}55`, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <Check size={9}/> Joined
+            </span>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+// ── Join request modal ───────────────────────────────────────────────────
+
+function JoinModal({ trip, onClose, onSubmit, busy, error }) {
+  const [msg, setMsg] = useState('')
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        background: 'rgba(10,8,5,0.78)', backdropFilter: 'blur(8px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32,
+      }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.95, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 12 }}
+        transition={spring}
+        onClick={e => e.stopPropagation()}
+        style={{
+          padding: 1, borderRadius: 18,
+          background: `linear-gradient(135deg, ${VIOLET}55 0%, rgba(232,212,168,0.10) 100%)`,
+          boxShadow: `0 30px 80px rgba(0,0,0,0.6), 0 0 60px ${VIOLET}22`,
+        }}
+      >
+        <div style={{
+          padding: '28px 30px', borderRadius: 17,
+          background: 'linear-gradient(160deg, rgba(22,18,12,0.99) 0%, rgba(10,9,7,1) 100%)',
+          display: 'flex', flexDirection: 'column', gap: 16,
+          minWidth: 380, maxWidth: 480,
+        }}>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 500, letterSpacing: '0.24em', textTransform: 'uppercase', color: VIOLET, margin: 0 }}>
+            Request to join {trip?.owner_name}'s trip
+          </p>
+          <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 26, color: BONE, margin: 0, lineHeight: 1.1 }}>
+            {trip?.destination_city}{trip?.destination_country ? `, ${trip.destination_country}` : ''}
+          </p>
+          <textarea
+            value={msg}
+            onChange={e => setMsg(e.target.value)}
+            placeholder="A line about why this trip pulls you. Optional."
+            rows={4} maxLength={400} autoFocus
+            style={{
+              padding: '12px 14px', borderRadius: 12,
+              background: 'rgba(232,212,168,0.03)', border: `1px solid ${HAIRLINE}`,
+              color: BONE, outline: 'none', resize: 'none',
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 300, lineHeight: 1.55,
+            }}
+          />
+          {error && <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: '#F87171', margin: 0 }}>{error}</p>}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              disabled={busy}
+              onClick={() => onSubmit?.(msg.trim())}
+              style={{
+                padding: '11px 22px', borderRadius: 18,
+                background: `linear-gradient(135deg, ${VIOLET} 0%, #6D28D9 100%)`,
+                border: 'none', cursor: busy ? 'wait' : 'pointer', color: '#fff',
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 500,
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+                opacity: busy ? 0.7 : 1,
+                display: 'flex', alignItems: 'center', gap: 6,
+                boxShadow: `0 6px 20px ${VIOLET}55`,
+              }}
+            >
+              {busy
+                ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, ease: 'linear', repeat: Infinity }}><Loader2 size={11}/></motion.span>
+                : <Send size={11}/>}
+              Send
+            </button>
+            <button
+              onClick={onClose}
+              style={{
+                padding: '11px 22px', borderRadius: 18,
+                background: 'transparent', border: `1px solid ${HAIRLINE}`,
+                cursor: 'pointer', color: MUTE,
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                letterSpacing: '0.22em', textTransform: 'uppercase',
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+// ── Comment thread ───────────────────────────────────────────────────────
+
+function CommentThread({ postId, selfUid, initialCount }) {
+  const [open, setOpen]         = useState(false)
+  const [loading, setLoading]   = useState(false)
+  const [comments, setComments] = useState([])
+  const [draft, setDraft]       = useState('')
+  const [posting, setPosting]   = useState(false)
+
+  async function loadOnce() {
+    setLoading(true)
+    try {
+      const res = await listComments(postId)
+      setComments(res?.comments || [])
+    } catch { /* noop */ }
+    finally { setLoading(false) }
+  }
+  function toggle() {
+    const next = !open
+    setOpen(next)
+    if (next && comments.length === 0 && !loading) loadOnce()
+  }
+  async function submit() {
+    const text = draft.trim()
+    if (!text || posting) return
+    setPosting(true)
+    try {
+      const res = await addComment(postId, text)
+      setComments(prev => [...prev, res.comment])
+      setDraft('')
+    } catch { /* noop */ }
+    finally { setPosting(false) }
+  }
+
+  useEffect(() => {
+    function onNewComment(e) {
+      const d = e.detail
+      if (!d || d.post_id !== postId || !d.comment) return
+      setComments(prev => prev.some(c => c.comment_id === d.comment.comment_id)
+        ? prev : [...prev, d.comment])
+      setOpen(true)
+    }
+    window.addEventListener('sonder:comment:new', onNewComment)
+    return () => window.removeEventListener('sonder:comment:new', onNewComment)
+  }, [postId])
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button
+        onClick={toggle}
+        style={{
+          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+          color: MUTE, fontFamily: '"Inter Tight",sans-serif', fontSize: 10.5,
+          display: 'inline-flex', alignItems: 'center', gap: 6, letterSpacing: '0.02em',
+        }}
+      >
+        <MessageCircle size={10}/>
+        {open ? 'Hide' : initialCount > 0 ? `${initialCount} ${initialCount === 1 ? 'reply' : 'replies'}` : 'Reply'}
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10, borderLeft: `1px solid ${GOLD}33`, paddingLeft: 12 }}>
+              {loading && <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: DIM, margin: 0 }}>Loading…</p>}
+              {comments.map(c => (
+                <div key={c.comment_id} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                    <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10.5, fontWeight: 500, color: c.author_id === selfUid ? GOLD : BONE }}>
+                      {c.author_name}
+                    </span>
+                    <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: DIM }}>{timeAgo(c.created_at)}</span>
+                  </div>
+                  <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 12, color: BONE, margin: 0, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {c.text}
+                  </p>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
+                <input
+                  value={draft}
+                  onChange={e => setDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') submit() }}
+                  placeholder="Reply…"
+                  maxLength={400}
+                  style={{
+                    flex: 1, padding: '7px 11px', borderRadius: 14,
+                    background: 'rgba(232,212,168,0.03)', border: `1px solid ${HAIRLINE}`,
+                    color: BONE, outline: 'none',
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 11.5,
+                  }}
+                />
+                <button
+                  onClick={submit}
+                  disabled={!draft.trim() || posting}
+                  style={{
+                    padding: '6px 11px', borderRadius: 14,
+                    background: draft.trim() ? VIOLET : 'transparent',
+                    border: `1px solid ${draft.trim() ? VIOLET : HAIRLINE}`,
+                    cursor: draft.trim() && !posting ? 'pointer' : 'not-allowed',
+                    color: draft.trim() ? '#fff' : MUTE,
+                    opacity: posting ? 0.6 : 1,
+                  }}
+                >
+                  {posting
+                    ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, ease: 'linear', repeat: Infinity }}><Loader2 size={10}/></motion.span>
+                    : <Send size={10}/>}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+// ── Post card ────────────────────────────────────────────────────────────
+
+function PostCard({ post, selfUid, onDelete }) {
+  const isMine = post.author_id === selfUid
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+      transition={{ duration: 0.4, ease }}
+      style={{
+        padding: 1, borderRadius: 16,
+        background: `linear-gradient(150deg, ${GOLD}22 0%, rgba(232,212,168,0.04) 40%, rgba(8,8,7,0) 75%, ${GOLD}14 100%)`,
+      }}
+    >
+      <div style={{
+        padding: '18px 22px', borderRadius: 15,
+        background: 'linear-gradient(160deg, rgba(22,18,12,0.98) 0%, rgba(10,9,7,1) 100%)',
+        display: 'flex', flexDirection: 'column', gap: 11,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{
+            width: 34, height: 34, borderRadius: '50%', overflow: 'hidden',
+            background: 'rgba(212,182,134,0.06)', flexShrink: 0,
+            border: `1px solid ${GOLD}44`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {post.author_avatar
+              ? <img src={post.author_avatar} alt={post.author_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+              : <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 14, color: GOLD }}>
+                  {initials(post.author_name)}
+                </span>}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12.5, fontWeight: 500, color: isMine ? GOLD : BONE }}>
+                {post.author_name}
+              </span>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: DIM }}>{timeAgo(post.created_at)}</span>
+            </div>
+          </div>
+          {isMine && (
+            <button
+              onClick={() => onDelete?.(post)}
+              title="Delete"
+              style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: DIM, display: 'flex' }}
+            >
+              <Trash2 size={11}/>
+            </button>
+          )}
+        </div>
+        <p style={{
+          fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13.5,
+          color: BONE, margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+        }}>
+          {post.text}
+        </p>
+        <CommentThread postId={post.post_id} selfUid={selfUid} initialCount={post.comment_count || 0}/>
+      </div>
+    </motion.div>
+  )
+}
+
+// ── Inline post composer ─────────────────────────────────────────────────
+
+function Composer({ onCreated }) {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err,  setErr]  = useState(null)
+  const [focused, setFocused] = useState(false)
+
+  async function submit() {
+    const t = text.trim()
+    if (!t || busy) return
+    setBusy(true); setErr(null)
+    try {
+      const res = await createPost({ text: t })
+      onCreated?.(res.post)
+      setText('')
+      setFocused(false)
+    } catch (e) {
+      setErr(e?.message || 'Could not post')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <motion.div
+      animate={{ borderColor: focused ? `${GOLD}55` : HAIRLINE }}
+      style={{
+        padding: '14px 18px', borderRadius: 14,
+        background: 'rgba(232,212,168,0.025)',
+        border: `1px solid ${HAIRLINE}`,
+        display: 'flex', flexDirection: 'column', gap: 10,
+      }}
+    >
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => { if (!text.trim()) setFocused(false) }}
+        placeholder="Drop a thought, a recommendation, a half-formed plan…"
+        rows={focused || text ? 3 : 1}
+        maxLength={600}
+        style={{
+          padding: '8px 10px', borderRadius: 10,
+          background: 'transparent', border: 'none',
+          color: BONE, outline: 'none', resize: 'none',
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 300,
+          lineHeight: 1.55,
+          transition: 'all 0.2s',
+        }}
+      />
+      {err && <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: '#F87171', margin: 0 }}>{err}</p>}
+      {(focused || text) && (
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9.5, color: DIM, letterSpacing: '0.06em' }}>
+            {text.length} / 600
+          </span>
+          <button
+            onClick={submit}
+            disabled={!text.trim() || busy}
+            style={{
+              padding: '7px 16px', borderRadius: 16,
+              background: text.trim() ? `linear-gradient(135deg, ${GOLD} 0%, #B89464 100%)` : 'transparent',
+              border: `1px solid ${text.trim() ? GOLD : HAIRLINE}`,
+              cursor: text.trim() && !busy ? 'pointer' : 'not-allowed',
+              color: text.trim() ? BG : MUTE,
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 500,
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              opacity: busy ? 0.7 : 1,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            {busy
+              ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, ease: 'linear', repeat: Infinity }}><Loader2 size={10}/></motion.span>
+              : <Send size={10}/>}
+            Share
+          </button>
+        </motion.div>
+      )}
+    </motion.div>
+  )
+}
+
+// ── The full section ─────────────────────────────────────────────────────
+
+export default function DashboardPulse({ selfUid }) {
+  const [trips, setTrips] = useState([])
+  const [posts, setPosts] = useState([])
+  const [loadingTrips, setLoadingTrips] = useState(true)
+  const [loadingFeed,  setLoadingFeed]  = useState(true)
+  const [joinTarget, setJoinTarget] = useState(null)
+  const [joinBusy, setJoinBusy] = useState(false)
+  const [joinErr, setJoinErr] = useState(null)
+
+  // initial + slow background poll (real-time WS fills the gap)
+  const tripsPollRef = useRef(null)
+  const feedPollRef  = useRef(null)
+
+  const fetchTrips = useCallback(async () => {
+    try {
+      const res = await listOpenTrips(24)
+      setTrips(res?.trips || [])
+    } catch { /* surface via empty state */ }
+    finally { setLoadingTrips(false) }
+  }, [])
+  const fetchFeed = useCallback(async () => {
+    try {
+      const res = await listFeed({ limit: 20 })
+      setPosts(prev => {
+        const next = res?.posts || []
+        if (next.length && prev.length && next[0]?.post_id === prev[0]?.post_id) return prev
+        return next
+      })
+    } catch { /* noop */ }
+    finally { setLoadingFeed(false) }
+  }, [])
+
+  useEffect(() => {
+    fetchTrips(); fetchFeed()
+    tripsPollRef.current = setInterval(fetchTrips, 20_000)
+    feedPollRef.current  = setInterval(fetchFeed, 15_000)
+    return () => { clearInterval(tripsPollRef.current); clearInterval(feedPollRef.current) }
+  }, [fetchTrips, fetchFeed])
+
+  // Real-time WS push handlers (NotificationProvider re-dispatches these)
+  useEffect(() => {
+    function onTripOpen(e) {
+      const trip = e.detail
+      if (!trip?.itinerary_id) return
+      const card = { ...trip, is_yours: trip.owner_uid === selfUid }
+      setTrips(prev => prev.some(t => t.itinerary_id === card.itinerary_id) ? prev : [card, ...prev])
+    }
+    function onTripClose(e) {
+      const id = e.detail?.itinerary_id
+      if (!id) return
+      setTrips(prev => prev.filter(t => t.itinerary_id !== id))
+    }
+    function onPostNew(e) {
+      const post = e.detail
+      if (!post?.post_id) return
+      setPosts(prev => prev.some(p => p.post_id === post.post_id) ? prev : [post, ...prev])
+    }
+    function onResolved(e) {
+      const req = e.detail
+      if (!req?.itinerary_id) return
+      setTrips(prev => prev.map(t =>
+        t.itinerary_id === req.itinerary_id
+          ? { ...t, your_request_status: req.status }
+          : t,
+      ))
+    }
+    window.addEventListener('sonder:discover:trip_open',  onTripOpen)
+    window.addEventListener('sonder:discover:trip_close', onTripClose)
+    window.addEventListener('sonder:discover:post_new',   onPostNew)
+    window.addEventListener('sonder:join_request:resolved', onResolved)
+    return () => {
+      window.removeEventListener('sonder:discover:trip_open',  onTripOpen)
+      window.removeEventListener('sonder:discover:trip_close', onTripClose)
+      window.removeEventListener('sonder:discover:post_new',   onPostNew)
+      window.removeEventListener('sonder:join_request:resolved', onResolved)
+    }
+  }, [selfUid])
+
+  async function submitJoin(message) {
+    if (!joinTarget) return
+    setJoinBusy(true); setJoinErr(null)
+    try {
+      const res = await requestToJoin(joinTarget.itinerary_id, message)
+      const newStatus = res?.request?.status || 'proposed'
+      setTrips(prev => prev.map(t =>
+        t.itinerary_id === joinTarget.itinerary_id
+          ? { ...t, your_request_status: newStatus }
+          : t,
+      ))
+      setJoinTarget(null)
+    } catch (e) {
+      setJoinErr(e?.message || 'Could not send request')
+    } finally {
+      setJoinBusy(false)
+    }
+  }
+
+  async function deleteOne(post) {
+    if (!confirm('Delete this post?')) return
+    try {
+      await apiDeletePost(post.post_id)
+      setPosts(prev => prev.filter(p => p.post_id !== post.post_id))
+    } catch (e) {
+      alert(e?.message || 'Could not delete')
+    }
+  }
+
+  const tripsToShow = useMemo(() => trips.slice(0, 6), [trips])
+  const postsToShow = useMemo(() => posts.slice(0, 8), [posts])
+
+  return (
+    <section style={{
+      gridColumn: '1 / -1',   // span both Dashboard columns
+      padding: '64px 44px 52px',
+      borderTop: `1px solid ${HAIRLINE}`,
+      background: `linear-gradient(180deg, transparent 0%, rgba(212,182,134,0.025) 50%, transparent 100%)`,
+      position: 'relative',
+    }}>
+      {/* ambient drift */}
+      <motion.div
+        animate={{ opacity: [0.06, 0.14, 0.06] }}
+        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', top: 40, left: '20%',
+          width: 460, height: 460, borderRadius: '50%',
+          background: `radial-gradient(circle, ${VIOLET}22 0%, transparent 65%)`,
+          pointerEvents: 'none', filter: 'blur(40px)',
+        }}
+      />
+      <motion.div
+        animate={{ opacity: [0.05, 0.10, 0.05] }}
+        transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+        style={{
+          position: 'absolute', bottom: 80, right: '15%',
+          width: 380, height: 380, borderRadius: '50%',
+          background: `radial-gradient(circle, ${GOLD}22 0%, transparent 65%)`,
+          pointerEvents: 'none', filter: 'blur(40px)',
+        }}
+      />
+
+      {/* hero header */}
+      <div style={{ marginBottom: 44, position: 'relative', textAlign: 'center' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <Sparkles size={11} style={{ color: VIOLET }}/>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.32em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+            Sonder Pulse · live
+          </p>
+          <Sparkles size={11} style={{ color: VIOLET }}/>
+        </div>
+        <motion.h2
+          animate={{ filter: [`drop-shadow(0 0 16px ${VIOLET}22)`, `drop-shadow(0 0 36px ${VIOLET}55)`, `drop-shadow(0 0 16px ${VIOLET}22)`] }}
+          transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+          style={{
+            fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
+            fontSize: 40, color: BONE, lineHeight: 1.05, margin: 0,
+          }}
+        >
+          Who's moving where, right now.
+        </motion.h2>
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, margin: '12px 0 0', maxWidth: 560, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.55 }}>
+          Trips opening up for company, half-formed plans, recommendations from people whose travel taste might fit yours.
+        </p>
+      </div>
+
+      <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 36, alignItems: 'start' }}>
+
+        {/* LEFT — open trips */}
+        <div>
+          <SectionHeader
+            eyebrow="Trips you could join"
+            title="Open invitations"
+            accent={VIOLET}
+          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {loadingTrips && (
+              <div style={{ padding: '20px 0', display: 'flex', alignItems: 'center', gap: 10, color: MUTE }}>
+                <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.3, ease: 'linear', repeat: Infinity }}>
+                  <Loader2 size={14} style={{ color: VIOLET }}/>
+                </motion.span>
+                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
+                  Listening for trips…
+                </span>
+              </div>
+            )}
+            {!loadingTrips && tripsToShow.length === 0 && (
+              <div style={{ padding: '32px 24px', borderRadius: 14, border: `1px dashed ${HAIRLINE}`, textAlign: 'center' }}>
+                <MapPin size={18} style={{ color: VIOLET, opacity: 0.6, marginBottom: 8 }}/>
+                <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 18, color: BONE, margin: 0 }}>
+                  Quiet for now.
+                </p>
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 11.5, color: MUTE, margin: '6px 0 0', lineHeight: 1.55 }}>
+                  Open your own trip to companions — your card will appear here first.
+                </p>
+              </div>
+            )}
+            <AnimatePresence initial={false}>
+              {tripsToShow.map(t => (
+                <OpenTripCard
+                  key={t.itinerary_id}
+                  trip={t}
+                  onRequestJoin={(trip) => { setJoinTarget(trip); setJoinErr(null) }}
+                />
+              ))}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* RIGHT — feed */}
+        <div>
+          <SectionHeader
+            eyebrow="What travellers are saying"
+            title="The room"
+            accent={GOLD}
+          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <Composer onCreated={(p) => setPosts(prev => [p, ...prev])}/>
+            {loadingFeed && (
+              <div style={{ padding: '20px 0', display: 'flex', alignItems: 'center', gap: 10, color: MUTE }}>
+                <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.3, ease: 'linear', repeat: Infinity }}>
+                  <Loader2 size={14} style={{ color: GOLD }}/>
+                </motion.span>
+                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
+                  Catching the room…
+                </span>
+              </div>
+            )}
+            {!loadingFeed && postsToShow.length === 0 && (
+              <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 17, color: MUTE, margin: '8px 4px' }}>
+                Be the first voice in the room.
+              </p>
+            )}
+            <AnimatePresence initial={false}>
+              {postsToShow.map(p => (
+                <PostCard key={p.post_id} post={p} selfUid={selfUid} onDelete={deleteOne}/>
+              ))}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {joinTarget && (
+          <JoinModal
+            trip={joinTarget}
+            onClose={() => setJoinTarget(null)}
+            onSubmit={submitJoin}
+            busy={joinBusy}
+            error={joinErr}
+          />
+        )}
+      </AnimatePresence>
+    </section>
+  )
+}

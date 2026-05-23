@@ -9,6 +9,7 @@ import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
 import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
+import DashboardPulse from '../components/DashboardPulse'
 import { storage } from '../lib/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { updateProfile } from 'firebase/auth'
@@ -1002,13 +1003,6 @@ export default function Dashboard() {
                 <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 6 }}>Curated for you</p>
                 <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 30, color: BONE, lineHeight: 1 }}>Your fellow traveller recommendations</h2>
               </div>
-              <motion.button
-                whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.94 }}
-                onClick={() => navigate('/discover')}
-                style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: GOLD, background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                View all
-              </motion.button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {activePair && (
@@ -1078,6 +1072,9 @@ export default function Dashboard() {
             </motion.button>
           </div>
         </motion.div>
+
+        {/* Sonder Pulse — the discovery surface folded inline */}
+        <DashboardPulse selfUid={user?.uid}/>
       </motion.div>
     </div>
   )

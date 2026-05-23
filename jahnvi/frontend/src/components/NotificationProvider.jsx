@@ -66,7 +66,7 @@ export default function NotificationProvider({ children }) {
       window.dispatchEvent(new CustomEvent('sonder:discover:trip_open', { detail: data.trip }))
       // Surface a small banner unless the user is already looking at
       // /discover — there the card itself is the notification.
-      if (!locRef.current.startsWith('/discover')) {
+      if (!locRef.current.startsWith('/dashboard')) {
         const trip = data.trip
         const where = trip.destination_city
           ? trip.destination_country
@@ -77,7 +77,7 @@ export default function NotificationProvider({ children }) {
           kind:    'trip',
           title:   `${trip.owner_name || 'Someone'} opened a trip`,
           preview: `${where}${trip.note ? ' — ' + trip.note : ''}`,
-          link:    '/discover',
+          link:    '/dashboard',
         })
       }
       return
@@ -88,13 +88,13 @@ export default function NotificationProvider({ children }) {
     }
     if (data?.type === 'discover_post_new' && data.post) {
       window.dispatchEvent(new CustomEvent('sonder:discover:post_new', { detail: data.post }))
-      if (!locRef.current.startsWith('/discover')) {
+      if (!locRef.current.startsWith('/dashboard')) {
         const post = data.post
         setBanner({
           kind:    'post',
           title:   post.author_name || 'New post',
           preview: (post.text || '').slice(0, 140),
-          link:    '/discover?tab=feed',
+          link:    '/dashboard',
         })
       }
       return

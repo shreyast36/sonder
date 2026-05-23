@@ -16,7 +16,6 @@ import Chat            from './pages/Chat'
 import ApproveDeny     from './pages/ApproveDeny'
 import SharedItinerary from './pages/SharedItinerary'
 import Notes           from './pages/Notes'
-import Discover               from './pages/Discover'
 import TravellerCompatibility from './pages/TravellerCompatibility'
 import LuxCursor              from './components/LuxCursor'
 import { ToastProvider } from './components/Toast'
@@ -67,7 +66,8 @@ export default function App() {
           <Route path="/approve/:sessionId" element={<Page><ApproveDeny/></Page>}/>
           <Route path="/shared/:id"         element={<Page><SharedItinerary/></Page>}/>
           <Route path="/notes/:id"          element={<Page><Notes/></Page>}/>
-          <Route path="/discover"           element={<Page><Discover/></Page>}/>
+          {/* /discover is folded into the Dashboard as the Pulse section. */}
+          <Route path="/discover"           element={<Navigate to="/dashboard" replace/>}/>
           <Route path="/compatibility"      element={<Page><TravellerCompatibility/></Page>}/>
           <Route path="*"                   element={<Navigate to="/" replace/>}/>
         </Routes>
