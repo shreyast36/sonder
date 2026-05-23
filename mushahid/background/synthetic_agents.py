@@ -30,6 +30,7 @@ from shared.config import (
     SYNTHETIC_AGENTS_ENABLED,
     SYNTHETIC_AGENTS_MIN_INTERVAL,
     SYNTHETIC_AGENTS_MAX_INTERVAL,
+    SYNTHETIC_AGENTS_SEED_COUNT,
     SMALL_MODEL_PROVIDER,
 )
 from shared.schemas import Destination, Itinerary, ItineraryDay
@@ -196,6 +197,29 @@ async def _emit_open_trip(persona) -> None:
                 itinerary_id, dest_meta["city"], dest_meta["country"])
 
 
+async def _run_action(persona) -> None:
+    """One agent action: 65% posts, 35% open trips. Swallows errors."""
+    try:
+        if random.random() < 0.65:
+            await _emit_post(persona)
+        else:
+            await _emit_open_trip(persona)
+    except Exception as e:
+        logger.warning("synthetic_agents: action failed: %s", e)
+
+
+async def _seed_burst(personas: list, count: int) -> None:
+    """Fire `count` actions in parallel on cold-start so the surface
+    isn't empty when the first user lands. Uses asyncio.gather so the
+    LLM calls overlap instead of serialising. Failures are swallowed
+    per-action."""
+    if not personas or count <= 0:
+        return
+    chosen = [random.choice(personas) for _ in range(count)]
+    logger.info("synthetic_agents: seed burst (%d actions)", len(chosen))
+    await asyncio.gather(*(_run_action(p) for p in chosen), return_exceptions=True)
+
+
 async def synthetic_agents_loop() -> None:
     """The forever-loop. Sleeps a randomised interval, then fires one
     action. Catches every exception per-cycle so a single failure
@@ -207,27 +231,28 @@ async def synthetic_agents_loop() -> None:
         logger.warning("synthetic_agents: SMALL_MODEL_PROVIDER unset — loop won't run")
         return
 
-    lo = max(20, SYNTHETIC_AGENTS_MIN_INTERVAL)
-    hi = max(lo + 30, SYNTHETIC_AGENTS_MAX_INTERVAL)
-    logger.info("synthetic_agents: loop starting (interval %d-%ds)", lo, hi)
+    lo = max(8, SYNTHETIC_AGENTS_MIN_INTERVAL)
+    hi = max(lo + 10, SYNTHETIC_AGENTS_MAX_INTERVAL)
+    logger.info("synthetic_agents: loop starting (interval %d-%ds, seed=%d)",
+                lo, hi, SYNTHETIC_AGENTS_SEED_COUNT)
 
-    # Short stagger before the first cycle so the loop doesn't fire
-    # against a cold app on startup.
-    await asyncio.sleep(random.uniform(8.0, 20.0))
+    # Tiny stagger so the seed burst doesn't fight cold-start work,
+    # then prime the feed immediately so users don't land on empty.
+    await asyncio.sleep(random.uniform(2.0, 5.0))
+    try:
+        personas = await _pick_personas(n=12)
+        await _seed_burst(personas, SYNTHETIC_AGENTS_SEED_COUNT)
+    except Exception as e:
+        logger.warning("synthetic_agents: seed burst failed: %s", e)
 
+    # Steady-state loop.
     while True:
         try:
             personas = await _pick_personas(n=8)
             if not personas:
                 logger.info("synthetic_agents: no personas available, skipping cycle")
             else:
-                persona = random.choice(personas)
-                # 70% posts, 30% open-trips — posts are cheaper and the
-                # feed needs more density than /discover does.
-                if random.random() < 0.7:
-                    await _emit_post(persona)
-                else:
-                    await _emit_open_trip(persona)
+                await _run_action(random.choice(personas))
         except Exception as e:
             logger.warning("synthetic_agents: cycle failed: %s", e)
 

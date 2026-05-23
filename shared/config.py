@@ -115,8 +115,14 @@ MAX_REFINEMENT_ATTEMPTS = int(os.getenv("MAX_REFINEMENT_ATTEMPTS", "3"))
 # Disable in test/CI runs and on prod environments where real activity
 # would be unhelpful or expensive.
 SYNTHETIC_AGENTS_ENABLED       = os.getenv("SYNTHETIC_AGENTS_ENABLED", "true").lower() == "true"
-SYNTHETIC_AGENTS_MIN_INTERVAL  = int(os.getenv("SYNTHETIC_AGENTS_MIN_INTERVAL", "45"))
-SYNTHETIC_AGENTS_MAX_INTERVAL  = int(os.getenv("SYNTHETIC_AGENTS_MAX_INTERVAL", "150"))
+# Aggressive cadence: real users feel the surface as "alive" rather than
+# "auto-populated every couple of minutes". Tunable downward (cost) or
+# upward (feel) via env.
+SYNTHETIC_AGENTS_MIN_INTERVAL  = int(os.getenv("SYNTHETIC_AGENTS_MIN_INTERVAL", "15"))
+SYNTHETIC_AGENTS_MAX_INTERVAL  = int(os.getenv("SYNTHETIC_AGENTS_MAX_INTERVAL", "50"))
+# How many actions to fire in parallel on cold-start so the feed isn't
+# empty when the first real user lands. 0 = don't seed.
+SYNTHETIC_AGENTS_SEED_COUNT    = int(os.getenv("SYNTHETIC_AGENTS_SEED_COUNT", "6"))
 
 # Currency conversion — optional; falls back to static rates in shared/currency.py if unset
 EXCHANGE_RATE_API_KEY = os.getenv("EXCHANGE_RATE_API_KEY")

@@ -94,43 +94,56 @@ function OpenTripCard({ trip, onRequestJoin }) {
       transition={{ duration: 0.45, ease }}
       whileHover={{ y: -3 }}
       style={{
-        padding: 1, borderRadius: 18,
-        background: `linear-gradient(145deg, ${accent}33 0%, rgba(232,212,168,0.04) 35%, rgba(8,8,7,0) 70%, ${accent}22 100%)`,
-        boxShadow: `0 12px 32px rgba(0,0,0,0.45)`,
+        padding: 1, borderRadius: 20,
+        background: `linear-gradient(145deg, ${accent}55 0%, ${accent}11 22%, rgba(232,212,168,0.04) 50%, rgba(8,8,7,0) 75%, ${accent}33 100%)`,
+        boxShadow: `0 16px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.4) inset`,
       }}
     >
       <div style={{
         position: 'relative', overflow: 'hidden',
-        background: 'linear-gradient(160deg, rgba(22,18,12,0.98) 0%, rgba(10,9,7,1) 100%)',
-        borderRadius: 17, padding: '20px 22px',
+        background: 'linear-gradient(160deg, rgba(24,19,13,0.99) 0%, rgba(10,9,7,1) 60%, rgba(14,11,8,1) 100%)',
+        borderRadius: 19, padding: '22px 24px',
         display: 'flex', flexDirection: 'column', gap: 14,
       }}>
         {/* ambient corner glow */}
         <div style={{
-          position: 'absolute', top: -90, right: -90,
-          width: 220, height: 220, borderRadius: '50%',
-          background: `radial-gradient(circle, ${accent}18 0%, transparent 65%)`,
+          position: 'absolute', top: -100, right: -100,
+          width: 260, height: 260, borderRadius: '50%',
+          background: `radial-gradient(circle, ${accent}22 0%, transparent 65%)`,
+          pointerEvents: 'none',
+        }}/>
+        {/* subtle bottom shimmer */}
+        <div style={{
+          position: 'absolute', bottom: -60, left: -40,
+          width: 180, height: 180, borderRadius: '50%',
+          background: `radial-gradient(circle, ${accent}10 0%, transparent 70%)`,
           pointerEvents: 'none',
         }}/>
 
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, position: 'relative' }}>
-          {/* avatar */}
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <div style={{
-              position: 'absolute', inset: -3, borderRadius: '50%',
-              background: `linear-gradient(135deg, ${accent} 0%, transparent 60%)`,
-              opacity: 0.6, filter: 'blur(6px)',
-            }}/>
+          {/* avatar with rotating halo */}
+          <div style={{ position: 'relative', flexShrink: 0, width: 54, height: 54 }}>
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
+              style={{
+                position: 'absolute', inset: -4, borderRadius: '50%',
+                background: `conic-gradient(from 0deg, ${accent}88, transparent 30%, ${accent}55 60%, transparent 100%)`,
+                filter: 'blur(5px)',
+                opacity: 0.75,
+              }}
+            />
             <div style={{
               position: 'relative',
-              width: 46, height: 46, borderRadius: '50%', overflow: 'hidden',
-              background: 'rgba(212,182,134,0.06)',
+              width: 54, height: 54, borderRadius: '50%', overflow: 'hidden',
+              background: 'linear-gradient(160deg, rgba(212,182,134,0.10) 0%, rgba(20,15,10,1) 100%)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              border: `1px solid ${accent}55`,
+              border: `1px solid ${accent}66`,
+              boxShadow: `0 4px 12px ${accent}33`,
             }}>
               {trip.owner_avatar
                 ? <img src={trip.owner_avatar} alt={trip.owner_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-                : <span style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 19, color: accent, fontStyle: 'italic' }}>
+                : <span style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 22, color: accent, fontStyle: 'italic' }}>
                     {initials(trip.owner_name)}
                   </span>}
             </div>
@@ -139,18 +152,19 @@ function OpenTripCard({ trip, onRequestJoin }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{
               fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
-              fontSize: 20, color: BONE, margin: 0, lineHeight: 1.1,
+              fontSize: 24, color: BONE, margin: 0, lineHeight: 1.05,
+              letterSpacing: '-0.01em',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>
               {where}
             </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE, letterSpacing: '0.04em' }}>
-                {isYours ? 'Your trip' : `${trip.owner_name}'s trip`}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 5, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: accent, letterSpacing: '0.06em', fontWeight: 500 }}>
+                {isYours ? 'Your trip' : trip.owner_name}
               </span>
               {dateRange && (
                 <>
-                  <span style={{ color: DIM }}>·</span>
+                  <span style={{ color: DIM, fontSize: 8 }}>●</span>
                   <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE }}>{dateRange}</span>
                 </>
               )}
@@ -718,27 +732,72 @@ export default function DashboardPulse({ selfUid }) {
       />
 
       {/* hero header */}
-      <div style={{ marginBottom: 44, position: 'relative', textAlign: 'center' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <Sparkles size={11} style={{ color: VIOLET }}/>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.32em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
-            Sonder Pulse · live
+      <div style={{ marginBottom: 52, position: 'relative', textAlign: 'center' }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 16,
+          padding: '6px 14px', borderRadius: 999,
+          background: `linear-gradient(135deg, ${VIOLET}14 0%, ${GOLD}10 100%)`,
+          border: `1px solid ${VIOLET}33`,
+          boxShadow: `0 4px 16px ${VIOLET}22`,
+        }}>
+          <motion.span
+            animate={{ scale: [1, 1.4, 1], opacity: [0.6, 1, 0.6] }}
+            transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+            style={{ width: 7, height: 7, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 10px #10B981' }}
+          />
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.34em', textTransform: 'uppercase', color: BONE, margin: 0, fontWeight: 500 }}>
+            Sonder Pulse · live now
           </p>
-          <Sparkles size={11} style={{ color: VIOLET }}/>
+          <motion.span
+            animate={{ opacity: [0.3, 1, 0.3] }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <Sparkles size={11} style={{ color: GOLD }}/>
+          </motion.span>
         </div>
         <motion.h2
-          animate={{ filter: [`drop-shadow(0 0 16px ${VIOLET}22)`, `drop-shadow(0 0 36px ${VIOLET}55)`, `drop-shadow(0 0 16px ${VIOLET}22)`] }}
+          animate={{ filter: [`drop-shadow(0 0 20px ${VIOLET}22)`, `drop-shadow(0 0 44px ${VIOLET}55)`, `drop-shadow(0 0 20px ${VIOLET}22)`] }}
           transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
           style={{
             fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
-            fontSize: 40, color: BONE, lineHeight: 1.05, margin: 0,
+            fontSize: 52, color: BONE, lineHeight: 1.02, margin: 0,
+            letterSpacing: '-0.02em',
           }}
         >
           Who's moving where, right now.
         </motion.h2>
-        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, margin: '12px 0 0', maxWidth: 560, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.55 }}>
-          Trips opening up for company, half-formed plans, recommendations from people whose travel taste might fit yours.
+        <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 16, color: 'rgba(244,237,224,0.62)', margin: '16px 0 0', maxWidth: 580, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.55 }}>
+          Trips opening for company. Half-formed plans. Recommendations from
+          travellers whose rhythm might match yours.
         </p>
+        {/* live counts strip */}
+        <div style={{
+          marginTop: 22,
+          display: 'inline-flex', alignItems: 'center', gap: 24,
+          padding: '10px 22px', borderRadius: 999,
+          background: 'rgba(8,8,7,0.55)', backdropFilter: 'blur(20px)',
+          border: `1px solid ${HAIRLINE}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <MapPin size={11} style={{ color: VIOLET }}/>
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: BONE, fontWeight: 500 }}>
+              {trips.length}
+            </span>
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: MUTE, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
+              {trips.length === 1 ? 'open trip' : 'open trips'}
+            </span>
+          </div>
+          <span style={{ width: 1, height: 14, background: HAIRLINE }}/>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <MessageCircle size={11} style={{ color: GOLD }}/>
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: BONE, fontWeight: 500 }}>
+              {posts.length}
+            </span>
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: MUTE, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
+              voices in the room
+            </span>
+          </div>
+        </div>
       </div>
 
       <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 36, alignItems: 'start' }}>

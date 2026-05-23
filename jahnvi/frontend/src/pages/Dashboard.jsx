@@ -110,58 +110,75 @@ function _fmtTripDate(v) {
 }
 
 function PastTripsRow({ trips, onSelect, switching }) {
+  if (!trips || trips.length === 0) return null
   return (
     <div style={{ marginTop: 36 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
         <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
-          Past Trips
+          Your trips
         </p>
         <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: DIM, margin: 0 }}>
           {trips.length} saved
         </p>
       </div>
       <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'thin' }}>
-        {trips.map((t, i) => (
-          <motion.button
-            key={t.itinerary_id}
-            whileHover={!switching ? { y: -3, borderColor: 'rgba(245,158,11,0.30)' } : {}}
-            whileTap={!switching ? { scale: 0.98 } : {}}
-            onClick={() => onSelect(t.itinerary_id)}
-            disabled={switching}
-            initial={{ opacity: 0, x: 18 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.4, delay: 0.05 + i * 0.06, ease }}
-            style={{
-              flex: '0 0 auto', width: 200, padding: '18px 18px 16px',
-              background: 'rgba(232,212,168,0.04)',
-              border: `1px solid ${HAIRLINE}`,
-              borderRadius: 14, cursor: switching ? 'wait' : 'pointer',
-              transition: 'all 0.25s', textAlign: 'left',
-              opacity: switching ? 0.5 : 1,
-            }}
-          >
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: '0 0 6px' }}>
-              Destination
-            </p>
-            <h3 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 24, color: BONE, lineHeight: 1, margin: 0, letterSpacing: '-0.01em' }}>
-              {t.city}
-            </h3>
-            {t.country && (
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, margin: '4px 0 12px' }}>
-                {t.country}
+        {trips.map((t, i) => {
+          const isCurrent = !!t.is_current
+          const accent = isCurrent ? '#F59E0B' : 'rgba(245,158,11,0.30)'
+          return (
+            <motion.button
+              key={t.itinerary_id}
+              whileHover={!switching && !isCurrent ? { y: -3, borderColor: accent } : {}}
+              whileTap={!switching && !isCurrent ? { scale: 0.98 } : {}}
+              onClick={() => !isCurrent && onSelect(t.itinerary_id)}
+              disabled={switching || isCurrent}
+              initial={{ opacity: 0, x: 18 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 + i * 0.06, ease }}
+              style={{
+                position: 'relative',
+                flex: '0 0 auto', width: 200, padding: '18px 18px 16px',
+                background: isCurrent ? 'rgba(245,158,11,0.06)' : 'rgba(232,212,168,0.04)',
+                border: `1px solid ${isCurrent ? 'rgba(245,158,11,0.40)' : HAIRLINE}`,
+                borderRadius: 14, cursor: isCurrent ? 'default' : (switching ? 'wait' : 'pointer'),
+                transition: 'all 0.25s', textAlign: 'left',
+                opacity: switching && !isCurrent ? 0.5 : 1,
+              }}
+            >
+              {isCurrent && (
+                <span style={{
+                  position: 'absolute', top: 10, right: 10,
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 7.5,
+                  letterSpacing: '0.24em', textTransform: 'uppercase',
+                  color: '#F59E0B', padding: '3px 7px', borderRadius: 8,
+                  background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.40)',
+                }}>
+                  Current
+                </span>
+              )}
+              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: '0 0 6px' }}>
+                Destination
               </p>
-            )}
-            <div style={{ height: 1, background: HAIRLINE, margin: '10px 0' }}/>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE }}>
-                {t.day_count ? `${t.day_count} day${t.day_count === 1 ? '' : 's'}` : '—'}
-              </span>
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: DIM }}>
-                {_fmtTripDate(t.trip_start) || ''}
-              </span>
-            </div>
-          </motion.button>
-        ))}
+              <h3 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 24, color: BONE, lineHeight: 1, margin: 0, letterSpacing: '-0.01em' }}>
+                {t.city}
+              </h3>
+              {t.country && (
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, margin: '4px 0 12px' }}>
+                  {t.country}
+                </p>
+              )}
+              <div style={{ height: 1, background: HAIRLINE, margin: '10px 0' }}/>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE }}>
+                  {t.day_count ? `${t.day_count} day${t.day_count === 1 ? '' : 's'}` : '—'}
+                </span>
+                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: DIM }}>
+                  {_fmtTripDate(t.trip_start) || ''}
+                </span>
+              </div>
+            </motion.button>
+          )
+        })}
       </div>
     </div>
   )
@@ -984,10 +1001,10 @@ export default function Dashboard() {
             </motion.div>
           )}
 
-          {/* Past trips carousel — shown when the user has more than one saved trip */}
-          {pastTrips.filter(t => !t.is_current).length > 0 && (
+          {/* Your trips — every saved itinerary, current one badged. */}
+          {pastTrips.length > 0 && (
             <PastTripsRow
-              trips={pastTrips.filter(t => !t.is_current)}
+              trips={pastTrips}
               onSelect={handleSwitchTrip}
               switching={switchingTrip}
             />
