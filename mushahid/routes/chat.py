@@ -819,6 +819,10 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
         auth_msg = await asyncio.wait_for(_receive_json_checked(websocket), timeout=10.0)
         token = auth_msg.get("token", "")
         uid = verify_token_string(token)
+    except WebSocketDisconnect:
+        # Client disconnected before sending auth — connection is already closed,
+        # so we must NOT call websocket.close() again (would raise RuntimeError).
+        return
     except Exception:
         await websocket.close(code=4001, reason="Authentication failed")
         return
