@@ -56,6 +56,13 @@ class AnthropicSmallClient(BaseLLMClient):
         """
         import json as _json
 
+        # Derive the count bounds from the vocabulary so they stay correct
+        # if a dimension is ever added or removed. Importing here keeps the
+        # ali package free of jahnvi imports at module load time.
+        from jahnvi.data.dimensions import (
+            MIN_TOP_PUSH, MAX_TOP_PUSH, MIN_TOP_PULL, MAX_TOP_PULL,
+        )
+
         push_schema: dict = {"type": "string"}
         pull_schema: dict = {"type": "string"}
         if push_ids:
@@ -72,16 +79,24 @@ class AnthropicSmallClient(BaseLLMClient):
                     "top_push": {
                         "type": "array",
                         "items": push_schema,
-                        "minItems": 1,
-                        "maxItems": 6,
-                        "description": "1 to 6 PUSH dimension IDs — pick ALL the ones that genuinely apply to this user. Multiple push motivations are common.",
+                        "minItems": MIN_TOP_PUSH,
+                        "maxItems": MAX_TOP_PUSH,
+                        "description": (
+                            f"{MIN_TOP_PUSH} to {MAX_TOP_PUSH} PUSH dimension IDs — "
+                            "pick ALL the ones that genuinely apply to this user. "
+                            "Multiple push motivations are common."
+                        ),
                     },
                     "top_interests": {
                         "type": "array",
                         "items": pull_schema,
-                        "minItems": 1,
-                        "maxItems": 6,
-                        "description": "1 to 6 PULL dimension IDs — pick ALL the ones that genuinely apply. Multiple pull interests are common.",
+                        "minItems": MIN_TOP_PULL,
+                        "maxItems": MAX_TOP_PULL,
+                        "description": (
+                            f"{MIN_TOP_PULL} to {MAX_TOP_PULL} PULL dimension IDs — "
+                            "pick ALL the ones that genuinely apply. "
+                            "Multiple pull interests are common."
+                        ),
                     },
                     "descriptor": {"type": "string"},
                     "paragraph": {"type": "string"},

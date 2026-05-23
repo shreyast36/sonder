@@ -213,3 +213,14 @@ PULL_DIMENSIONS: dict[str, list[str]] = {
 }
 
 ALL_DIMENSIONS: dict[str, list[str]] = {**PUSH_DIMENSIONS, **PULL_DIMENSIONS}
+
+
+# ── Allowed counts for top_push / top_interests on a persona ──────────────────
+# Derived from the vocabularies above so the bounds stay correct if a
+# dimension is ever added or removed. Both real users (mushahid/routes/persona.py)
+# and synthetic seed personas use these — the LLM picks however many genuinely
+# apply, between MIN and MAX. Set MIN to 0 if you want to allow empty lists.
+MIN_TOP_PUSH = 1
+MAX_TOP_PUSH = len(PUSH_DIMENSIONS)
+MIN_TOP_PULL = 1
+MAX_TOP_PULL = len(PULL_DIMENSIONS)
