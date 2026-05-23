@@ -66,8 +66,10 @@ export default function App() {
           <Route path="/approve/:sessionId" element={<Page><ApproveDeny/></Page>}/>
           <Route path="/shared/:id"         element={<Page><SharedItinerary/></Page>}/>
           <Route path="/notes/:id"          element={<Page><Notes/></Page>}/>
-          {/* /discover is folded into the Dashboard as the Pulse section. */}
-          <Route path="/discover"           element={<Navigate to="/dashboard" replace/>}/>
+          {/* /discover is folded into the Dashboard as the Pulse section.
+              Render Dashboard directly (not <Navigate>) — Navigate inside
+              AnimatePresence mode="wait" can leave the page blank. */}
+          <Route path="/discover"           element={<Page><Dashboard/></Page>}/>
           <Route path="/compatibility"      element={<Page><TravellerCompatibility/></Page>}/>
           <Route path="*"                   element={<Navigate to="/" replace/>}/>
         </Routes>
