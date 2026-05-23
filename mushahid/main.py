@@ -84,7 +84,21 @@ async def lifespan(app: FastAPI):
     if missing:
         logger.warning("ENV AUDIT — MISSING: %s", ", ".join(missing))
 
-    yield
+    # Kick off the synthetic-agents loop so /feed and /discover feel
+    # populated even with no real activity. The loop self-gates on
+    # SYNTHETIC_AGENTS_ENABLED and exits cleanly on cancellation.
+    import asyncio
+    from mushahid.background.synthetic_agents import synthetic_agents_loop
+    synth_task = asyncio.create_task(synthetic_agents_loop())
+
+    try:
+        yield
+    finally:
+        synth_task.cancel()
+        try:
+            await synth_task
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 app = FastAPI(title="Sonder API", version="0.1.0", lifespan=lifespan)

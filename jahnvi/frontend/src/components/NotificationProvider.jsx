@@ -1,14 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { MessageCircle, X } from 'lucide-react'
+import { MessageCircle, MapPin, Sparkles, X } from 'lucide-react'
 import { auth } from '../lib/firebase'
 import { openNotificationSocket } from '../lib/api'
 import { ensurePushSubscribed, dropPushSubscription, pushSupported } from '../lib/push'
 import { BG, BONE, MUTE } from '../lib/tokens'
 import SynthBadge from './SynthBadge'
 
-const ROSE = '#F43F5E'
+const ROSE   = '#F43F5E'
+const VIOLET = '#8B5CF6'
+const GOLD   = '#D4B686'
 const NotificationContext = createContext(null)
 export const useNotifications = () => useContext(NotificationContext)
 
@@ -62,6 +64,22 @@ export default function NotificationProvider({ children }) {
     }
     if (data?.type === 'discover_trip_open' && data.trip) {
       window.dispatchEvent(new CustomEvent('sonder:discover:trip_open', { detail: data.trip }))
+      // Surface a small banner unless the user is already looking at
+      // /discover — there the card itself is the notification.
+      if (!locRef.current.startsWith('/discover')) {
+        const trip = data.trip
+        const where = trip.destination_city
+          ? trip.destination_country
+            ? `${trip.destination_city}, ${trip.destination_country}`
+            : trip.destination_city
+          : 'somewhere'
+        setBanner({
+          kind:    'trip',
+          title:   `${trip.owner_name || 'Someone'} opened a trip`,
+          preview: `${where}${trip.note ? ' — ' + trip.note : ''}`,
+          link:    '/discover',
+        })
+      }
       return
     }
     if (data?.type === 'discover_trip_close' && data.itinerary_id) {
@@ -70,6 +88,15 @@ export default function NotificationProvider({ children }) {
     }
     if (data?.type === 'discover_post_new' && data.post) {
       window.dispatchEvent(new CustomEvent('sonder:discover:post_new', { detail: data.post }))
+      if (!locRef.current.startsWith('/discover')) {
+        const post = data.post
+        setBanner({
+          kind:    'post',
+          title:   post.author_name || 'New post',
+          preview: (post.text || '').slice(0, 140),
+          link:    '/discover?tab=feed',
+        })
+      }
       return
     }
     if (data?.type !== 'chat_notification') return
@@ -79,10 +106,12 @@ export default function NotificationProvider({ children }) {
     if (locRef.current === `/chat/${session_id}`) return
 
     setBanner({
-      sessionId:  session_id,
-      senderName: sender_name || 'New message',
+      kind:        'chat',
+      sessionId:   session_id,
+      title:       sender_name || 'New message',
       senderIsSeed: !!sender_is_seed,
-      preview:    preview || '',
+      preview:     preview || '',
+      link:        `/chat/${session_id}`,
     })
 
     // OS notification when the tab is hidden — but only when the service
@@ -190,7 +219,11 @@ export default function NotificationProvider({ children }) {
     <NotificationContext.Provider value={{ dismiss }}>
       {children}
       <AnimatePresence>
-        {banner && (
+        {banner && (() => {
+          const kind = banner.kind || 'chat'
+          const accent = kind === 'trip' ? VIOLET : kind === 'post' ? GOLD : ROSE
+          const Icon = kind === 'trip' ? MapPin : kind === 'post' ? Sparkles : MessageCircle
+          return (
           <motion.div
             initial={{ opacity: 0, y: -24, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -200,22 +233,22 @@ export default function NotificationProvider({ children }) {
               position: 'fixed', top: 24, right: 24, zIndex: 9999,
               minWidth: 280, maxWidth: 380,
               background: `linear-gradient(135deg, ${BG}f5 0%, rgba(20,16,12,0.96) 100%)`,
-              border: `1px solid ${ROSE}55`,
+              border: `1px solid ${accent}55`,
               borderRadius: 14,
-              boxShadow: `0 24px 56px rgba(0,0,0,0.5), 0 0 32px ${ROSE}22`,
+              boxShadow: `0 24px 56px rgba(0,0,0,0.5), 0 0 32px ${accent}22`,
               padding: '14px 18px',
               display: 'flex', alignItems: 'flex-start', gap: 12,
               cursor: 'pointer', backdropFilter: 'blur(20px)',
             }}
-            onClick={() => { navigate(`/chat/${banner.sessionId}`); setBanner(null) }}
+            onClick={() => { navigate(banner.link || '/'); setBanner(null) }}
           >
             <div style={{
               width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-              background: `linear-gradient(135deg, ${ROSE} 0%, #E11D48 100%)`,
+              background: `linear-gradient(135deg, ${accent} 0%, ${accent}cc 100%)`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: `0 0 18px ${ROSE}66`,
+              boxShadow: `0 0 18px ${accent}66`,
             }}>
-              <MessageCircle size={16} style={{ color: '#fff' }}/>
+              <Icon size={16} style={{ color: '#fff' }}/>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -223,9 +256,9 @@ export default function NotificationProvider({ children }) {
                   fontFamily: '"Inter Tight",sans-serif', fontSize: 11, fontWeight: 500,
                   color: BONE, margin: 0, letterSpacing: '0.04em',
                 }}>
-                  {banner.senderName}
+                  {banner.title}
                 </p>
-                <SynthBadge isSeed={banner.senderIsSeed} variant="inline" />
+                {kind === 'chat' && <SynthBadge isSeed={banner.senderIsSeed} variant="inline" />}
               </div>
               <p style={{
                 fontFamily: '"Inter Tight",sans-serif', fontSize: 12, fontWeight: 300,
@@ -247,7 +280,8 @@ export default function NotificationProvider({ children }) {
               <X size={14}/>
             </button>
           </motion.div>
-        )}
+          )
+        })()}
       </AnimatePresence>
     </NotificationContext.Provider>
   )

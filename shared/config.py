@@ -109,6 +109,15 @@ LOCAL_MODE = os.getenv("LOCAL_MODE", "true").lower() == "true"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 MAX_REFINEMENT_ATTEMPTS = int(os.getenv("MAX_REFINEMENT_ATTEMPTS", "3"))
 
+# Background loop that drives synthetic personas to post on the social
+# feed and open trips on /discover at randomised intervals so the
+# surfaces feel populated even with no other real users online.
+# Disable in test/CI runs and on prod environments where real activity
+# would be unhelpful or expensive.
+SYNTHETIC_AGENTS_ENABLED       = os.getenv("SYNTHETIC_AGENTS_ENABLED", "true").lower() == "true"
+SYNTHETIC_AGENTS_MIN_INTERVAL  = int(os.getenv("SYNTHETIC_AGENTS_MIN_INTERVAL", "45"))
+SYNTHETIC_AGENTS_MAX_INTERVAL  = int(os.getenv("SYNTHETIC_AGENTS_MAX_INTERVAL", "150"))
+
 # Currency conversion — optional; falls back to static rates in shared/currency.py if unset
 EXCHANGE_RATE_API_KEY = os.getenv("EXCHANGE_RATE_API_KEY")
 
