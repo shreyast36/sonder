@@ -73,14 +73,22 @@ EVENT_PIPELINE_ERROR           = "pipeline_error"
 # ── Client init ────────────────────────────────────────────────────────────
 
 
+_ph_init_failed = False
+
+
 def _get_ph():
-    global _ph
-    if _ph is not None:
+    global _ph, _ph_init_failed
+    if _ph is not None or _ph_init_failed:
         return _ph
     if not POSTHOG_API_KEY:
         return None
-    from posthog import Posthog
-    _ph = Posthog(api_key=POSTHOG_API_KEY, host=POSTHOG_HOST)
+    try:
+        from posthog import Posthog
+        _ph = Posthog(project_api_key=POSTHOG_API_KEY, host=POSTHOG_HOST)
+    except Exception as e:
+        _ph_init_failed = True
+        logger.warning("PostHog client init failed (telemetry disabled): %s", e)
+        return None
     return _ph
 
 
