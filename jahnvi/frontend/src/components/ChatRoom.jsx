@@ -14,7 +14,98 @@ const VIOLET = '#8B5CF6'
 
 const spring = { type: 'spring', stiffness: 300, damping: 24 }
 
-function Bubble({ message, isOwn, otherName, seenByOther, otherProfileId, canPlayVoice }) {
+/**
+ * Renders the persona's circular avatar in the chat sidebar. When
+ * `speaking` flips true (an audio clip is playing in a Bubble), the
+ * avatar shifts into a faster glow + subtle scale "breathing" + random
+ * blink overlay so the persona reads as alive. Not real lip-sync —
+ * the photos are arbitrary so we can't pixel-align a mouth — but the
+ * combined motion sells "this character is talking right now" at the
+ * 88px sidebar size.
+ */
+function SpeakingAvatar({ src, name, speaking, online }) {
+  // Random blink: while speaking, briefly drop opacity at irregular
+  // intervals. Mounted/unmounted so timers don't leak when idle.
+  const [blink, setBlink] = useState(false)
+  useEffect(() => {
+    if (!speaking) { setBlink(false); return }
+    let cancelled = false
+    function loop() {
+      if (cancelled) return
+      const nextDelay = 1800 + Math.random() * 2200   // 1.8s–4.0s
+      const t = setTimeout(() => {
+        if (cancelled) return
+        setBlink(true)
+        setTimeout(() => { if (!cancelled) setBlink(false); loop() }, 110)
+      }, nextDelay)
+      return () => clearTimeout(t)
+    }
+    const cleanup = loop()
+    return () => { cancelled = true; if (typeof cleanup === 'function') cleanup() }
+  }, [speaking])
+
+  const idleAnim = {
+    boxShadow: [
+      `0 0 0 2px ${ROSE}33, 0 0 28px ${ROSE}12`,
+      `0 0 0 2px ${ROSE}66, 0 0 56px ${ROSE}28`,
+      `0 0 0 2px ${ROSE}33, 0 0 28px ${ROSE}12`,
+    ],
+    scale: 1,
+  }
+  const speakingAnim = {
+    boxShadow: [
+      `0 0 0 2px ${ROSE}77, 0 0 36px ${ROSE}33`,
+      `0 0 0 3px ${ROSE}CC, 0 0 72px ${ROSE}55`,
+      `0 0 0 2px ${ROSE}77, 0 0 36px ${ROSE}33`,
+    ],
+    scale: [1, 1.025, 1],
+  }
+  const idleTransition     = { duration: 4.5, repeat: Infinity, ease: 'easeInOut' }
+  const speakingTransition = { duration: 0.65, repeat: Infinity, ease: 'easeInOut' }
+
+  return (
+    <div style={{ position: 'relative', width: 88, height: 88, marginBottom: 24 }}>
+      <motion.div
+        animate={speaking ? speakingAnim : idleAnim}
+        transition={speaking ? speakingTransition : idleTransition}
+        style={{ width: 88, height: 88, borderRadius: '50%', overflow: 'hidden', position: 'relative' }}
+      >
+        {src ? (
+          <img src={src} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+        ) : (
+          <div style={{
+            width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(212,182,134,0.10)', color: GOLD,
+            fontFamily: '"Cormorant Garamond",serif', fontSize: 34,
+          }}>
+            {(name || '?').split(/\s+/).slice(0, 2).map(s => s[0]?.toUpperCase()).join('') || '?'}
+          </div>
+        )}
+        {/* Blink: dark overlay that flashes briefly. The avatar photo's
+            eye position varies, so this is a face-wide dim rather than
+            a targeted eyelid — reads as "alive" without trying to fake
+            anatomical lip-sync. */}
+        <motion.div
+          animate={{ opacity: blink ? 0.55 : 0 }}
+          transition={{ duration: 0.08 }}
+          style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            background: '#000', pointerEvents: 'none',
+          }}
+        />
+      </motion.div>
+      <span title={online ? 'Online now' : 'Offline'} style={{
+        position: 'absolute', right: 0, bottom: 4,
+        width: 14, height: 14, borderRadius: '50%',
+        background: online ? '#22C55E' : '#475569',
+        boxShadow: online ? '0 0 12px rgba(34,197,94,0.6)' : 'none',
+        border: `2px solid ${BG}`,
+      }}/>
+    </div>
+  )
+}
+
+function Bubble({ message, isOwn, otherName, seenByOther, otherProfileId, canPlayVoice, onSpeakingStart, onSpeakingEnd }) {
   const { content, timestamp, message_id } = message
   const timeStr = new Date(timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
@@ -23,28 +114,35 @@ function Bubble({ message, isOwn, otherName, seenByOther, otherProfileId, canPla
   const [playState, setPlayState] = useState('idle')   // idle | loading | playing | error
   const audioRef = useRef(null)
 
+  function _stop() {
+    setPlayState('idle')
+    onSpeakingEnd?.(message_id)
+  }
+
   async function togglePlay() {
     if (playState === 'loading') return
     if (audioRef.current && playState === 'playing') {
       audioRef.current.pause()
-      setPlayState('idle')
+      _stop()
       return
     }
     if (audioRef.current) {
       audioRef.current.currentTime = 0
       audioRef.current.play().catch(() => setPlayState('error'))
       setPlayState('playing')
+      onSpeakingStart?.(message_id)
       return
     }
     setPlayState('loading')
     try {
       const { audio_url } = await synthesizeVoice(otherProfileId, content)
       const a = new Audio(audio_url)
-      a.onended = () => setPlayState('idle')
-      a.onerror = () => setPlayState('error')
+      a.onended = _stop
+      a.onerror = () => { setPlayState('error'); onSpeakingEnd?.(message_id) }
       audioRef.current = a
       await a.play()
       setPlayState('playing')
+      onSpeakingStart?.(message_id)
     } catch {
       setPlayState('error')
     }
@@ -120,6 +218,11 @@ export default function ChatRoom({ sessionId, selfId }) {
   const [session, setSession] = useState(null)
   const [other,   setOther]   = useState(null)   // CoTravellerMatch
   const [input,   setInput]   = useState('')
+  // Tracks which bubble is currently playing voice. The sidebar avatar
+  // uses this to switch into a faster "speaking" animation while audio
+  // plays. Only one bubble can play at a time (clicking another stops
+  // the first), so a single ref is sufficient.
+  const [speakingMessageId, setSpeakingMessageId] = useState(null)
   const bottomRef = useRef(null)
 
   const {
@@ -235,32 +338,12 @@ export default function ChatRoom({ sessionId, selfId }) {
         <div style={{ borderRight: `1px solid ${HAIRLINE}`, padding: '52px 44px', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 320, background: `radial-gradient(ellipse 80% 60% at 30% 20%, ${ROSE}12 0%, transparent 65%)`, pointerEvents: 'none' }}/>
 
-          <div style={{ position: 'relative', width: 88, height: 88, marginBottom: 24 }}>
-            <motion.div
-              animate={{ boxShadow: [`0 0 0 2px ${ROSE}33, 0 0 28px ${ROSE}12`, `0 0 0 2px ${ROSE}66, 0 0 56px ${ROSE}28`, `0 0 0 2px ${ROSE}33, 0 0 28px ${ROSE}12`] }}
-              transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ width: 88, height: 88, borderRadius: '50%', overflow: 'hidden' }}
-            >
-              {otherAvatar ? (
-                <img src={otherAvatar} alt={otherName} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-              ) : (
-                <div style={{
-                  width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: 'rgba(212,182,134,0.10)', color: GOLD,
-                  fontFamily: '"Cormorant Garamond",serif', fontSize: 34,
-                }}>
-                  {(otherName || '?').split(/\s+/).slice(0, 2).map(s => s[0]?.toUpperCase()).join('') || '?'}
-                </div>
-              )}
-            </motion.div>
-            <span title={otherOnline ? 'Online now' : 'Offline'} style={{
-              position: 'absolute', right: 0, bottom: 4,
-              width: 14, height: 14, borderRadius: '50%',
-              background: otherOnline ? '#22C55E' : '#475569',
-              boxShadow: otherOnline ? '0 0 12px rgba(34,197,94,0.6)' : 'none',
-              border: `2px solid ${BG}`,
-            }}/>
-          </div>
+          <SpeakingAvatar
+            src={otherAvatar}
+            name={otherName}
+            speaking={!!speakingMessageId}
+            online={otherOnline}
+          />
 
           <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 34, color: BONE, lineHeight: 1, marginBottom: 8 }}>{otherName}</h2>
           {otherIsSeed && (
@@ -327,6 +410,8 @@ export default function ChatRoom({ sessionId, selfId }) {
                   seenByOther={seen}
                   otherProfileId={otherProfile?.profile_id}
                   canPlayVoice={!!otherProfile?.is_seed}
+                  onSpeakingStart={(id) => setSpeakingMessageId(id)}
+                  onSpeakingEnd={(id) => setSpeakingMessageId(prev => prev === id ? null : prev)}
                 />
               )
             })}
