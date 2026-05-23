@@ -83,8 +83,8 @@ You are given the user's answers and must return BOTH the inferred dimension lab
 
 DIMENSION VOCABULARY — use these keyword lists as the source of truth for what each dimension means. Pick the dimension whose keywords best match the user's actual answers and free text. Never invent a label that isn't in this list.
 
-PUSH dimensions are MOTIVATIONS — why someone travels. Pick exactly 2 for top_push.
-PULL dimensions are DESTINATION ATTRIBUTES — what they want at the place. Pick exactly 3 for top_interests.
+PUSH dimensions are MOTIVATIONS — why someone travels. Pick 1 to 6 for top_push — all the ones that genuinely apply to this user, no more, no fewer. Most users have 2-3 strong push motivations; pick more when their answers clearly span more, pick fewer when only one shows through. Do not pad to a fixed count.
+PULL dimensions are DESTINATION ATTRIBUTES — what they want at the place. Pick 1 to 6 for top_interests — same rule, all the ones that genuinely apply. Multiple pull interests are common.
 
 These two pools are STRICTLY SEPARATE. Never put a PULL id into top_push, never put a PUSH id into top_interests. If unsure, re-read which pool a label belongs to before placing it.
 
@@ -119,8 +119,8 @@ BANNED — if any of these appear, the output is wrong:
 - Exclamation marks. Em-dashes. Quotes around the user's selections in the paragraph (paraphrase, don't quote).
 
 Return ONLY a JSON object with these keys:
-- "top_push": list of 2 strings, each one of the allowed PUSH IDs above.
-- "top_interests": list of 3 strings, each one of the allowed PULL IDs above.
+- "top_push": list of 1-6 strings, each one of the allowed PUSH IDs above. Self-defined count — pick all that genuinely apply, don't pad.
+- "top_interests": list of 1-6 strings, each one of the allowed PULL IDs above. Self-defined count.
 - "descriptor": one short observational phrase, 4-9 words, no period.
 - "paragraph": 2-3 sentences. How this person travels. Concrete. No archetype labels.
 - "bullets": exactly 3 phrases (5-12 words each), no period, lowercase start. Each phrase paraphrases ONE of the user's actual answers AND must be a NOUN PHRASE that completes the sentence "You're drawn to ___" grammatically. Do not start a bullet with a verb. Bad: "vanishes into new places and returns with stories" (verb phrase). Good: "the kind of night that ends with a story you didn't plan" (noun phrase). Bad: "drawn to neon and music" (starts with past participle). Good: "rooms where the bass hits you in the ribs" (noun phrase).
@@ -195,8 +195,11 @@ def _redistribute_pools(obj: dict) -> dict:
     """
     Move misplaced PUSH/PULL ids between top_push and top_interests. If the LLM
     put a valid PULL id into top_push (or vice versa), shift it to the right
-    list rather than rejecting. Caps each list to the required size (2 push,
-    3 pull) and deduplicates while preserving order.
+    list rather than rejecting. Caps each list to 6 (the full vocabulary size)
+    and deduplicates while preserving order. Counts are self-defined per
+    persona — 1-6 each — so we no longer pad short lists; only the truly
+    empty-after-redistribute case gets a single fallback id (otherwise the
+    structural validator's min-1 rule would 502).
     """
     if not isinstance(obj, dict):
         return obj
@@ -214,24 +217,16 @@ def _redistribute_pools(obj: dict) -> dict:
             new_pull.append(item)
         # Items in neither pool are dropped (LLM hallucinated).
 
-    new_push = list(dict.fromkeys(new_push))[:2]
-    new_pull = list(dict.fromkeys(new_pull))[:3]
+    new_push = list(dict.fromkeys(new_push))[:6]
+    new_pull = list(dict.fromkeys(new_pull))[:6]
 
-    # Last-resort fallback: if valid items are still fewer than required after
-    # pool redistribution, fill remaining slots from the allowed lists so that
-    # structural validation can always pass (avoids a 502 on complete LLM hallucination).
-    if len(new_push) < 2:
-        for fallback in _ALLOWED_PUSH:
-            if fallback not in new_push:
-                new_push.append(fallback)
-            if len(new_push) == 2:
-                break
-    if len(new_pull) < 3:
-        for fallback in _ALLOWED_PULL:
-            if fallback not in new_pull:
-                new_pull.append(fallback)
-            if len(new_pull) == 3:
-                break
+    # Only fall back when the redistribute produced an entirely empty list —
+    # the validator requires at least 1 in each pool so something is
+    # populated for matching. Empty == complete LLM hallucination.
+    if not new_push and _ALLOWED_PUSH:
+        new_push = [_ALLOWED_PUSH[0]]
+    if not new_pull and _ALLOWED_PULL:
+        new_pull = [_ALLOWED_PULL[0]]
 
     obj["top_push"] = new_push
     obj["top_interests"] = new_pull
@@ -247,14 +242,14 @@ def _structural_validate(obj: dict) -> list[str]:
         return ["root is not an object"]
 
     tp = obj.get("top_push")
-    if not isinstance(tp, list) or len(tp) != 2:
-        issues.append("top_push must be a list of exactly 2 dimension IDs")
+    if not isinstance(tp, list) or not (1 <= len(tp) <= 6):
+        issues.append("top_push must be a list of 1 to 6 dimension IDs")
     elif any(p not in _ALLOWED_PUSH for p in tp):
         issues.append(f"top_push contains a dimension not in the allowed list: {tp}")
 
     ti = obj.get("top_interests")
-    if not isinstance(ti, list) or len(ti) != 3:
-        issues.append("top_interests must be a list of exactly 3 dimension IDs")
+    if not isinstance(ti, list) or not (1 <= len(ti) <= 6):
+        issues.append("top_interests must be a list of 1 to 6 dimension IDs")
     elif any(p not in _ALLOWED_PULL for p in ti):
         issues.append(f"top_interests contains a dimension not in the allowed list: {ti}")
 
