@@ -103,7 +103,10 @@ def capture(uid: str, event: str, properties: dict | None = None) -> None:
     if ph is None:
         return
     try:
-        ph.capture(uid or "anonymous", event, _clean_props(properties))
+        # PostHog SDK v6+ made distinct_id keyword-only and reordered so
+        # event is the only positional arg. Old `capture(uid, event, props)`
+        # raises "takes 2 positional but 4 were given" on the new SDK.
+        ph.capture(event, distinct_id=uid or "anonymous", properties=_clean_props(properties))
     except Exception:
         logger.warning("PostHog capture failed: %s", event)
 
