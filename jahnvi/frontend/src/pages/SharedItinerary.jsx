@@ -35,10 +35,40 @@ function timeAgo(iso) {
 
 function ActivityFeed({ log, selfId, otherName, otherEvaluating }) {
   // Show the last 12 entries, newest at top.
-  const entries = useMemo(
-    () => (log || []).slice(-12).reverse(),
-    [log],
-  )
+  // Two filters run on the raw log before we render the feed:
+  // 1. Strip "evaluating" entries that have a follow-up resolution from
+  //    the same actor (accepted / countered / proposed) — those
+  //    "is reviewing" rows are noise once the verdict has landed.
+  // 2. Also strip "evaluating" entries older than 60s with NO follow-up
+  //    — those are orphans from a failed LLM call (suggest_proposal
+  //    returning None, etc.). They'd otherwise loiter at the top of
+  //    the feed forever.
+  const entries = useMemo(() => {
+    const all = (log || [])
+    const RESOLUTIONS = new Set(['proposed', 'accepted', 'countered', 'withdrawn', 'finalized'])
+    const kept = []
+    for (let i = 0; i < all.length; i++) {
+      const e = all[i]
+      if (e.kind === 'evaluating') {
+        // Look ahead for a resolution by the same actor within 90s.
+        const myTs = new Date(e.created_at || 0).getTime()
+        let resolved = false
+        for (let j = i + 1; j < all.length; j++) {
+          const next = all[j]
+          if (next.actor_id === e.actor_id && RESOLUTIONS.has(next.kind)) {
+            const dt = new Date(next.created_at || 0).getTime() - myTs
+            if (dt >= 0 && dt < 90_000) { resolved = true; break }
+          }
+        }
+        if (resolved) continue
+        // Orphan check — older than 60s and no resolution means the
+        // LLM call failed. Drop it so the feed stays honest.
+        if (Date.now() - myTs > 60_000) continue
+      }
+      kept.push(e)
+    }
+    return kept.slice(-12).reverse()
+  }, [log])
   return (
     <div style={{
       padding: '20px 22px',
@@ -77,28 +107,39 @@ function ActivityFeed({ log, selfId, otherName, otherEvaluating }) {
         </p>
       )}
       {entries.map((e) => {
-        const actor =
-          e.actor_id === 'system' ? '—' :
-          e.actor_id === selfId   ? 'You' :
-                                    otherName
-        const verb =
+        const isSystem = e.actor_id === 'system'
+        const isMine   = e.actor_id === selfId
+        const actor    = isSystem ? '' : (isMine ? 'You' : otherName)
+        // System entries don't take a subject; we render the verb as a
+        // standalone sentence ("Shared itinerary opened").
+        const systemVerb =
+          e.kind === 'joined'     ? 'Shared itinerary opened' :
+          e.kind === 'finalized'  ? 'Itinerary locked in' :
+                                    e.kind
+        // User/persona verbs — past tense, agreeing with the actor row.
+        const subjectVerb =
           e.kind === 'proposed'   ? 'proposed' :
           e.kind === 'accepted'   ? 'agreed to' :
           e.kind === 'countered'  ? 'countered with' :
           e.kind === 'evaluating' ? 'is reviewing' :
+          e.kind === 'withdrawn'  ? (isMine ? 'withdrew' : 'withdrew their proposal of') :
+          e.kind === 'finalized'  ? 'locked in the trip' :
           e.kind === 'joined'     ? 'joined the trip' :
-          e.kind
+                                    e.kind
+        const verb = isSystem ? systemVerb : subjectVerb
         const color =
           e.kind === 'accepted'   ? GREEN :
           e.kind === 'countered'  ? ROSE :
           e.kind === 'evaluating' ? VIOLET :
+          e.kind === 'withdrawn'  ? DIM :
+          e.kind === 'finalized'  ? GREEN :
                                     MUTE
         return (
           <div key={e.entry_id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
             <span style={{ width: 5, height: 5, borderRadius: '50%', background: color, marginTop: 8, flexShrink: 0 }}/>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: BONE, margin: 0, lineHeight: 1.4 }}>
-                <span style={{ color: color, fontWeight: 500 }}>{actor}</span>{' '}
+                {actor && <span style={{ color: color, fontWeight: 500 }}>{actor}{' '}</span>}
                 {verb}
                 {e.title ? <span style={{ color: BONE, fontWeight: 400 }}>{' '}"{e.title}"</span> : null}
                 {typeof e.day_number === 'number' ? <span style={{ color: DIM }}>{' '}· day {e.day_number}</span> : null}
@@ -435,17 +476,20 @@ export default function SharedItinerary() {
   const [otherDisplayName, setOtherDisplayName] = useState('them')
 
   const pollRef = useRef(null)
+  const [pollErrorCount, setPollErrorCount] = useState(0)
   const refetch = useCallback(async () => {
     try {
       const next = await getSharedItinerary(id)
       setShared(next)
+      setPollErrorCount(0)   // any successful fetch clears the error banner
     } catch (e) {
+      setPollErrorCount(c => c + 1)
       setError(e?.message || 'Could not load itinerary')
     }
   }, [id])
 
-  // Hydrate + light polling so the user sees the persona's response
-  // even when WS isn't connected (e.g. on a fresh tab).
+  // Hydrate on mount; the adaptive-polling effect below handles the
+  // refresh cadence so this only runs once per id change.
   useEffect(() => {
     if (!id) return
     let cancelled = false
@@ -454,16 +498,28 @@ export default function SharedItinerary() {
         const data = await getSharedItinerary(id)
         if (cancelled) return
         setShared(data)
+        setPollErrorCount(0)
       } catch (e) {
         if (!cancelled) setError(e?.message || 'Could not load itinerary')
       }
     })()
-    pollRef.current = setInterval(() => {
-      if (cancelled) return
-      refetch()
-    }, 4000)
-    return () => { cancelled = true; clearInterval(pollRef.current) }
-  }, [id, refetch])
+    return () => { cancelled = true }
+  }, [id])
+
+  // Adaptive polling — fast (1.5s) while the persona is mid-evaluation
+  // so the resolution lands quickly in the UI, slow (4s) otherwise.
+  // Re-arms on every `otherEvaluating` flip so we don't oversample the
+  // backend when nothing's happening.
+  const otherEvaluatingDerived = !!shared && (shared.activity_log || []).some(e =>
+    e.kind === 'evaluating' && e.actor_id !== selfId &&
+    (Date.now() - new Date(e.created_at || 0).getTime()) < 12000,
+  )
+  useEffect(() => {
+    if (!id) return
+    const interval = otherEvaluatingDerived ? 1500 : 4000
+    pollRef.current = setInterval(() => { refetch() }, interval)
+    return () => clearInterval(pollRef.current)
+  }, [id, refetch, otherEvaluatingDerived])
 
   // Resolve the other party's display name. For synthetic personas we
   // hit getCotravellerProfile (Pinecone-backed); for real users we'd
@@ -648,9 +704,26 @@ export default function SharedItinerary() {
         {/* LEFT — days + pending proposals */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 36 }}>
           <div>
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
-              Shared itinerary · v{shared.version}{finalized ? ' · locked' : ''}
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+                Shared itinerary · v{shared.version}{finalized ? ' · locked' : ''}
+              </p>
+              {pollErrorCount >= 2 && (
+                <button
+                  onClick={refetch}
+                  style={{
+                    background: 'rgba(248,113,113,0.08)',
+                    border: '1px solid rgba(248,113,113,0.35)',
+                    borderRadius: 12, padding: '3px 10px',
+                    cursor: 'pointer', color: '#F87171',
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                    letterSpacing: '0.16em', textTransform: 'uppercase',
+                  }}
+                >
+                  Connection issue · tap to retry
+                </button>
+              )}
+            </div>
             <h1 style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 48, lineHeight: 1.1, color: BONE, margin: '8px 0 4px' }}>
               {itin?.destination?.city || 'Your trip'}
             </h1>

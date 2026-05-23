@@ -693,9 +693,12 @@ async def persona_suggest(itinerary_id: str, body: SuggestRequest, uid: str = De
         raise HTTPException(status_code=409, detail="no synthetic counterpart on this itinerary")
 
     # Push an "evaluating" entry first so the UI shows the persona working
-    # on it even while the LLM call is in flight.
+    # on it even while the LLM call is in flight. We track its id so the
+    # no-result paths below can DROP it instead of leaving an orphaned
+    # "is reviewing" row in the feed forever.
+    eval_entry_id = _new_id("act")
     shared.activity_log.append(ActivityLogEntry(
-        entry_id=_new_id("act"), actor_id=profile_id, kind="evaluating",
+        entry_id=eval_entry_id, actor_id=profile_id, kind="evaluating",
         title="", day_number=None, created_at=_now_iso(),
     ))
     shared.version += 1
@@ -703,6 +706,9 @@ async def persona_suggest(itinerary_id: str, body: SuggestRequest, uid: str = De
     _broadcast_async(session.session_id if session else None, {
         "type": "shared_suggesting", "version": shared.version, "actor_id": profile_id,
     })
+
+    def _drop_evaluating():
+        shared.activity_log[:] = [e for e in shared.activity_log if e.entry_id != eval_entry_id]
 
     try:
         from shreyas.retrieval.search import get_cotraveller_by_id
@@ -738,7 +744,12 @@ async def persona_suggest(itinerary_id: str, body: SuggestRequest, uid: str = De
             suggestion = None
 
     if suggestion is None or not suggestion.get("title"):
-        # No usable suggestion — return current state without adding noise.
+        # No usable suggestion — drop the evaluating entry so the feed
+        # doesn't show "is reviewing" forever, persist the cleanup, and
+        # return current state.
+        _drop_evaluating()
+        shared.version += 1
+        await write_shared_itinerary(shared)
         return {"shared": shared.model_dump(mode="json"), "suggested": None}
 
     title = suggestion["title"][:140]
@@ -747,6 +758,9 @@ async def persona_suggest(itinerary_id: str, body: SuggestRequest, uid: str = De
     if _is_duplicate(title, existing=existing_titles,
                      accepted=accepted_titles, rejected=rejected_titles):
         logger.info("persona_suggest: model returned duplicate '%s', dropping", title)
+        _drop_evaluating()
+        shared.version += 1
+        await write_shared_itinerary(shared)
         return {"shared": shared.model_dump(mode="json"), "suggested": None}
 
     day_number = max(1, min(int(suggestion.get("day_number") or 1), len(shared.itinerary.days or []) or 1))
