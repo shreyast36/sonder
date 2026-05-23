@@ -28,14 +28,17 @@ _MAX_WS_MSG_BYTES = 64 * 1024  # 64 KB per message
 # Frontend clears its typing indicator after 3.5s, so the keepalive task
 # re-emits typing every 2s while the LLM is thinking.
 #
-# Tuned down (was 0.6-1.4 / 0.6-1.2) because the SMALL-tier chat_reply
-# call already lands in ~1.5s — adding ~2s of cosmetic delay made the
-# whole turn read as 3-5s, which felt sluggish in user testing. The
-# new ranges still keep the "they paused before typing" feel without
-# stacking unnecessary latency.
-_REPLY_BEFORE_TYPING_S  = (0.25, 0.7)   # short pause before the indicator appears
-_REPLY_AFTER_REPLY_S    = (0.2,  0.45)  # small pause between LLM finish and broadcast
+# Tuned aggressively low: SMALL-tier chat_reply lands in ~1-2s, and the
+# I/O fetches in front of it now run in parallel — so the total turn is
+# already short enough that cosmetic delays would just feel like lag.
+# Keep a sliver so two messages in the same tick don't render as one.
+_REPLY_BEFORE_TYPING_S  = (0.1, 0.25)   # micro pause before the indicator appears
+_REPLY_AFTER_REPLY_S    = (0.05, 0.15)  # near-instant broadcast after LLM finishes
 _TYPING_KEEPALIVE_S     = 2.0
+# Maximum chat-history window the LLM sees. Was 40 turns implicitly;
+# half is enough for persona consistency on multi-turn chats and cuts
+# prompt tokens (which proportionally cuts LLM latency).
+_CHAT_HISTORY_TURN_CAP  = 20
 
 
 async def _receive_json_checked(websocket: WebSocket) -> dict:
@@ -596,56 +599,63 @@ async def _send_synthetic_reply(
     try:
         from shreyas.retrieval.search import get_cotraveller_by_id
         from ali.generation.topics import generate_chat_reply
+        from mushahid.realtime.firestore import get_itinerary
 
-        candidate = await get_cotraveller_by_id(profile_id)
-        if candidate is None:
+        # Run all three I/O fetches concurrently — they're independent
+        # (Pinecone candidate, Firestore itinerary, Firestore history)
+        # and the LLM call below depends on all three. Sequential awaits
+        # here used to cost ~0.6-1s of cumulative network round-trip;
+        # gather drops that to the slowest single call.
+        itinerary_id = session_meta.get("itinerary_id")
+        candidate, itin, history = await asyncio.gather(
+            get_cotraveller_by_id(profile_id),
+            get_itinerary(itinerary_id) if itinerary_id else asyncio.sleep(0, result=None),
+            list_chat_messages(session_id),
+            return_exceptions=True,
+        )
+        # Unwrap any gather exception → fall back to safe defaults rather
+        # than nuking the entire reply for one slow Firestore read.
+        if isinstance(candidate, Exception) or candidate is None:
+            if isinstance(candidate, Exception):
+                logger.warning("synthetic reply: candidate fetch failed: %s", candidate)
             logger.warning("synthetic reply: no profile in Pinecone for %s", profile_id)
             return
+        if isinstance(itin, Exception):
+            logger.warning("synthetic reply: itinerary fetch failed: %s", itin)
+            itin = None
+        if isinstance(history, Exception):
+            logger.warning("synthetic reply: history fetch failed: %s", history)
+            history = []
 
-        # Resolve trip destination + an itinerary digest so the persona's
-        # reply stays anchored to (a) where the user is actually going and
-        # (b) the specific activities planned. Without these the model
-        # defaults to the persona's own preferred_destination / volunteers
-        # their home city. The digest also gives the persona concrete
-        # things to ask about ("how are you feeling about the Tsukiji
-        # market stop?") instead of generic small talk.
+        # Resolve trip destination + an itinerary digest from the loaded
+        # itinerary so the persona's reply stays anchored to (a) where
+        # the user is actually going and (b) the specific activities
+        # planned. Without these the model drifts onto its own home city.
         trip_destination: str | None = None
         itinerary_digest: str | None = None
-        itinerary_id = session_meta.get("itinerary_id")
-        if itinerary_id:
-            try:
-                from mushahid.realtime.firestore import get_itinerary
-                itin = await get_itinerary(itinerary_id)
-                dest = getattr(itin, "destination", None) if itin else None
-                city    = (getattr(dest, "city", "") or "").strip()
-                country = (getattr(dest, "country", "") or "").strip()
-                if city and country:
-                    trip_destination = f"{city}, {country}"
-                elif city:
-                    trip_destination = city
-
-                # Build a compact day-by-day activity digest (one short line
-                # per activity, max ~3 activities per day, max 5 days) so the
-                # persona has concrete itinerary content to reference without
-                # blowing the prompt budget.
-                if itin and getattr(itin, "days", None):
-                    digest_lines: list[str] = []
-                    for day in itin.days[:5]:
-                        day_no = getattr(day, "day_number", None) or len(digest_lines) + 1
-                        activities = getattr(day, "activities", []) or []
-                        names: list[str] = []
-                        for act in activities[:3]:
-                            name = getattr(act, "name", None) or getattr(act, "activity_name", "") or ""
-                            name = (name or "").strip()
-                            if name:
-                                names.append(name)
-                        if names:
-                            digest_lines.append(f"Day {day_no}: {' / '.join(names)}")
-                    if digest_lines:
-                        itinerary_digest = "\n".join(digest_lines)
-            except Exception as e:
-                logger.warning("synthetic reply: failed to load itinerary %s for destination: %s",
-                               itinerary_id, e)
+        if itin is not None:
+            dest = getattr(itin, "destination", None)
+            city    = (getattr(dest, "city", "") or "").strip()
+            country = (getattr(dest, "country", "") or "").strip()
+            if city and country:
+                trip_destination = f"{city}, {country}"
+            elif city:
+                trip_destination = city
+            if getattr(itin, "days", None):
+                digest_lines: list[str] = []
+                for day in itin.days[:5]:
+                    day_no = getattr(day, "day_number", None) or len(digest_lines) + 1
+                    activities = getattr(day, "activities", []) or []
+                    names: list[str] = []
+                    for act in activities[:3]:
+                        name = getattr(act, "name", None) or getattr(act, "activity_name", "") or ""
+                        name = (name or "").strip()
+                        if name:
+                            names.append(name)
+                    if names:
+                        digest_lines.append(f"Day {day_no}: {' / '.join(names)}")
+                if digest_lines:
+                    itinerary_digest = "\n".join(digest_lines)
 
         # Tiny pause before the typing dots appear so it doesn't fire in the
         # same tick as the user's message — feels more natural.
@@ -662,9 +672,11 @@ async def _send_synthetic_reply(
 
         keepalive = asyncio.create_task(_typing_keepalive(session_id, profile_id))
 
-        history = await list_chat_messages(session_id)
+        # Cap history at the recent N turns — halves the prompt tokens
+        # the LLM has to chew through without losing persona consistency.
+        recent_history = (history or [])[-_CHAT_HISTORY_TURN_CAP:]
         reply_text = await generate_chat_reply(
-            candidate, last_message, history,
+            candidate, last_message, recent_history,
             trip_destination=trip_destination,
             itinerary_digest=itinerary_digest,
         )
@@ -677,8 +689,16 @@ async def _send_synthetic_reply(
         # when SMALL_VALIDATOR_PROVIDER isn't configured (preserves the
         # pre-validator behaviour for envs that haven't set it up yet).
         try:
+            # Gate the validator behind a dedicated flag: it adds 2-3s
+            # per chat turn (full LLM repair loop) which pushed total
+            # turn time over the 5s budget. Off by default; ops can
+            # opt back in by setting CHAT_VALIDATOR_ENABLED=true in
+            # addition to SMALL_VALIDATOR_PROVIDER once the latency
+            # budget can absorb it.
+            import os as _os
             from shared.config import SMALL_VALIDATOR_PROVIDER as _VALIDATOR_PROVIDER
-            if _VALIDATOR_PROVIDER:
+            _CHAT_VALIDATOR_ON = (_os.getenv("CHAT_VALIDATOR_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
+            if _VALIDATOR_PROVIDER and _CHAT_VALIDATOR_ON:
                 from mushahid.validation.critic import validate_and_repair_chat_reply_wired
                 profile_json = candidate.model_dump_json() if hasattr(candidate, "model_dump_json") else json.dumps({
                     "display_name": getattr(candidate, "display_name", ""),
