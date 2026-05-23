@@ -14,6 +14,15 @@ TASK_TIER_MAP: dict[str, ModelTier] = {
     "quick_edit":           ModelTier.small,
     "notification_message": ModelTier.small,
     "short_explanation":    ModelTier.small,
+    # Synthetic co-traveller's chat replies. 1-3 sentence text-message
+    # register doesn't need Sonnet/GPT-4o — Haiku/GPT-4o-mini gives the
+    # same persona voice ~3x faster, which the user actively feels in
+    # the UI (typing indicator visible the whole call).
+    "chat_reply":           ModelTier.small,
+    "chat_opener":          ModelTier.small,
+    # Persona evaluating a user's itinerary proposal (accept/counter).
+    # Same shape as chat_reply — short JSON, conversational message field.
+    "proposal_evaluation":  ModelTier.small,
     # rag_explanation produces one short sentence per activity — Haiku is plenty
     # and 4x faster than Sonnet. With 20+ concurrent per-activity calls in
     # explain_itinerary, the speedup compounds.

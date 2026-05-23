@@ -27,8 +27,14 @@ _MAX_WS_MSG_BYTES = 64 * 1024  # 64 KB per message
 # Synthetic-user reply pacing — feels human, doesn't melt the LLM bill.
 # Frontend clears its typing indicator after 3.5s, so the keepalive task
 # re-emits typing every 2s while the LLM is thinking.
-_REPLY_BEFORE_TYPING_S  = (0.6, 1.4)   # short pause before the indicator appears
-_REPLY_AFTER_REPLY_S    = (0.6, 1.2)   # small pause between LLM finish and broadcast
+#
+# Tuned down (was 0.6-1.4 / 0.6-1.2) because the SMALL-tier chat_reply
+# call already lands in ~1.5s — adding ~2s of cosmetic delay made the
+# whole turn read as 3-5s, which felt sluggish in user testing. The
+# new ranges still keep the "they paused before typing" feel without
+# stacking unnecessary latency.
+_REPLY_BEFORE_TYPING_S  = (0.25, 0.7)   # short pause before the indicator appears
+_REPLY_AFTER_REPLY_S    = (0.2,  0.45)  # small pause between LLM finish and broadcast
 _TYPING_KEEPALIVE_S     = 2.0
 
 

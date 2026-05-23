@@ -574,7 +574,8 @@ async def suggest_proposal(
         accepted_titles, rejected_titles,
     )
     try:
-        raw = await route_request("complex_refinement", prompt, _SUGGEST_SYSTEM_PROMPT)
+        # SMALL tier — short structured JSON output, no benefit from LARGE.
+        raw = await route_request("proposal_evaluation", prompt, _SUGGEST_SYSTEM_PROMPT)
         obj = _parse_json_object(raw)
     except Exception as e:
         logger.warning("suggest_proposal: parse failed: %s", e)
@@ -618,7 +619,10 @@ async def evaluate_proposal(
         accepted_titles, rejected_titles,
     )
 
-    raw = await route_request("complex_refinement", prompt, _SYSTEM_PROMPT)
+    # SMALL tier — accept/counter + 1-3 sentence message is the same
+    # response shape as a chat_reply. Keep latency snappy so the
+    # negotiation feels conversational.
+    raw = await route_request("proposal_evaluation", prompt, _SYSTEM_PROMPT)
     try:
         obj = _parse_json_object(raw)
     except Exception as e:

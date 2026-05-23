@@ -961,7 +961,9 @@ async def generate_chat_reply(
             "introduce yourself by city or background."
         )
 
-    raw = await route_request("complex_refinement", prompt, system)
+    # SMALL tier — these are 1-3 sentence text replies; LARGE adds latency
+    # without measurable persona-voice gains for this shape.
+    raw = await route_request("chat_reply", prompt, system)
     cleaned = _clean_message(raw, max_chars=800)
 
     # Guard against the model echoing its own name as a prefix.
@@ -1032,7 +1034,8 @@ async def generate_persona_opener(
         "Lowercase after the greeting is fine — matches the casual texting register."
     )
 
-    raw = await route_request("complex_refinement", rules, system)
+    # SMALL tier — the opener is even shorter than a normal reply.
+    raw = await route_request("chat_opener", rules, system)
     cleaned = _clean_message(raw, max_chars=400)
 
     # Guard against the model echoing the persona's own name.
