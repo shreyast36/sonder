@@ -105,6 +105,20 @@ async def _get_cotraveller_matches(user_profile: UserProfile):
 async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str]:
     step = "init"
     sentry_sdk.set_user({"id": user_profile.user_id})
+    # Top of the funnel — every trip generation attempt fires this, so
+    # trip_done / trip_done can be divided by it to get completion rate.
+    try:
+        from mushahid.monitoring import capture, EVENT_TRIP_PLAN_STARTED
+        c = user_profile.constraints
+        capture(user_profile.user_id, EVENT_TRIP_PLAN_STARTED, {
+            "destination":   (c.destination_query if c else "") or "",
+            "budget_usd":    (c.budget_usd if c else 0),
+            "duration_days": ((c.end_date - c.start_date).days + 1) if (c and c.start_date and c.end_date) else None,
+            "pace":          (c.pace.value if (c and c.pace) else None),
+            "group_size":    (c.group_size if c else None),
+        })
+    except Exception:
+        pass
     try:
         # Step 1 — Persona inference (Jahnvi's module — use profile as-is if not ready)
         step = "persona_inferring"
@@ -128,6 +142,19 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
             "destination_count": 1,
             "activity_count": len(activities),
         })
+        # Analytics — retrieval quality dashboards. activity_count == 0 means
+        # Pinecone returned nothing for the destination (or filters dropped
+        # everything) and the LLM had to invent venues. Track this so we can
+        # see how often we're flying blind.
+        try:
+            from mushahid.monitoring import capture, EVENT_RETRIEVAL_DONE
+            capture(user_profile.user_id, EVENT_RETRIEVAL_DONE, {
+                "destination":    f"{destination.city}, {destination.country}",
+                "activity_count": len(activities),
+                "used_corpus":    len(activities) > 0,
+            })
+        except Exception:
+            pass
 
         # Step 3 — Ranking (Shreyas — already done in retrieval; emit event)
         step = "ranking"
@@ -250,6 +277,16 @@ async def run_plan_trip_pipeline(user_profile: UserProfile) -> AsyncIterator[str
         sentry_sdk.capture_exception(e)
         logger.error("plan-trip pipeline failed at step=%s: %s", step, e, exc_info=True)
         await write_itinerary_status(user_profile.user_id, "error")
+        # Analytics — pipeline-failure rate, broken down by step. Lets us see
+        # which step fails most often (retrieval, generation, validation, …).
+        try:
+            from mushahid.monitoring import capture, EVENT_PIPELINE_ERROR
+            capture(user_profile.user_id, EVENT_PIPELINE_ERROR, {
+                "step":  step,
+                "error": type(e).__name__,
+            })
+        except Exception:
+            pass
         yield format_event("error", {
             "step": step,
             "message": f"{type(e).__name__} during {step}: {e}",

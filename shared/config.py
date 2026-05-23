@@ -127,3 +127,6 @@ UPDATE_TRIP_RATE_LIMIT = os.getenv("UPDATE_TRIP_RATE_LIMIT", "20/hour")
 # Monitoring
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 POSTHOG_API_KEY = os.getenv("POSTHOG_API_KEY")
+# US cloud is https://us.i.posthog.com (default), EU is https://eu.i.posthog.com.
+# Self-hosters set their own URL. Mismatched region = silent event drops.
+POSTHOG_HOST = os.getenv("POSTHOG_HOST", "https://us.i.posthog.com")

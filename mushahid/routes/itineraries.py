@@ -48,6 +48,19 @@ async def get_current_itinerary(uid: str = Depends(verify_token)):
         # Pointer is stale (itinerary was deleted). Treat as no current trip
         # rather than 500; the next save will overwrite the pointer.
         return {"itinerary": None}
+
+    # Analytics: dashboard hero render. Fires every load, so dedupe to
+    # unique-users-per-day in the dashboard side. Powers retention proxy
+    # (DAU on the dashboard with a real saved trip).
+    try:
+        from mushahid.monitoring import capture, EVENT_TRIP_VIEWED
+        capture(uid, EVENT_TRIP_VIEWED, {
+            "itinerary_id": itinerary.itinerary_id,
+            "destination":  f"{itinerary.destination.city}, {itinerary.destination.country}",
+        })
+    except Exception:
+        pass
+
     return {"itinerary": itinerary.model_dump(mode="json")}
 
 
@@ -70,7 +83,8 @@ async def save_itinerary_as_current(itinerary_id: str, uid: str = Depends(verify
     try:
         profile = await get_user_profile(uid) or {}
         saved_ids = list(profile.get("saved_itinerary_ids") or [])
-        if itinerary_id not in saved_ids:
+        first_save = itinerary_id not in saved_ids
+        if first_save:
             saved_ids.append(itinerary_id)
         await update_user_profile(uid, {
             "current_itinerary_id": itinerary_id,
@@ -81,6 +95,21 @@ async def save_itinerary_as_current(itinerary_id: str, uid: str = Depends(verify
         if LOCAL_MODE:
             raise HTTPException(status_code=503, detail=f"Profile update failed: {type(e).__name__}") from e
         raise HTTPException(status_code=503, detail=f"Firestore unavailable: {type(e).__name__}") from e
+
+    # Analytics: end of the itinerary funnel — save rate is the conversion
+    # metric the rest of the app's growth depends on. first_save flag lets
+    # us distinguish a brand-new trip from re-saving an existing one.
+    try:
+        from mushahid.monitoring import capture, EVENT_TRIP_SAVED
+        capture(uid, EVENT_TRIP_SAVED, {
+            "itinerary_id":     itinerary_id,
+            "first_save":       first_save,
+            "destination":      f"{itinerary.destination.city}, {itinerary.destination.country}",
+            "day_count":        len(itinerary.days or []),
+            "total_budget_usd": itinerary.total_budget_usd,
+        })
+    except Exception:
+        pass
 
     return {"saved": True, "itinerary_id": itinerary_id}
 
@@ -151,6 +180,15 @@ async def set_current_itinerary(body: SetCurrentBody, uid: str = Depends(verify_
     except Exception as e:
         logger.warning("set_current_itinerary failed: %s", e)
         raise HTTPException(status_code=503, detail=f"Firestore unavailable: {type(e).__name__}") from e
+
+    # Analytics: user switched between past saved trips — engagement signal,
+    # also tells us how often the past-trips carousel is actually used.
+    try:
+        from mushahid.monitoring import capture, EVENT_TRIP_SET_CURRENT
+        capture(uid, EVENT_TRIP_SET_CURRENT, {"itinerary_id": body.itinerary_id})
+    except Exception:
+        pass
+
     return {"current_itinerary_id": body.itinerary_id}
 
 

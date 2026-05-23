@@ -180,6 +180,8 @@ async def get_user_presence(session_id: str, user_id: str, uid: str = Depends(ve
 @router.post("/chat/approve")
 async def approve_match(session_id: str, _uid: str = Depends(verify_token)):
     await _assert_participant(session_id, _uid)
+    from mushahid.monitoring import capture, EVENT_MATCH_APPROVED
+    capture(_uid, EVENT_MATCH_APPROVED, {"session_id": session_id})
     try:
         from shreyas.cotraveller.approval import approve_match as _approve
         status = _approve(session_id, _uid)
@@ -195,6 +197,8 @@ async def approve_match(session_id: str, _uid: str = Depends(verify_token)):
 @router.post("/chat/deny")
 async def deny_match(session_id: str, _uid: str = Depends(verify_token)):
     await _assert_participant(session_id, _uid)
+    from mushahid.monitoring import capture, EVENT_MATCH_DENIED
+    capture(_uid, EVENT_MATCH_DENIED, {"session_id": session_id})
     try:
         from shreyas.cotraveller.approval import deny_match as _deny
         status = _deny(session_id, _uid)
@@ -360,8 +364,9 @@ async def _send_synthetic_reply(
                         session_id,
                     )
                 if telemetry:
-                    # Compact log line — full PostHog payload is in telemetry
-                    # if someone wires it to product analytics later.
+                    # Compact log line + PostHog event so we can compute
+                    # validator pass rate, repair rate, and anomaly histogram
+                    # across all chat sessions in dashboards.
                     props = telemetry.get("properties", {}) if isinstance(telemetry, dict) else {}
                     logger.info(
                         "chat_validator session=%s passed_first_try=%s repairs=%s anomalies=%s latency_ms=%s",
@@ -371,6 +376,12 @@ async def _send_synthetic_reply(
                         props.get("detected_anomalies"),
                         props.get("total_latency_ms"),
                     )
+                    from mushahid.monitoring import capture, EVENT_CHAT_VALIDATOR_EXECUTION
+                    capture(session_meta.get("user_id") or "", EVENT_CHAT_VALIDATOR_EXECUTION, {
+                        "session_id":        session_id,
+                        "profile_id":        profile_id,
+                        **props,
+                    })
                 reply_text = validated_reply or reply_text
         except Exception as e:
             # Validator is a quality gate, not a correctness gate — never
@@ -399,6 +410,19 @@ async def _send_synthetic_reply(
         await _push_chat_notification(
             session_meta.get("user_id") or "", session_id, profile_id, reply_text,
         )
+
+        # Analytics: synthetic reply landed. Counts toward response-quality
+        # funnel; pair with chat_message_sent to compute send→reply latency.
+        try:
+            from mushahid.monitoring import capture, EVENT_CHAT_REPLY_SENT
+            capture(session_meta.get("user_id") or "", EVENT_CHAT_REPLY_SENT, {
+                "session_id":     session_id,
+                "profile_id":     profile_id,
+                "reply_length":   len(reply_text or ""),
+                "history_length": len(history or []),
+            })
+        except Exception:
+            pass
     except Exception as e:
         logger.warning("synthetic reply failed for %s: %s", session_id, e)
     finally:
@@ -503,6 +527,19 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
                 }
                 await append_chat_message(session_id, outgoing)
                 await manager.broadcast_to_session(session_id, outgoing)
+
+                # Analytics: chat message sent by the real user. Powers
+                # send-rate, sessions-with-replies, and chat-active funnel.
+                if uid == session_meta["user_id"]:
+                    try:
+                        from mushahid.monitoring import capture, EVENT_CHAT_MESSAGE_SENT
+                        capture(uid, EVENT_CHAT_MESSAGE_SENT, {
+                            "session_id":     session_id,
+                            "profile_id":     session_meta["profile_id"],
+                            "message_length": len(content or ""),
+                        })
+                    except Exception:
+                        pass
 
                 # Notify the recipient via their global channel — they get a
                 # banner/OS push when they're not on this chat page. We send

@@ -282,7 +282,7 @@ def _structural_validate(obj: dict) -> list[str]:
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
-async def _bg_validate_persona(user_prompt: str, obj: dict) -> None:
+async def _bg_validate_persona(user_prompt: str, obj: dict, uid: str = "") -> None:
     """
     Run the small-LLM semantic validator (NIM Nemotron Nano) after the response
     has been sent. Logs tone/echo/scope issues for observability without
@@ -294,6 +294,15 @@ async def _bg_validate_persona(user_prompt: str, obj: dict) -> None:
             logger.warning("persona semantic validator flagged (non-blocking): %s", issues)
         else:
             logger.info("persona semantic validator passed")
+        try:
+            from mushahid.monitoring import capture, EVENT_PERSONA_VALIDATION
+            capture(uid or "anonymous", EVENT_PERSONA_VALIDATION, {
+                "valid":        valid,
+                "issue_count":  len(issues),
+                "issues":       issues[:5],  # sample only — UI dashboards don't need full list
+            })
+        except Exception:
+            pass
     except Exception as e:
         logger.warning("persona semantic validator background task error: %s", e)
 
@@ -424,7 +433,7 @@ async def persona_infer(
     # Fire-and-forget semantic validator. Runs the small-tier NIM critic after
     # FastAPI sends the response, so the user doesn't wait. Tone/echo issues
     # land in logs for observability; the user flow isn't gated on it.
-    background_tasks.add_task(_bg_validate_persona, user_prompt, obj)
+    background_tasks.add_task(_bg_validate_persona, user_prompt, obj, uid)
 
     # Persist the inferred persona + this trip's constraints back to the user
     # profile so downstream matching (/api/cotraveller) has real signals to
@@ -448,6 +457,27 @@ async def persona_infer(
         # salience_weighted_question_overlap feature at match time. Pure
         # function, no LLM call, no extra latency.
         compat_signals["answer_salience"] = compute_answer_salience(answers, constraints)
+
+        # Analytics: persona inference complete. Powers cohort analysis
+        # ("what % of users land as story_collector vs quiet_observer?") +
+        # salience entropy lets us spot users who left most answers blank.
+        try:
+            import math
+            from mushahid.monitoring import capture, EVENT_PERSONA_INFERRED
+            sal = compat_signals.get("answer_salience") or {}
+            entropy = -sum(p * math.log(p) for p in sal.values() if p > 0)
+            capture(uid, EVENT_PERSONA_INFERRED, {
+                "emotional_signature":            signature_result.emotional_signature,
+                "emotional_tone":                 signature_result.emotional_tone,
+                "emotional_signature_confidence": signature_result.confidence,
+                "top_push":                       obj["top_push"],
+                "top_interests":                  obj["top_interests"],
+                "salience_entropy":               round(entropy, 3),
+                "small_thing_length":             len((answers.small_thing or "").strip()),
+            })
+        except Exception:
+            pass
+
         await update_user_profile(uid, {
             "compatibility_signals": compat_signals,
             "travel_style_embedding": user_vector,

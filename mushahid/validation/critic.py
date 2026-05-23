@@ -188,6 +188,7 @@ def _itinerary_user_prompt(itinerary: Itinerary, user_profile: UserProfile) -> s
 async def _run_itinerary_validator(
     client, provider: str, model: str,
     itinerary: Itinerary, user_profile: UserProfile,
+    tier: str = "large",
 ) -> ValidationResult:
     try:
         raw = await _call_llm(
@@ -197,11 +198,39 @@ async def _run_itinerary_validator(
         )
         parsed = parse_json_object(raw)
         decision = enforce_itinerary_decision(parsed, ENGINE_CONFIG)
-        return _decision_to_validation_result(
+        result = _decision_to_validation_result(
             itinerary.itinerary_id, decision, summary=parsed.get("summary"),
         )
+        # Analytics — powers the hallucination rate + itinerary quality
+        # dashboards. Issue categories let us see WHAT the LLM is flagging
+        # (budget_fit / pacing_realism / activity_specificity etc).
+        try:
+            from mushahid.monitoring import capture, EVENT_TRIP_VALIDATION
+            issue_categories = [str(i.get("category") or "") for i in decision.issues]
+            capture(user_profile.user_id, EVENT_TRIP_VALIDATION, {
+                "itinerary_id":     itinerary.itinerary_id,
+                "tier":             tier,
+                "approved":         decision.approved,
+                "score":            decision.score,
+                "issue_count":      len(decision.issues),
+                "issue_categories": issue_categories,
+                "category_scores":  parsed.get("category_scores") or {},
+            })
+        except Exception:
+            pass
+        return result
     except Exception as e:
         logger.warning("itinerary validator failed (%s) — flagging for revision", e)
+        try:
+            from mushahid.monitoring import capture, EVENT_TRIP_VALIDATION
+            capture(user_profile.user_id, EVENT_TRIP_VALIDATION, {
+                "itinerary_id": itinerary.itinerary_id,
+                "tier":         tier,
+                "approved":     False,
+                "error":        type(e).__name__,
+            })
+        except Exception:
+            pass
         return ValidationResult(
             itinerary_id=itinerary.itinerary_id,
             status=ValidationStatus.revise,
@@ -218,7 +247,7 @@ async def validate_small_output(itinerary: Itinerary, user_profile: UserProfile)
         raise RuntimeError("SMALL_VALIDATOR_PROVIDER and SMALL_VALIDATOR_MODEL_NAME must be set")
     return await _run_itinerary_validator(
         _get_small_client(), SMALL_VALIDATOR_PROVIDER, SMALL_VALIDATOR_MODEL_NAME,
-        itinerary, user_profile,
+        itinerary, user_profile, tier="small",
     )
 
 
@@ -229,7 +258,7 @@ async def validate_large_output(itinerary: Itinerary, user_profile: UserProfile)
         raise RuntimeError("LARGE_VALIDATOR_PROVIDER and LARGE_VALIDATOR_MODEL_NAME must be set")
     return await _run_itinerary_validator(
         _get_large_client(), LARGE_VALIDATOR_PROVIDER, LARGE_VALIDATOR_MODEL_NAME,
-        itinerary, user_profile,
+        itinerary, user_profile, tier="large",
     )
 
 

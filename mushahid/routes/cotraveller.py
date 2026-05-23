@@ -165,7 +165,18 @@ async def get_cotraveller_profile(
             cs["top_push"] = top_push
         if cs != (profile.compatibility_signals or {}):
             profile = profile.model_copy(update={"compatibility_signals": cs})
-        return score_compatibility(profile, candidate)
+        match = score_compatibility(profile, candidate)
+        # Analytics: detail-page click-through. Combined with match_found
+        # (impressions) this gives match CTR.
+        try:
+            from mushahid.monitoring import capture, EVENT_MATCH_PROFILE_VIEWED
+            capture(uid, EVENT_MATCH_PROFILE_VIEWED, {
+                "profile_id":  profile_id,
+                "match_score": round(match.match_score, 3),
+            })
+        except Exception:
+            pass
+        return match
     except HTTPException:
         raise
     except Exception as e:
@@ -187,7 +198,20 @@ async def regenerate_cotraveller_matches(body: RegenerateMatchesRequest, uid: st
     try:
         profile = await _load_user_profile(uid)
         feedback = sanitize_user_input(body.feedback)
-        return await regenerate_matches(profile, body.excluded_profile_ids, feedback=feedback)
+        matches = await regenerate_matches(profile, body.excluded_profile_ids, feedback=feedback)
+        # Analytics: regenerate is the "show me different matches" signal —
+        # high rate means current matches aren't resonating. Excluded count
+        # tells us how deep the user has dug.
+        try:
+            from mushahid.monitoring import capture, EVENT_MATCH_REGENERATED
+            capture(uid, EVENT_MATCH_REGENERATED, {
+                "excluded_count": len(body.excluded_profile_ids or []),
+                "has_feedback":   bool(feedback),
+                "match_count":    len(matches),
+            })
+        except Exception:
+            pass
+        return matches
     except Exception as e:
         logger.error("cotraveller regenerate failed for %s: %s", uid, e, exc_info=True)
         raise HTTPException(status_code=502, detail=f"matching failed: {type(e).__name__}: {e}") from e
