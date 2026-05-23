@@ -1,13 +1,40 @@
+"""
+Validator orchestrators — wraps `mushahid.validation.validator_engine` so the
+existing route + orchestrator callers don't have to change.
+
+This module owns:
+  - The LLM client adapters (OpenAI / Anthropic / NVIDIA NIM)
+  - Function signatures the rest of the codebase already imports
+    (validate_small_output, validate_large_output, validate_persona)
+
+All prompt text, decision logic, severity taxonomy, and orchestration shape
+lives in `validator_engine.py`. This file just plumbs LLM calls through it.
+"""
+
+from __future__ import annotations
+
 import json
 import logging
+from typing import Any
+
 import openai
 import anthropic
-from ali.generation.output_parser import _strip_fences
+
 from shared.schemas import Itinerary, UserProfile, ValidationResult, ValidationStatus
 from shared.config import (
     SMALL_VALIDATOR_PROVIDER, SMALL_VALIDATOR_MODEL_NAME,
     LARGE_VALIDATOR_PROVIDER, LARGE_VALIDATOR_MODEL_NAME,
     OPENAI_API_KEY, ANTHROPIC_API_KEY, NVIDIA_API_KEY,
+)
+from mushahid.validation.validator_engine import (
+    ValidatorEngineConfig,
+    BackendValidationDecision,
+    CHAT_HARD_FAIL_CATEGORIES, CHAT_DENIED_CATEGORIES,
+    MATCH_HARD_FAIL_CATEGORIES, PERSONA_HARD_FAIL_CATEGORIES,
+    enforce_itinerary_decision,
+    enforce_boolean_validator_decision,
+    parse_json_object,
+    validate_and_repair_chat_reply,
 )
 
 logger = logging.getLogger(__name__)
@@ -16,6 +43,11 @@ _NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 _small_client = None
 _large_client = None
+
+# Single shared config — every validator call reads prompts + thresholds
+# from here. Replace at import time if you want to plug in a custom
+# semantic_slop_stems list or override the approval threshold.
+ENGINE_CONFIG = ValidatorEngineConfig()
 
 
 def _make_client(provider: str):
@@ -52,14 +84,14 @@ async def _call_llm(client, provider: str, model: str, prompt: str, system: str)
             model=model,
             system=system,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=512,
+            max_tokens=1024,
         )
         return response.content[0].text
 
     # NVIDIA NIM's OpenAI-compatible endpoint rejects max_completion_tokens
     # as an unknown field — it only accepts max_tokens. OpenAI proper
     # supports both, but max_completion_tokens is the post-o1 spelling.
-    token_kwargs = {"max_tokens": 512} if provider == "nvidia" else {"max_completion_tokens": 512}
+    token_kwargs = {"max_tokens": 1024} if provider == "nvidia" else {"max_completion_tokens": 1024}
     response = await client.chat.completions.create(
         model=model,
         messages=[
@@ -71,149 +103,274 @@ async def _call_llm(client, provider: str, model: str, prompt: str, system: str)
     return response.choices[0].message.content
 
 
-def _parse_validation_result(itinerary_id: str, raw: str) -> ValidationResult:
+# ── Summaries ──────────────────────────────────────────────────────────────
+
+
+def _itinerary_summary(itinerary: Itinerary) -> dict[str, Any]:
+    """Structured (not human-string) summary so the validator's JSON prompt
+    has unambiguous fields to inspect."""
+    return {
+        "destination": f"{itinerary.destination.city}, {itinerary.destination.country}",
+        "total_budget_usd": round(itinerary.total_budget_usd, 2),
+        "days": [
+            {
+                "day_number": day.day_number,
+                "theme": day.theme,
+                "daily_cost_usd": round(day.daily_cost_usd or 0.0, 2),
+                "activities": [
+                    {
+                        "name": ia.activity.name,
+                        "category": ia.activity.category,
+                        "cost_usd": ia.activity.cost_usd,
+                        "duration_hours": ia.activity.duration_hours,
+                        "tags": list(ia.activity.tags or []),
+                    }
+                    for ia in day.activities
+                ],
+            }
+            for day in itinerary.days
+        ],
+    }
+
+
+def _constraints_summary(user_profile: UserProfile) -> dict[str, Any]:
+    c = user_profile.constraints
+    if not c:
+        return {}
+    pace = c.pace.value if c.pace else None
+    duration = (c.end_date - c.start_date).days if (c.start_date and c.end_date) else None
+    return {
+        "budget_usd": c.budget_usd,
+        "duration_days": duration,
+        "pace": pace,
+        "must_haves": list(c.must_haves or []),
+        "avoid_list": list(c.avoid_list or []),
+        "who_travelling_with": getattr(c.who_travelling_with, "value", None),
+    }
+
+
+# ── Itinerary critic ──────────────────────────────────────────────────────
+
+
+def _decision_to_validation_result(
+    itinerary_id: str,
+    decision: BackendValidationDecision,
+    summary: str | None = None,
+) -> ValidationResult:
+    """Bridge the engine's BackendValidationDecision into the
+    ValidationResult shape downstream consumers (refinement loop,
+    orchestrator) already speak."""
+    status = ValidationStatus.approved if decision.approved else ValidationStatus.revise
+    feedback = summary or " | ".join(
+        f"{i.get('category')}: {i.get('evidence', '')}" for i in decision.issues[:3]
+    ) or "No issues."
+    improvement_suggestions = [
+        f"{i.get('category')}: {i.get('fix', '')}".strip()
+        for i in decision.issues
+        if i.get("fix")
+    ]
+    return ValidationResult(
+        itinerary_id=itinerary_id,
+        status=status,
+        score=float(decision.score if decision.score is not None else 0.0),
+        feedback=feedback,
+        improvement_suggestions=improvement_suggestions,
+    )
+
+
+def _itinerary_user_prompt(itinerary: Itinerary, user_profile: UserProfile) -> str:
+    return ENGINE_CONFIG.itinerary_critic_user_template.format(
+        constraints_json=json.dumps(_constraints_summary(user_profile), ensure_ascii=False),
+        itinerary_summary_json=json.dumps(_itinerary_summary(itinerary), ensure_ascii=False),
+    )
+
+
+async def _run_itinerary_validator(
+    client, provider: str, model: str,
+    itinerary: Itinerary, user_profile: UserProfile,
+) -> ValidationResult:
     try:
-        data = json.loads(_strip_fences(raw))
-        return ValidationResult(
-            itinerary_id=itinerary_id,
-            status=ValidationStatus(data["status"]),
-            score=float(data["score"]),
-            feedback=data.get("feedback", ""),
-            improvement_suggestions=data.get("improvement_suggestions", []),
+        raw = await _call_llm(
+            client, provider, model,
+            _itinerary_user_prompt(itinerary, user_profile),
+            ENGINE_CONFIG.itinerary_critic_system,
         )
-    except Exception:
+        parsed = parse_json_object(raw)
+        decision = enforce_itinerary_decision(parsed, ENGINE_CONFIG)
+        return _decision_to_validation_result(
+            itinerary.itinerary_id, decision, summary=parsed.get("summary"),
+        )
+    except Exception as e:
+        logger.warning("itinerary validator failed (%s) — flagging for revision", e)
         return ValidationResult(
-            itinerary_id=itinerary_id,
+            itinerary_id=itinerary.itinerary_id,
             status=ValidationStatus.revise,
             score=0.0,
-            feedback="Validation parse error — flagging for revision.",
+            feedback="Validation parse / call error — flagging for revision.",
             improvement_suggestions=[],
         )
 
 
-def _itinerary_summary(itinerary: Itinerary) -> str:
-    lines = [
-        f"Destination: {itinerary.destination.city}, {itinerary.destination.country}",
-        f"Total budget: ${itinerary.total_budget_usd:.0f}",
-        f"Days: {len(itinerary.days)}",
-    ]
-    for day in itinerary.days:
-        acts = ", ".join(ia.activity.name for ia in day.activities)
-        lines.append(f"  Day {day.day_number} ({day.theme or 'no theme'}, ${day.daily_cost_usd:.0f}): {acts}")
-    return "\n".join(lines)
-
-
-def _constraints_summary(user_profile: UserProfile) -> str:
-    c = user_profile.constraints
-    if not c:
-        return "No constraints provided."
-    pace = c.pace.value if c.pace else "moderate"
-    duration = (c.end_date - c.start_date).days if (c.start_date and c.end_date) else "?"
-    parts = [
-        f"Budget: ${c.budget_usd:.0f}",
-        f"Duration: {duration} days",
-        f"Pace: {pace}",
-    ]
-    if c.must_haves:
-        parts.append(f"Must-haves: {', '.join(c.must_haves)}")
-    if c.avoid_list:
-        parts.append(f"Avoid: {', '.join(c.avoid_list)}")
-    return " | ".join(parts)
-
-
-_CRITIC_SYSTEM = (
-    "You are a travel itinerary quality reviewer. "
-    "Evaluate the itinerary against the user's constraints and preferences. "
-    "Respond ONLY with valid JSON matching this schema exactly:\n"
-    '{"status": "approved" | "revise", "score": 0.0-1.0, '
-    '"feedback": "one sentence", "improvement_suggestions": ["..."]}'
-)
-
-
-def _critic_prompt(itinerary: Itinerary, user_profile: UserProfile) -> str:
-    return (
-        f"User constraints: {_constraints_summary(user_profile)}\n\n"
-        f"Itinerary:\n{_itinerary_summary(itinerary)}\n\n"
-        "Review for: realistic pacing, budget fit, must-haves included, avoid-list respected, "
-        "logical day sequencing. Score 0-1. If score >= 0.75 use status=approved, else revise."
-    )
-
-
 async def validate_small_output(itinerary: Itinerary, user_profile: UserProfile) -> ValidationResult:
-    """
-    Quick LLM sanity check using the small validator model.
-    Use for mid-refinement checks where speed matters more than depth.
-    """
+    """Quick LLM sanity check using the small validator model. Same prompt
+    + decision logic as the large path — the difference is just model tier."""
     if not SMALL_VALIDATOR_PROVIDER or not SMALL_VALIDATOR_MODEL_NAME:
         raise RuntimeError("SMALL_VALIDATOR_PROVIDER and SMALL_VALIDATOR_MODEL_NAME must be set")
-    raw = await _call_llm(
+    return await _run_itinerary_validator(
         _get_small_client(), SMALL_VALIDATOR_PROVIDER, SMALL_VALIDATOR_MODEL_NAME,
-        _critic_prompt(itinerary, user_profile), _CRITIC_SYSTEM,
+        itinerary, user_profile,
     )
-    return _parse_validation_result(itinerary.itinerary_id, raw)
 
 
 async def validate_large_output(itinerary: Itinerary, user_profile: UserProfile) -> ValidationResult:
-    """
-    Thorough LLM review using the large validator model.
-    Use for final approval before returning the itinerary to the user.
-    """
+    """Thorough LLM review using the large validator model. Use for final
+    approval before returning the itinerary to the user."""
     if not LARGE_VALIDATOR_PROVIDER or not LARGE_VALIDATOR_MODEL_NAME:
         raise RuntimeError("LARGE_VALIDATOR_PROVIDER and LARGE_VALIDATOR_MODEL_NAME must be set")
-    raw = await _call_llm(
+    return await _run_itinerary_validator(
         _get_large_client(), LARGE_VALIDATOR_PROVIDER, LARGE_VALIDATOR_MODEL_NAME,
-        _critic_prompt(itinerary, user_profile), _CRITIC_SYSTEM,
+        itinerary, user_profile,
     )
-    return _parse_validation_result(itinerary.itinerary_id, raw)
 
 
-# ── Persona reveal validator (small tier, cross-provider) ─────────────────────
-
-_PERSONA_VALIDATOR_SYSTEM = (
-    "You are a strict quality reviewer for an app's persona-reveal output. "
-    "You receive the original user signals and the LLM-generated persona reveal. "
-    "Your job is to check three things and ONLY these three things:\n"
-    "  1. Tone — the descriptor/paragraph/bullets must NOT sound like a horoscope, "
-    "MBTI label, or psychometric report. They must read as concrete observation.\n"
-    "  2. Echo — the bullets must paraphrase the user's actual selections, not "
-    "invent details the user never said.\n"
-    "  3. No itinerary — the output must contain zero trip/itinerary suggestions "
-    "(no destinations, days, activities, restaurants, hotels).\n\n"
-    "Respond with valid JSON ONLY:\n"
-    '{"valid": true | false, "issues": ["short reason", ...]}\n'
-    "issues is empty when valid is true. No preamble, no markdown."
-)
-
-
-def _persona_validator_prompt(user_signals: str, persona_output: dict) -> str:
-    return (
-        f"USER SIGNALS:\n{user_signals}\n\n"
-        f"PERSONA OUTPUT:\n{json.dumps(persona_output, ensure_ascii=False)}\n\n"
-        "Apply the three checks. Return JSON."
-    )
+# ── Persona reveal validator ──────────────────────────────────────────────
 
 
 async def validate_persona(user_signals: str, persona_output: dict) -> tuple[bool, list[str]]:
     """
-    Cross-provider semantic check on the persona reveal output.
-    Runs the small validator (NVIDIA Nemotron Nano by default). Returns
-    (valid, issues). Structural checks (dim IDs, counts) live in
-    mushahid/routes/persona.py — this only catches tone + echo + scope drift.
+    Cross-provider semantic check on the persona reveal output. Now uses the
+    structured concrete_observation / evidence_fidelity / no_itinerary_content
+    / specificity / internal_label_leakage rubric from validator_engine.
 
-    Fails OPEN: on any validator error, returns (True, []) — the validator
-    is a quality gate, not a correctness gate, so we don't want to break the
-    user flow if it's unavailable.
+    Fails OPEN on any error — the validator is a quality gate, not a
+    correctness gate, so a downed validator never breaks the user flow.
+    Returns (valid, issues_as_strings) so existing callers stay drop-in.
     """
     try:
         if not SMALL_VALIDATOR_PROVIDER or not SMALL_VALIDATOR_MODEL_NAME:
             raise RuntimeError("SMALL_VALIDATOR_PROVIDER / SMALL_VALIDATOR_MODEL_NAME not configured")
+        prompt = ENGINE_CONFIG.persona_reveal_validator_user_template.format(
+            user_signals=user_signals,
+            persona_json=json.dumps(persona_output, ensure_ascii=False),
+        )
         raw = await _call_llm(
             _get_small_client(), SMALL_VALIDATOR_PROVIDER, SMALL_VALIDATOR_MODEL_NAME,
-            _persona_validator_prompt(user_signals, persona_output),
-            _PERSONA_VALIDATOR_SYSTEM,
+            prompt, ENGINE_CONFIG.persona_reveal_validator_system,
         )
-        data = json.loads(_strip_fences(raw))
-        return bool(data.get("valid", True)), [str(x) for x in data.get("issues", [])]
+        parsed = parse_json_object(raw)
+        decision = enforce_boolean_validator_decision(
+            parsed,
+            hard_fail_categories=PERSONA_HARD_FAIL_CATEGORIES,
+            critical_denied_set=PERSONA_HARD_FAIL_CATEGORIES,
+        )
+        issues = [
+            f"{i.get('category')}: {i.get('evidence', '')}".strip(": ")
+            for i in decision.issues
+        ]
+        return decision.approved, issues
     except Exception as e:
         logger.warning("persona validator failed open: %s", e)
         return True, []
+
+
+# ── Cotraveller match validator ───────────────────────────────────────────
+
+
+async def validate_match(
+    viewer_signals: dict,
+    candidate_signals: dict,
+    feature_breakdown: dict,
+    match_reasons: list[str],
+) -> tuple[bool, list[str]]:
+    """Quality check on a generated match (reasons + grounding). Available
+    for the cotraveller route to call before returning matches to the user;
+    not yet wired into the default code path."""
+    try:
+        if not SMALL_VALIDATOR_PROVIDER or not SMALL_VALIDATOR_MODEL_NAME:
+            raise RuntimeError("SMALL_VALIDATOR_PROVIDER / SMALL_VALIDATOR_MODEL_NAME not configured")
+        prompt = ENGINE_CONFIG.cotraveller_match_validator_user_template.format(
+            viewer_signals_json=json.dumps(viewer_signals, ensure_ascii=False),
+            candidate_signals_json=json.dumps(candidate_signals, ensure_ascii=False),
+            feature_breakdown_json=json.dumps(feature_breakdown, ensure_ascii=False),
+            match_reasons_json=json.dumps(match_reasons, ensure_ascii=False),
+        )
+        raw = await _call_llm(
+            _get_small_client(), SMALL_VALIDATOR_PROVIDER, SMALL_VALIDATOR_MODEL_NAME,
+            prompt, ENGINE_CONFIG.cotraveller_match_validator_system,
+        )
+        parsed = parse_json_object(raw)
+        decision = enforce_boolean_validator_decision(
+            parsed,
+            hard_fail_categories=MATCH_HARD_FAIL_CATEGORIES,
+            critical_denied_set=MATCH_HARD_FAIL_CATEGORIES,
+        )
+        issues = [
+            f"{i.get('category')}: {i.get('evidence', '')}".strip(": ")
+            for i in decision.issues
+        ]
+        return decision.approved, issues
+    except Exception as e:
+        logger.warning("match validator failed open: %s", e)
+        return True, []
+
+
+# ── Chat reply validator + repair (available; wire when ready) ────────────
+
+
+async def _call_validator_adapter(system: str, user: str) -> dict:
+    """Adapter the chat-reply orchestrator can use to issue validator LLM
+    calls through the configured small-validator provider."""
+    if not SMALL_VALIDATOR_PROVIDER or not SMALL_VALIDATOR_MODEL_NAME:
+        raise RuntimeError("SMALL_VALIDATOR_PROVIDER / SMALL_VALIDATOR_MODEL_NAME not configured")
+    raw = await _call_llm(
+        _get_small_client(), SMALL_VALIDATOR_PROVIDER, SMALL_VALIDATOR_MODEL_NAME,
+        user, system,
+    )
+    return parse_json_object(raw)
+
+
+async def _call_repair_adapter(system: str, user: str) -> str:
+    """Adapter for the chat-reply repair LLM. Uses the LARGE tier via
+    ali/routing/engine.route_request since the repair task wants the same
+    fidelity the original reply generator had."""
+    from ali.routing.engine import route_request
+    return await route_request("complex_refinement", user, system)
+
+
+async def validate_and_repair_chat_reply_wired(
+    *,
+    profile_json: str,
+    history: str,
+    last_message: str,
+    reply: str,
+    city: str | None = None,
+) -> tuple[str, dict]:
+    """Production-ready entry point — wires the engine's orchestrator to
+    the small validator for validation and the large LLM for repair.
+    Returns (final_reply, telemetry_event_payload)."""
+    return await validate_and_repair_chat_reply(
+        profile_json=profile_json,
+        history=history,
+        last_message=last_message,
+        reply=reply,
+        call_validator=_call_validator_adapter,
+        call_repair=_call_repair_adapter,
+        city=city,
+        config=ENGINE_CONFIG,
+    )
+
+
+# Re-export the engine's category sets so any future caller can import
+# from this module without reaching into validator_engine directly.
+__all__ = [
+    "ENGINE_CONFIG",
+    "validate_small_output",
+    "validate_large_output",
+    "validate_persona",
+    "validate_match",
+    "validate_and_repair_chat_reply_wired",
+    "CHAT_HARD_FAIL_CATEGORIES",
+    "CHAT_DENIED_CATEGORIES",
+    "MATCH_HARD_FAIL_CATEGORIES",
+    "PERSONA_HARD_FAIL_CATEGORIES",
+]
