@@ -7,7 +7,7 @@ import MatchCard from '../components/MatchCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
-import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, openMyTrip, closeMyTrip } from '../lib/api'
+import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
 import { storage } from '../lib/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -342,6 +342,11 @@ export default function Dashboard() {
   // Open-to-companions toggle state for the current trip. Synced from
   // storedItinerary.is_open_to_join when the itinerary loads.
   const [openToggleBusy, setOpenToggleBusy] = useState(false)
+  // Incoming join requests on this user's open trips. Pulls
+  // ?as=owner once per session; optimistically prunes a request on
+  // approve/deny so the panel stays in sync without a re-fetch.
+  const [incoming, setIncoming] = useState([])
+  const [incomingBusy, setIncomingBusy] = useState({})   // request_id → bool
   const [pastTrips, setPastTrips] = useState([])
   const [switchingTrip, setSwitchingTrip] = useState(false)
 
@@ -414,6 +419,40 @@ export default function Dashboard() {
     // Re-fetch when the saved itinerary id changes (different trip → different matches).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid, storedItinerary?.itinerary_id])
+
+  // Pull incoming join-requests on this user's open trips. One fetch
+  // per session — the panel updates locally on approve/deny.
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await listMyJoinRequests({ asOwner: true })
+        if (cancelled) return
+        const pending = (res?.requests || []).filter(r => r.status === 'proposed')
+        setIncoming(pending)
+      } catch (err) {
+        console.warn('listMyJoinRequests failed:', err?.message || err)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [user?.uid])
+
+  async function decideIncoming(requestId, decision) {
+    setIncomingBusy(prev => ({ ...prev, [requestId]: true }))
+    try {
+      await respondJoinRequest(requestId, decision)
+      setIncoming(prev => prev.filter(r => r.request_id !== requestId))
+    } catch (err) {
+      console.warn('respondJoinRequest failed:', err?.message || err)
+    } finally {
+      setIncomingBusy(prev => {
+        const next = { ...prev }
+        delete next[requestId]
+        return next
+      })
+    }
+  }
 
   useEffect(() => {
     if (!user) return
@@ -837,6 +876,93 @@ export default function Dashboard() {
                 {storedItinerary?.is_open_to_join ? '✓ Open to companions' : 'Open to companions'}
               </motion.button>
             </div>
+          )}
+
+          {/* Incoming join-requests panel — only renders when the user
+              has open requests waiting on their decision. Sits between
+              the trip-actions row and past trips so it's visible
+              without dominating the column when empty. */}
+          {incoming.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease }}
+              style={{ marginTop: 28, display: 'flex', flexDirection: 'column', gap: 12 }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: '#8B5CF6', margin: 0 }}>
+                  Join requests
+                </p>
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: DIM, margin: 0 }}>
+                  {incoming.length} pending
+                </p>
+              </div>
+              {incoming.map(req => {
+                const busy = !!incomingBusy[req.request_id]
+                return (
+                  <div key={req.request_id} style={{
+                    padding: '16px 18px', borderRadius: 12,
+                    background: 'rgba(139,92,246,0.06)',
+                    border: '1px solid rgba(139,92,246,0.30)',
+                    display: 'flex', alignItems: 'flex-start', gap: 14,
+                  }}>
+                    <div style={{
+                      width: 40, height: 40, borderRadius: '50%', overflow: 'hidden',
+                      background: 'rgba(212,182,134,0.06)', flexShrink: 0,
+                      border: '1px solid rgba(139,92,246,0.30)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {req.requester_avatar
+                        ? <img src={req.requester_avatar} alt={req.requester_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                        : <span style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 16, color: GOLD }}>
+                            {(req.requester_name || '?').split(/\s+/).slice(0, 2).map(s => s[0]?.toUpperCase()).join('')}
+                          </span>}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 500, color: BONE, margin: 0 }}>
+                        {req.requester_name || 'Traveller'}
+                      </p>
+                      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE, margin: '3px 0 0', letterSpacing: '0.04em' }}>
+                        wants to join your trip
+                      </p>
+                      {req.message && (
+                        <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 13, color: BONE, margin: '10px 0 0', lineHeight: 1.55 }}>
+                          "{req.message}"
+                        </p>
+                      )}
+                      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                        <button
+                          disabled={busy}
+                          onClick={() => decideIncoming(req.request_id, 'approve')}
+                          style={{
+                            padding: '7px 14px', borderRadius: 16,
+                            background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                            border: 'none', cursor: busy ? 'wait' : 'pointer',
+                            color: '#fff', fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 500,
+                            letterSpacing: '0.20em', textTransform: 'uppercase',
+                            opacity: busy ? 0.7 : 1,
+                          }}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={() => decideIncoming(req.request_id, 'deny')}
+                          style={{
+                            padding: '7px 14px', borderRadius: 16,
+                            background: 'rgba(212,182,134,0.03)',
+                            border: `1px solid ${HAIRLINE}`,
+                            cursor: busy ? 'wait' : 'pointer', color: MUTE,
+                            fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 500,
+                            letterSpacing: '0.20em', textTransform: 'uppercase',
+                          }}
+                        >
+                          Pass
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </motion.div>
           )}
 
           {/* Past trips carousel — shown when the user has more than one saved trip */}
