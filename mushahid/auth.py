@@ -13,6 +13,9 @@ def _get_firebase_app():
     global _app
     if _app is not None:
         return _app
+    if firebase_admin._apps:
+        _app = firebase_admin.get_app()
+        return _app
     cred = credentials.Certificate({
         "type": "service_account",
         "project_id": FIREBASE_PROJECT_ID,
