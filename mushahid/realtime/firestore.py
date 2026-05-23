@@ -368,6 +368,46 @@ async def get_chat_session(session_id: str) -> dict | None:
     return doc.to_dict() if doc.exists else None
 
 
+async def list_chat_sessions_for_user(user_id: str) -> list[dict]:
+    """Return every chat session this user is a participant in (either
+    side). Used by the matching route to filter out previously-denied
+    profiles and detect active approved pairings.
+    Falls back to an empty list when Firestore is unreachable."""
+    if LOCAL_MODE:
+        out: list[dict] = []
+        for key, val in _store.items():
+            if not key.startswith("chat:"):
+                continue
+            s = val.get("session") if isinstance(val, dict) else None
+            if s and (s.get("user_id") == user_id or s.get("profile_id") == user_id):
+                out.append(s)
+        return out
+    try:
+        # Two queries because Firestore doesn't OR-where naturally.
+        # Most users have a small handful of sessions, so this is cheap.
+        as_user = await asyncio.to_thread(
+            lambda: list(get_db().collection("chat_sessions")
+                         .where("user_id", "==", user_id).limit(200).stream())
+        )
+        as_profile = await asyncio.to_thread(
+            lambda: list(get_db().collection("chat_sessions")
+                         .where("profile_id", "==", user_id).limit(200).stream())
+        )
+        seen: set[str] = set()
+        out: list[dict] = []
+        for d in (*as_user, *as_profile):
+            data = d.to_dict() or {}
+            sid = data.get("session_id") or d.id
+            if sid in seen:
+                continue
+            seen.add(sid)
+            out.append(data)
+        return out
+    except Exception as e:
+        logger.warning("list_chat_sessions_for_user failed for %s: %s", user_id, e)
+        return []
+
+
 async def list_chat_messages(session_id: str) -> list[dict]:
     """Return all messages for a session in time order. Falls back to an
     empty list when the session has no messages yet."""

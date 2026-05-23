@@ -122,6 +122,14 @@ export default function Companions() {
     setMl(true)
     try {
       const res = await getCotravellers(itineraryId)
+      // Already paired for this trip → backend returns active_pair and an
+      // empty matches list. Skip the matching surface entirely and send
+      // the user to the shared itinerary.
+      const activePair = !Array.isArray(res) ? res?.active_pair : null
+      if (activePair?.itinerary_id) {
+        navigate(`/shared/${encodeURIComponent(activePair.itinerary_id)}`, { replace: true })
+        return
+      }
       const arr = Array.isArray(res) ? res : (res?.matches || [])
       setMatches(arr.map(matchToCard))
     } catch (err) {

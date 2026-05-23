@@ -98,19 +98,70 @@ class MatchesRequest(BaseModel):
     top_interests: list[str] | None = None
 
 
-@router.post("/cotraveller", response_model=list[CoTravellerMatch])
+async def _session_filters(uid: str, itinerary_id: str | None) -> tuple[set[str], dict | None]:
+    """Walk this user's chat sessions and derive two filters used by the
+    matches endpoint:
+
+    - denied_profile_ids: every persona where EITHER side denied. Once
+      either side passes, the match is dead — don't keep surfacing them
+      on future searches, even across other trips.
+    - active_pair: if this user already has a fully-approved match for
+      the current itinerary, return its summary so the frontend can
+      redirect to /shared/{itinerary_id} instead of paging through new
+      matches the user can't act on anyway.
+    """
+    from mushahid.realtime.firestore import list_chat_sessions_for_user
+    sessions = await list_chat_sessions_for_user(uid)
+    denied: set[str] = set()
+    active_pair: dict | None = None
+    for s in sessions:
+        profile_id = s.get("profile_id")
+        if not profile_id:
+            continue
+        approval   = s.get("approval_status")
+        user_dec   = s.get("user_decision")    or "pending"
+        prof_dec   = s.get("profile_decision") or "pending"
+        # Either side denying drops the persona for good.
+        if approval == "denied" or user_dec == "denied" or prof_dec == "denied":
+            denied.add(profile_id)
+            continue
+        if (
+            approval == "approved"
+            and itinerary_id
+            and s.get("itinerary_id") == itinerary_id
+            and active_pair is None
+        ):
+            active_pair = {
+                "profile_id":   profile_id,
+                "session_id":   s.get("session_id"),
+                "itinerary_id": s.get("itinerary_id"),
+            }
+    return denied, active_pair
+
+
+@router.post("/cotraveller")
 async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verify_token)):
     """Top matches for the signed-in user. When itinerary_id is set, load
     any companion preferences saved for that trip and fold them into the
     retrieval vector so the candidate pool reflects what the user actually
-    wants in a companion for *this* trip."""
+    wants in a companion for *this* trip.
+
+    Two suppression layers run before scoring:
+      1. Personas that the user OR persona side previously denied are
+         removed entirely (across all trips — a denial is final).
+      2. If the user already has an approved pair for this itinerary,
+         skip retrieval altogether and return active_pair instead so
+         the frontend can redirect to the shared-itinerary surface.
+    """
     from shreyas.retrieval.search import search_cotravellers
     from shreyas.cotraveller.matching import get_top_matches
     from mushahid.monitoring import capture
     try:
+        denied_ids, active_pair = await _session_filters(uid, body.itinerary_id)
+        if active_pair is not None:
+            return {"matches": [], "active_pair": active_pair, "denied_count": len(denied_ids)}
+
         profile = await _load_user_profile(uid, body.itinerary_id)
-        # Backfill missing signals from the request if Firestore didn't have
-        # them (older persona inferences predate server-side persistence).
         cs = dict(profile.compatibility_signals or {})
         if not cs.get("top_interests") and body.top_interests:
             cs["top_interests"] = body.top_interests
@@ -126,13 +177,20 @@ async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verif
                 logger.warning("companion_prefs load failed for %s: %s", body.itinerary_id, e)
         extra = _extra_text_from_prefs(prefs)
         candidates = await search_cotravellers(profile, extra_text=extra)
+        if denied_ids:
+            candidates = [c for c in candidates if getattr(c, "profile_id", None) not in denied_ids]
         matches = get_top_matches(profile, candidates)
         capture(uid, "match_found", {
-            "match_count": len(matches),
+            "match_count":  len(matches),
             "itinerary_id": body.itinerary_id,
-            "had_prefs": bool(prefs),
+            "had_prefs":    bool(prefs),
+            "denied_count": len(denied_ids),
         })
-        return matches
+        return {
+            "matches":      [m.model_dump(mode="json") for m in matches],
+            "active_pair":  None,
+            "denied_count": len(denied_ids),
+        }
     except Exception as e:
         logger.error("cotraveller match failed for %s: %s", uid, e, exc_info=True)
         raise HTTPException(status_code=502, detail=f"matching failed: {type(e).__name__}: {e}") from e
@@ -198,7 +256,12 @@ async def regenerate_cotraveller_matches(body: RegenerateMatchesRequest, uid: st
     try:
         profile = await _load_user_profile(uid)
         feedback = sanitize_user_input(body.feedback)
-        matches = await regenerate_matches(profile, body.excluded_profile_ids, feedback=feedback)
+        # Apply the same denial filter as the main matches endpoint — any
+        # persona either side previously denied is dead, regenerate
+        # shouldn't resurrect them.
+        denied_ids, _active = await _session_filters(uid, None)
+        excluded = list({*(body.excluded_profile_ids or []), *denied_ids})
+        matches = await regenerate_matches(profile, excluded, feedback=feedback)
         # Analytics: regenerate is the "show me different matches" signal —
         # high rate means current matches aren't resonating. Excluded count
         # tells us how deep the user has dug.

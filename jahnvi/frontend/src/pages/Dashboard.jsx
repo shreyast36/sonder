@@ -337,6 +337,7 @@ export default function Dashboard() {
   // while the network round-trip catches up.
   const [storedItinerary, setStoredItinerary] = useState(() => loadStoredItinerary())
   const [matches, setMatches] = useState([])
+  const [activePair, setActivePair] = useState(null)
   const [matchesLoading, setMatchesLoading] = useState(false)
   const [pastTrips, setPastTrips] = useState([])
   const [switchingTrip, setSwitchingTrip] = useState(false)
@@ -387,6 +388,16 @@ export default function Dashboard() {
     getCotravellers(itineraryId)
       .then(res => {
         if (cancelled) return
+        // If the user already has an approved pair for this trip, suppress
+        // the new-matches strip entirely — they don't have a slot to fill,
+        // they have a co-traveller already.
+        const activePair = !Array.isArray(res) ? res?.active_pair : null
+        if (activePair) {
+          setActivePair(activePair)
+          setMatches([])
+          return
+        }
+        setActivePair(null)
         const arr = Array.isArray(res) ? res : (res?.matches || [])
         setMatches(arr.map(matchToCard))
       })
@@ -813,7 +824,28 @@ export default function Dashboard() {
               </motion.button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {matches.slice(0, 4).map((m, i) => (
+              {activePair && (
+                <motion.button
+                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease }}
+                  onClick={() => navigate(`/shared/${encodeURIComponent(activePair.itinerary_id)}`)}
+                  style={{
+                    textAlign: 'left', padding: '18px 20px', borderRadius: 14,
+                    background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.30)',
+                    cursor: 'pointer', color: BONE, display: 'flex', flexDirection: 'column', gap: 4,
+                  }}
+                >
+                  <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#10B981', fontWeight: 500 }}>
+                    You're matched · this trip
+                  </span>
+                  <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 18, color: BONE }}>
+                    Open your shared itinerary →
+                  </span>
+                  <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: MUTE }}>
+                    Pick up planning together where you left off.
+                  </span>
+                </motion.button>
+              )}
+              {!activePair && matches.slice(0, 4).map((m, i) => (
                 <motion.div
                   key={m.id}
                   initial={{ opacity: 0, x: 24 }}
@@ -823,7 +855,7 @@ export default function Dashboard() {
                   <MatchCard match={m} onClick={() => navigate(`/match/${m.id}`)}/>
                 </motion.div>
               ))}
-              {!matchesLoading && matches.length === 0 && (
+              {!matchesLoading && !activePair && matches.length === 0 && (
                 <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 14, color: MUTE, padding: '20px 4px', margin: 0 }}>
                   No matches yet — plan a trip and we'll line up companions whose rhythm fits yours.
                 </p>
