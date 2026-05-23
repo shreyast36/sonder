@@ -87,6 +87,13 @@ REDIS_URL = os.getenv("REDIS_URL")
 # Presence TTL — users are considered offline if no heartbeat within this window
 PRESENCE_TTL_SECONDS = int(os.getenv("PRESENCE_TTL_SECONDS", "90"))
 
+# Ranking policy version — picks which set of policy modules under
+# shreyas/ranking/policies/ the engine loads. V1 ships uniform-weight
+# priors; future versions can co-exist (e.g. cotraveller_v2.py) and an
+# env-var flip switches surfaces between them for A/B testing without
+# code changes.
+RANKING_POLICY_VERSION = os.getenv("RANKING_POLICY_VERSION", "v1")
+
 # App
 LOCAL_MODE = os.getenv("LOCAL_MODE", "true").lower() == "true"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

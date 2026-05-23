@@ -1,155 +1,145 @@
 """
-Fine-grained co-traveller match scoring.
+Co-traveller match scoring — thin wrapper around the generic ranking engine.
 
-Candidates come from shreyas.retrieval.search.search_cotravellers (already
-pre-filtered by vector similarity). This module re-scores them with explicit
-signal overlap so the final match_score and match_reasons we expose to the
-user are interpretable.
+The old hardcoded W_INTERESTS / W_PACE / W_TRAVEL_STYLE / W_BUDGET formula
+moved into shreyas.ranking.policies.cotraveller (with equal priors and
+per-user weight overrides). This module just preserves the public surface
+the routes + orchestrator already call: `score_compatibility` returns one
+CoTravellerMatch, `get_top_matches` returns a sorted list, and
+`regenerate_matches` refreshes the candidate pool.
 
-Signals + weights (sum to 1.0):
-  - interests overlap (PULL dim ids)   0.45
-  - pace alignment                     0.20
-  - travel_style alignment             0.20
-  - budget_style alignment             0.15
+All scoring decisions — features, weights, taxonomy similarity, feedback
+hyperparameters — live in shreyas/ranking/. This file owns: humanizing
+the engine output into CoTravellerMatch shape.
 """
 
+from __future__ import annotations
+
 import logging
+
 from shared.schemas import (
     UserProfile, CoTravellerProfile, CoTravellerMatch,
-    PacePreference, BudgetStyle, TravelStyle,
 )
+from shreyas.ranking.engine import rank, RankedCandidate
+from shreyas.ranking.policies import load_policy
+from shreyas.ranking.salience import compute_answer_salience
 
 logger = logging.getLogger(__name__)
 
-# Ordinal distance for graded enums — closer values get partial credit.
-_PACE_ORDER   = [PacePreference.relaxed, PacePreference.moderate, PacePreference.packed]
-_BUDGET_ORDER = [BudgetStyle.budget, BudgetStyle.mid_range, BudgetStyle.luxury]
-
-W_INTERESTS    = 0.45
-W_PACE         = 0.20
-W_TRAVEL_STYLE = 0.20
-W_BUDGET       = 0.15
-
-
-def _interest_overlap(user_interests: list[str], cand_interests: list[str]) -> tuple[float, list[str]]:
-    """Jaccard-ish overlap on dim ids. Returns (0..1 score, shared list)."""
-    u = set(i for i in (user_interests or []) if i)
-    c = set(i for i in (cand_interests or []) if i)
-    if not u or not c:
-        return 0.0, []
-    shared = sorted(u & c)
-    union  = u | c
-    return len(shared) / max(1, len(union)), shared
-
-
-def _ordinal_alignment(a, b, order: list) -> float:
-    """1.0 for exact match, 0.5 for one step apart, 0.0 for two+ steps."""
-    if a is None or b is None:
-        return 0.5
-    try:
-        ai, bi = order.index(a), order.index(b)
-    except ValueError:
-        return 0.5
-    distance = abs(ai - bi)
-    return max(0.0, 1.0 - 0.5 * distance)
-
-
-def _travel_style_alignment(a, b) -> float:
-    if a is None or b is None:
-        return 0.5
-    return 1.0 if a == b else 0.4
-
-
-def _user_signals(user_profile: UserProfile) -> dict:
-    """Pull the user's matching signals from compatibility_signals + constraints."""
-    cs = user_profile.compatibility_signals or {}
-    c  = user_profile.constraints
-    return {
-        "interests":    list(cs.get("top_interests") or []),
-        "pace":         (c.pace if c else None),
-        "budget_style": getattr(c, "budget_style", None) if c else None,
-        "travel_style": (c.who_travelling_with if c else None),
-    }
-
 
 def _humanize_dim(dim_id: str) -> str:
-    """exploration_local -> exploration & local; food_drink -> food & drink."""
+    """exploration_local → exploration & local; food_drink → food & drink."""
     return dim_id.replace("_", " & ", 1).replace("_", " ")
 
 
-def score_compatibility(user_profile: UserProfile, candidate: CoTravellerProfile) -> CoTravellerMatch:
-    u = _user_signals(user_profile)
+def _build_match(viewer: UserProfile, rc: RankedCandidate) -> CoTravellerMatch:
+    """Convert engine output to the CoTravellerMatch shape consumers expect.
+    match_reasons come from the top-contributing feature snippets; the
+    compatibility_breakdown is the per-feature raw scores."""
+    candidate: CoTravellerProfile = rc.candidate
 
-    interest_score, shared_interests = _interest_overlap(u["interests"], candidate.interests)
-    pace_score                       = _ordinal_alignment(u["pace"], candidate.pace, _PACE_ORDER)
-    budget_score                     = _ordinal_alignment(u["budget_style"], candidate.budget_style, _BUDGET_ORDER)
-    style_score                      = _travel_style_alignment(u["travel_style"], candidate.travel_style)
+    raw_breakdown = {name: round(raw, 3) for name, (raw, _w) in rc.feature_scores.items()}
+    # Keep the legacy keys the frontend reads so the UI doesn't break.
+    legacy_breakdown = {
+        "interests":    raw_breakdown.get("salience_weighted_question_overlap",
+                        raw_breakdown.get("interest_jaccard", 0.0)),
+        "pace":         raw_breakdown.get("pace_ordinal_fit", 0.0),
+        "budget":       raw_breakdown.get("budget_ordinal_fit", 0.0),
+        "travel_style": raw_breakdown.get("style_match", 0.0),
+    }
 
-    match_score = (
-        W_INTERESTS    * interest_score +
-        W_PACE         * pace_score +
-        W_BUDGET       * budget_score +
-        W_TRAVEL_STYLE * style_score
-    )
-    match_score = max(0.0, min(1.0, match_score))
-
-    # Match reasons — surface the strongest signals as short copy.
+    # Top-3 feature snippets become match_reasons. Filter out the
+    # "feature error" and other low-signal snippets and fall back to a
+    # generic archetype line if nothing useful surfaced.
     reasons: list[str] = []
-    if shared_interests:
-        pretty = ", ".join(_humanize_dim(d) for d in shared_interests[:2])
-        reasons.append(f"Both drawn to {pretty}")
-    if pace_score >= 0.95 and u["pace"] is not None:
-        reasons.append(f"Same {u['pace'].value} pace")
-    elif pace_score >= 0.45 and u["pace"] is not None:
-        reasons.append("Compatible pace")
-    if style_score >= 0.95 and u["travel_style"] is not None:
-        reasons.append(f"Both travel as {u['travel_style'].value}")
-    if budget_score >= 0.95 and u["budget_style"] is not None:
-        reasons.append(f"Same {u['budget_style'].value.replace('_', '-')} budget")
+    for snippet in rc.explanation_summary(top_k=3):
+        s = (snippet or "").strip()
+        if not s or s.startswith("feature error") or s == "no answer overlap":
+            continue
+        # Try to humanise dim ids that leak into snippets (e.g.
+        # "both into food_drink" → "both into food & drink").
+        for token in s.split():
+            if "_" in token and token.replace("_", "").isalnum():
+                s = s.replace(token, _humanize_dim(token))
+        if s not in reasons:
+            reasons.append(s)
     if not reasons:
         reasons.append(f"Reads as a {candidate.archetype.lower()}")
 
     return CoTravellerMatch(
         profile=candidate,
-        match_score=match_score,
+        match_score=rc.final_score,
         match_reasons=reasons[:4],
-        compatibility_breakdown={
-            "interests":    round(interest_score, 3),
-            "pace":         round(pace_score, 3),
-            "budget":       round(budget_score, 3),
-            "travel_style": round(style_score, 3),
-        },
+        compatibility_breakdown={**legacy_breakdown, **raw_breakdown},
     )
 
 
+def _resolve_salience(viewer: UserProfile) -> dict[str, float]:
+    """Read salience from compatibility_signals.answer_salience if it was
+    persisted by /persona-infer; otherwise compute it from the profile's
+    answers + constraints on the fly. Keeps the engine working even for
+    users who pre-date the persisted-salience write."""
+    cs = viewer.compatibility_signals or {}
+    cached = cs.get("answer_salience") if isinstance(cs, dict) else None
+    if isinstance(cached, dict) and cached:
+        # Defensively coerce to float.
+        return {k: float(v) for k, v in cached.items() if isinstance(v, (int, float))}
+    return compute_answer_salience(viewer.persona_answers, viewer.constraints)
+
+
+def score_compatibility(viewer: UserProfile, candidate: CoTravellerProfile) -> CoTravellerMatch:
+    """One-candidate convenience wrapper. Runs the engine with a single
+    candidate and unwraps the result. Used by the profile-detail endpoint."""
+    policy = load_policy("cotraveller")
+    salience = _resolve_salience(viewer)
+    # No retrieval score available for a one-off (this code path doesn't
+    # come from Pinecone) — pass 0.0 and let other features carry it.
+    ranked = rank(viewer, [(candidate, 0.0)], policy, ctx={"salience": salience})
+    if not ranked:
+        # Shouldn't happen, but be defensive.
+        return CoTravellerMatch(
+            profile=candidate,
+            match_score=0.0,
+            match_reasons=[f"Reads as a {candidate.archetype.lower()}"],
+            compatibility_breakdown={},
+        )
+    return _build_match(viewer, ranked[0])
+
+
 def get_top_matches(
-    user_profile: UserProfile,
+    viewer: UserProfile,
     candidates: list[CoTravellerProfile],
     top_n: int = 6,
 ) -> list[CoTravellerMatch]:
+    """Score + sort + cap. Candidates come from Pinecone retrieval with no
+    score attached today; we pass retrieval_score=0 and let features carry
+    the signal. Once `search_cotravellers` is updated to return
+    (profile, score) tuples, this is the seam to thread them through."""
     if not candidates:
         return []
-    scored = [score_compatibility(user_profile, c) for c in candidates]
-    scored.sort(key=lambda m: m.match_score, reverse=True)
-    return scored[:top_n]
+    policy = load_policy("cotraveller")
+    salience = _resolve_salience(viewer)
+    pairs = [(c, 0.0) for c in candidates]
+    ranked = rank(viewer, pairs, policy, ctx={"salience": salience}, top_n=top_n)
+    return [_build_match(viewer, rc) for rc in ranked]
 
 
 async def regenerate_matches(
-    user_profile: UserProfile,
+    viewer: UserProfile,
     excluded_profile_ids: list[str],
     feedback: str = "",
     top_n: int = 6,
 ) -> list[CoTravellerMatch]:
-    """Pull a fresh batch of candidates, skip any already-shown profile_ids,
+    """Pull a fresh batch of candidates, skip already-shown profile_ids,
     re-score, return top_n. When feedback is provided, refine the user's
-    embedding first so the new batch reflects what they actually want."""
+    embedding first so retrieval pulls a different pool."""
     from shreyas.retrieval.search import search_cotravellers
     from ali.vector.embeddings import build_refined_query, embed_text
 
     if feedback:
-        refined_vec = await embed_text(build_refined_query(user_profile, feedback))
-        user_profile = user_profile.model_copy(update={"travel_style_embedding": refined_vec})
+        refined_vec = await embed_text(build_refined_query(viewer, feedback))
+        viewer = viewer.model_copy(update={"travel_style_embedding": refined_vec})
 
-    candidates = await search_cotravellers(user_profile, top_k=80)
+    candidates = await search_cotravellers(viewer, top_k=80)
     fresh = [c for c in candidates if c.profile_id not in (excluded_profile_ids or [])]
-    return get_top_matches(user_profile, fresh, top_n)
+    return get_top_matches(viewer, fresh, top_n)

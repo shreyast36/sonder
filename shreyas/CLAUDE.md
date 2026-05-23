@@ -11,10 +11,18 @@ Read `shreyas/README.md` for the full picture. This file is a quick-reference fo
 | `retrieval/client.py` | `get_pinecone_index()` — initialise Pinecone, return index handle |
 | `retrieval/embeddings.py` | `embed_text(text)` → `list[float]`; `build_refined_query(profile, feedback)` |
 | `retrieval/search.py` | `search_destinations()`, `search_activities()`, `search_cotravellers()` |
-| `ranking/filters.py` | Hard filters before scoring (budget cap, date availability) |
-| `ranking/destination_ranker.py` | `rank_destinations(candidates, user_profile)` — multi-signal scoring |
-| `ranking/activity_ranker.py` | `rank_activities(candidates, user_profile)` |
-| `cotraveller/matching.py` | `get_top_matches()`, `score_match()`, `regenerate_matches()` |
+| `ranking/engine.py` | `rank(viewer, candidates, policy)` — generic pipeline-shaped engine, returns `list[RankedCandidate]` |
+| `ranking/stages.py` | `Stage` protocol + V1 stages: `FeatureScoringStage`, `InteractionStage` (no-op), `WeightedCombinerStage`, `RerankerStage` (no-op) |
+| `ranking/features.py` | `FEATURE_REGISTRY` dict of reusable scoring functions (pinecone_passthrough, salience_weighted_question_overlap, signature_proximity, ordinal fits, tag/interest overlap, …) |
+| `ranking/salience.py` | `compute_answer_salience()` — PPM keyword density per persona question, normalised to sum 1.0 |
+| `ranking/filters.py` | Hard pre-ranking filters — budget feasibility (raw `budget_usd / trip_days`, no multipliers) + `avoid_list` |
+| `ranking/feedback.py` | Keyword→feature map + `apply_text_feedback(weights, text, policy)` — boost / clamp / renormalize, hyperparameters from `policy.feedback_policy` |
+| `ranking/feature_logging.py` | Fire-and-forget Firestore log of every shown candidate + accept/reject + filter drops (bridge to V2 gradient learning) |
+| `ranking/feature_stats.py` | Per-feature distribution observability (mean / variance / p50 / p95) — detects silent scale domination |
+| `ranking/policies/{cotraveller,destination,activity}.py` | Uniform-weight policies with V1 pipeline declaration + `feedback_policy` hyperparameters |
+| `ranking/destination_ranker.py` | Thin wrapper: `rank_destinations(candidates, viewer)` → engine + destination policy |
+| `ranking/activity_ranker.py` | Thin wrapper: `rank_activities(candidates, viewer)` → engine + activity policy |
+| `cotraveller/matching.py` | `score_compatibility`, `get_top_matches`, `regenerate_matches` — wraps the engine with cotraveller policy |
 | `cotraveller/chat.py` | `ConnectionManager` — WebSocket session management |
 | `cotraveller/presence.py` | `heartbeat()`, `is_online()`, `cleanup_stale_presence()` |
 | `cotraveller/approval.py` | `approve_match()`, `deny_match()` — mutual approval logic |

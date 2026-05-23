@@ -432,6 +432,7 @@ async def persona_infer(
     # (which made every match score the same ~28%).
     try:
         from mushahid.realtime.firestore import update_user_profile
+        from shreyas.ranking.salience import compute_answer_salience
         compat_signals: dict = {
             "top_push":       obj["top_push"],
             "top_interests":  obj["top_interests"],
@@ -443,6 +444,10 @@ async def persona_infer(
         # icebreaker, topics, and the persona card all read these keys as
         # private framing (the raw signature key is never user-facing).
         compat_signals.update(signature_result.to_compatibility_signals())
+        # Per-question salience for the ranking engine — read by the
+        # salience_weighted_question_overlap feature at match time. Pure
+        # function, no LLM call, no extra latency.
+        compat_signals["answer_salience"] = compute_answer_salience(answers, constraints)
         await update_user_profile(uid, {
             "compatibility_signals": compat_signals,
             "travel_style_embedding": user_vector,

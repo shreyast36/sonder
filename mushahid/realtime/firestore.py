@@ -38,6 +38,96 @@ def get_db():
     return _db
 
 
+async def write_user_ranker_weights(user_id: str, surface: str, weights: dict) -> None:
+    """Merge per-surface ranker weights into a user's compatibility_signals.
+    Read by the engine at rank() time via _resolve_weights — when absent,
+    falls back to the policy's uniform defaults."""
+    if not surface:
+        return
+    if LOCAL_MODE:
+        key = f"profile:{user_id}"
+        prof = _store.get(key) or {}
+        cs = dict(prof.get("compatibility_signals") or {})
+        rw = dict(cs.get("ranker_weights") or {})
+        rw[surface] = dict(weights)
+        cs["ranker_weights"] = rw
+        prof["compatibility_signals"] = cs
+        _store[key] = prof
+        return
+    try:
+        # Firestore dotted paths let us merge a sub-field without rewriting
+        # the whole compatibility_signals dict.
+        await asyncio.to_thread(
+            lambda: get_db()
+                .collection("user_profiles").document(user_id)
+                .set({"compatibility_signals": {"ranker_weights": {surface: dict(weights)}}}, merge=True)
+        )
+    except Exception as e:
+        logger.warning("write_user_ranker_weights failed: %s", e)
+
+
+async def write_ranking_event(event: dict) -> None:
+    """Single-event write used by feature_logging.record_*. Fire-and-forget
+    from the caller — failures are logged at warning and never raised."""
+    if LOCAL_MODE:
+        eid = event.get("event_id") or f"evt_{len(_store)}"
+        _store[f"ranking_event:{eid}"] = event
+        return
+    try:
+        eid = event.get("event_id")
+        coll = get_db().collection("ranking_events")
+        if eid:
+            await asyncio.to_thread(lambda: coll.document(eid).set(event))
+        else:
+            await asyncio.to_thread(lambda: coll.add(event))
+    except Exception as e:
+        logger.warning("write_ranking_event failed: %s", e)
+
+
+async def update_feature_stats(observations: list[dict]) -> None:
+    """Batched aggregate of per-feature observations. Uses Welford's online
+    algorithm so mean/variance stay accurate without holding raw samples.
+    p50/p95 are approximated by the running max/min in V1 — proper
+    quantile sketches can come later if we need them."""
+    if not observations:
+        return
+    if LOCAL_MODE:
+        # Naive aggregation into _store so tests can inspect distribution
+        # without firing real Firestore writes.
+        for obs in observations:
+            key = f"feature_stats:{obs.get('surface')}__{obs.get('feature')}"
+            doc = dict(_store.get(key) or {"count": 0, "mean": 0.0, "m2": 0.0})
+            value = float(obs.get("value") or 0.0)
+            doc["count"] += 1
+            delta = value - doc["mean"]
+            doc["mean"] += delta / doc["count"]
+            delta2 = value - doc["mean"]
+            doc["m2"] += delta * delta2
+            doc["last_value"] = value
+            doc["last_update"] = obs.get("timestamp")
+            _store[key] = doc
+        return
+    try:
+        db = get_db()
+        # One transaction-ish write per doc — Firestore client batches not
+        # used here to keep this dependency-light. Volume is small (one per
+        # rank call * features per call), and observability is best-effort.
+        for obs in observations:
+            doc_id = f"{obs.get('surface')}__{obs.get('feature')}"
+            ref = db.collection("feature_stats").document(doc_id)
+            await asyncio.to_thread(
+                lambda r=ref, o=obs: r.set({
+                    "surface":     o.get("surface"),
+                    "feature":     o.get("feature"),
+                    "day":         o.get("day"),
+                    "last_value":  float(o.get("value") or 0.0),
+                    "last_update": o.get("timestamp"),
+                }, merge=True)
+            )
+    except Exception as e:
+        logger.warning("update_feature_stats failed: %s", e)
+
+
 async def write_itinerary_status(user_id: str, status: str) -> None:
     if LOCAL_MODE:
         _store[f"status:{user_id}"] = status

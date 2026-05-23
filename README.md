@@ -346,6 +346,20 @@ The persona-infer endpoint runs the main LLM and the emotional-signature inferre
 
 `mushahid/persona/taxonomy.py` defines an 8-key closed taxonomy (`reset_seeker`, `stimulation_seeker`, `story_collector`, `connection_seeker`, `belonging_seeker`, `quiet_observer`, `aesthetic_hunter`, `self_expander`). The inferred signature lands on `user_profile.compatibility_signals` and feeds five downstream consumers — chat reply persona prompt, icebreaker, topic chips, "Why this?" explainer, persona reveal — as private framing. The raw key is **never** surfaced in user-facing text; the generated `emotional_tone` phrase ("soft afternoon energy") is the only thing the UI shows.
 
+### Ranking architecture — generic engine, equal-weight priors, online weight updates
+
+All three rankers (co-traveller, destination, activity) run through one shared engine in `shreyas/ranking/engine.py`. The engine knows nothing about specific features, weights, or taxonomies — it executes the policy's declared `pipeline = [FeatureScoringStage, InteractionStage, WeightedCombinerStage, RerankerStage]`. `InteractionStage` and `RerankerStage` are no-ops in V1 but exist so adding cross-candidate features / diversity / fatigue / sequencing later doesn't require an engine rewrite.
+
+**No hand-picked numbers.** Every policy ships with `weights = {f: 1/N for f in features}` — equal-weight priors expressing honest uncertainty. Per-user weights override the policy defaults via `compatibility_signals.ranker_weights[surface]` once feedback has shaped them. Budget acts as a feasibility gate (raw `budget_usd / trip_days` cutoff in `filters.py`, no fudge multipliers), not a positive ranker signal. `signature_proximity` is identity (1.0 if same emotional signature, 0.0 otherwise) — no hand-picked similarity matrix until feedback can learn one.
+
+**`RankedCandidate` separates retrieval from features.** Pinecone cosine lives in its own `retrieval_score` slot alongside `feature_scores` and `rerank_adjustments`, so V2 can split retrieval confidence from semantic compatibility cleanly. V1 sums them; V2 will give retrieval its own weight knob.
+
+**Per-question salience drives the overlap feature.** `compute_answer_salience` counts PPM-keyword density across each persona answer (chip + free text), normalising to a distribution summing to 1.0. The `salience_weighted_question_overlap` feature multiplies per-question answer alignment by the viewer's salience — so users who wrote more revealing free text get their `small_thing` weighted higher automatically. Persisted on `compatibility_signals.answer_salience` at persona-infer time.
+
+**Feedback loop.** `apply_text_feedback` runs a deterministic keyword→feature map ("cheaper" → budget features, "less packed" → pace features, "more local" → tag overlap) and boosts the implicated features for that user with hyperparameters (`min_weight`, `boost_amount`, renormalization) read from the policy's own `feedback_policy` dict — no hardcoded constants. Structured per-activity edits go to `feature_logging` so V2 can compute replacement gradients (`accepted.features - rejected.features`) once delta data accumulates.
+
+**Observability built in.** `feature_stats.py` records every feature observation (mean / variance / count, p50/p95 later) per surface × feature so silent scale domination is visible — e.g. if `pinecone_passthrough` is winning 80% of the combined score because its raw distribution sits at 0.78 while ordinal fits sit at 0.5, you see it in Firestore aggregates.
+
 ### Multi-currency
 
 All internal cost fields (`budget_usd`, `cost_usd`, `avg_daily_cost_usd`) are always USD. Conversion happens once at the input boundary in `capture_constraints()` via `shared/currency.py`.

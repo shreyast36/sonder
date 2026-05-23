@@ -51,9 +51,10 @@ async def _get_destination_and_activities(user_profile: UserProfile):
     """
     Use the user's typed destination as the authoritative city/country, then
     query the seeded Pinecone corpus (hotels + restaurants + activities) for
-    candidates at that destination. If retrieval fails or returns nothing,
-    fall back to an empty pool — the LLM prompt is permissive enough to
-    invent plausible venues in that case.
+    candidates at that destination, hard-filter for budget feasibility +
+    avoid_list, then rank by the configurable activity policy. If retrieval
+    or filtering fails, fall back to an empty pool — the LLM prompt is
+    permissive enough to invent plausible venues in that case.
     """
     destination = _destination_from_query(user_profile)
     activities: list[Activity] = []
@@ -66,6 +67,27 @@ async def _get_destination_and_activities(user_profile: UserProfile):
         )
     except Exception as e:
         logger.warning("Pinecone retrieval failed (%s) — LLM will invent venues", e)
+
+    # Hard pre-ranking filter (budget feasibility + avoid_list) — drops
+    # candidates that literally can't fit so the ranker doesn't waste
+    # positive contributions on them. Every drop is logged.
+    try:
+        if user_profile.constraints and activities:
+            from shreyas.ranking.filters import apply_activity_filters
+            activities = apply_activity_filters(activities, user_profile.constraints)
+    except Exception as e:
+        logger.warning("activity filter failed (%s) — keeping unfiltered pool", e)
+
+    # Rank the surviving candidates via the configurable activity policy.
+    # search_activities doesn't return per-candidate Pinecone scores yet;
+    # pass 0.0 retrieval scores and let other features carry the signal.
+    try:
+        if user_profile.constraints and activities:
+            from shreyas.ranking.activity_ranker import rank_activities
+            activities = rank_activities([(a, 0.0) for a in activities], user_profile, top_n=40)
+    except Exception as e:
+        logger.warning("activity ranking failed (%s) — keeping retrieval order", e)
+
     return destination, activities
 
 

@@ -1,45 +1,61 @@
+"""
+Activity ranking — thin wrapper around the generic engine.
+
+Pre-ranking budget + avoid_list filters run upstream in the orchestrator
+via shreyas.ranking.filters.apply_activity_filters. The engine then
+orders the survivors using vector similarity, tag overlap, and pace-vs-
+duration fit.
+"""
+
+from __future__ import annotations
+
 from shared.schemas import Activity, UserProfile
-from shreyas.ranking.filters import apply_activity_filters
+from shreyas.ranking.engine import rank
+from shreyas.ranking.policies import load_policy
+from shreyas.ranking.salience import compute_answer_salience
 
 
-def score_activity(activity: Activity, user_profile: UserProfile, pinecone_score: float) -> float:
-    """
-    Score an activity for a specific user.
+def _resolve_salience(viewer: UserProfile) -> dict[str, float]:
+    cs = viewer.compatibility_signals or {}
+    cached = cs.get("answer_salience") if isinstance(cs, dict) else None
+    if isinstance(cached, dict) and cached:
+        return {k: float(v) for k, v in cached.items() if isinstance(v, (int, float))}
+    return compute_answer_salience(viewer.persona_answers, viewer.constraints)
 
-    Factors to consider:
-        - Vector similarity (pinecone_score)
-        - Category interest alignment with persona answers
-        - Cost vs. remaining daily budget
-        - Pace compatibility (relaxed pace = prefer shorter, fewer activities)
 
-    Expected input:
-        activity       = Activity(name="Uluwatu Temple", category="culture", cost_usd=15, duration_hours=2)
-        user_profile   = UserProfile(persona_answers=PersonaQuestionAnswers(culture_interest=5))
-        pinecone_score = 0.88
+def _trip_days(viewer: UserProfile) -> int:
+    c = viewer.constraints
+    if not c or not c.start_date or not c.end_date:
+        return 1
+    return max(1, (c.end_date - c.start_date).days + 1)
 
-    Expected output:
-        0.91  # float between 0.0 and 1.0
-    """
-    # TODO: implement weighted scoring, factor in pace
-    raise NotImplementedError
+
+def score_activity(activity: Activity, viewer: UserProfile, pinecone_score: float) -> float:
+    """Convenience one-candidate scorer — returns the final score in [0,1]."""
+    policy = load_policy("activity")
+    ranked = rank(
+        viewer, [(activity, pinecone_score)], policy,
+        ctx={"salience": _resolve_salience(viewer), "trip_days": _trip_days(viewer)},
+    )
+    return ranked[0].final_score if ranked else 0.0
 
 
 def rank_activities(
     candidates: list[tuple[Activity, float]],
-    user_profile: UserProfile,
+    viewer: UserProfile,
     top_n: int = 15,
 ) -> list[Activity]:
-    """
-    Filter, score, and sort activities. Respects pace preference in top_n:
-        relaxed → fewer activities per day, longer durations preferred
-        packed  → more activities, shorter durations acceptable
+    """Sort activities by the policy's combined score; return top_n
+    underlying Activity objects in order. Caller applies filters upstream."""
+    if not candidates:
+        return []
+    policy = load_policy("activity")
+    ranked = rank(
+        viewer, candidates, policy,
+        ctx={"salience": _resolve_salience(viewer), "trip_days": _trip_days(viewer)},
+        top_n=top_n,
+    )
+    return [rc.candidate for rc in ranked]
 
-    Expected input:
-        candidates = [(Activity(name="Uluwatu Temple"), 0.88), ...]
-        top_n      = 15
 
-    Expected output:
-        [Activity(name="Uluwatu Temple"), ...]  # top_n sorted by score
-    """
-    # TODO: filter, score, sort, return top_n
-    raise NotImplementedError
+__all__ = ["score_activity", "rank_activities"]
