@@ -491,6 +491,106 @@ def _parse_json_object(raw: str) -> dict:
     return json.loads(candidate)
 
 
+_SUGGEST_SYSTEM_PROMPT = """\
+You are roleplaying as a synthetic co-traveller who has just looked at
+the current shared itinerary and wants to suggest ONE improvement.
+
+You are NOT:
+- an assistant
+- a travel agent
+- an optimization engine
+
+You ARE:
+a real person who's already agreed to this trip and is now adding a
+single thoughtful idea — something you'd genuinely want to do, in
+character.
+
+RULES:
+
+- Suggest exactly ONE activity to add to a specific day.
+- It must be GENUINELY DIFFERENT from anything already on the
+  itinerary or anything previously proposed/rejected.
+- It must fit the destination + the existing day's rhythm.
+- Do not propose a chain of activities. One thing. One day.
+- Do not propose more luxury / expense than the trip's vibe suggests.
+- Pick the day that fits the activity best — don't default to day 1.
+
+VOICE:
+
+- Texting register. 1-2 short sentences in the message.
+- Casual, slightly tentative, collaborative.
+- Mild uncertainty is fine ("could we try", "thinking maybe").
+- Do NOT mention rankings, profiles, embeddings, algorithms,
+  optimization, your "preferences", or that you are AI.
+
+OUTPUT FORMAT:
+
+Return ONLY valid JSON:
+
+{
+  "day_number": <int>,
+  "title":      "<the activity, 1-6 words>",
+  "message":    "<short natural reason>"
+}
+
+No markdown fences. No commentary. First character `{`, last `}`.
+"""
+
+
+def _build_suggest_user_prompt(
+    persona: Any,
+    itinerary_state: dict,
+    history: list[dict],
+    accepted_titles: list[str],
+    rejected_titles: list[str],
+) -> str:
+    return (
+        "YOUR PROFILE:\n"
+        f"{_persona_block(persona)}\n\n"
+        "CURRENT ITINERARY:\n"
+        f"{_itinerary_digest(itinerary_state)}\n\n"
+        "NEGOTIATION HISTORY THIS SESSION:\n"
+        f"{_negotiation_history(history)}\n\n"
+        "DO NOT REPROPOSE THESE TITLES:\n"
+        f"{', '.join(accepted_titles + rejected_titles) or '(none)'}\n\n"
+        "Suggest one thing you'd actually want to add. Return JSON only."
+    )
+
+
+async def suggest_proposal(
+    persona: Any,
+    itinerary_state: dict,
+    history: list[dict],
+    accepted_titles: list[str],
+    rejected_titles: list[str],
+) -> dict | None:
+    """Persona-initiated proposal: returns
+        {"day_number": int, "title": str, "message": str}
+    or None if the model couldn't produce a usable suggestion. Caller is
+    responsible for the same dedupe check applied to user proposals —
+    the prompt rule isn't strong enough alone."""
+    prompt = _build_suggest_user_prompt(
+        persona, itinerary_state, history,
+        accepted_titles, rejected_titles,
+    )
+    try:
+        raw = await route_request("complex_refinement", prompt, _SUGGEST_SYSTEM_PROMPT)
+        obj = _parse_json_object(raw)
+    except Exception as e:
+        logger.warning("suggest_proposal: parse failed: %s", e)
+        return None
+
+    title = _clean(obj.get("title"))
+    if not title:
+        return None
+    try:
+        day = int(obj.get("day_number") or 1)
+    except (TypeError, ValueError):
+        day = 1
+    message = _clean(obj.get("message")) or ""
+    return {"day_number": day, "title": title, "message": message}
+
+
 async def evaluate_proposal(
     persona: Any,
     itinerary_state: dict,

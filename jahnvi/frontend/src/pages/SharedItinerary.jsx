@@ -10,6 +10,7 @@ import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import {
   getSharedItinerary, proposeChange, respondToChange,
+  withdrawChange, askPersonaSuggest, finalizeShared,
   getUserProfile, getCotravellerProfile,
 } from '../lib/api'
 
@@ -113,7 +114,7 @@ function ActivityFeed({ log, selfId, otherName, otherEvaluating }) {
   )
 }
 
-function PendingProposalCard({ change, selfId, otherName, onAccept, onCounterClick, submitting }) {
+function PendingProposalCard({ change, selfId, otherName, onAccept, onCounterClick, onWithdraw, submitting }) {
   const mine = change.proposer_id === selfId
   return (
     <div style={{
@@ -142,7 +143,7 @@ function PendingProposalCard({ change, selfId, otherName, onAccept, onCounterCli
           "{change.message}"
         </p>
       )}
-      {!mine && (
+      {!mine ? (
         <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
           <button
             disabled={submitting}
@@ -172,64 +173,133 @@ function PendingProposalCard({ change, selfId, otherName, onAccept, onCounterCli
             Counter
           </button>
         </div>
+      ) : (
+        <div style={{ marginTop: 6 }}>
+          <button
+            disabled={submitting}
+            onClick={() => onWithdraw(change)}
+            style={{
+              background: 'none', border: 'none', padding: 0,
+              cursor: submitting ? 'wait' : 'pointer',
+              color: DIM, fontFamily: '"Inter Tight",sans-serif',
+              fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+              textDecoration: 'underline', textDecorationColor: 'rgba(232,212,168,0.2)',
+            }}
+          >
+            Withdraw
+          </button>
+        </div>
       )}
     </div>
   )
 }
 
-function ProposeForm({ defaultDay, dayCount, onSubmit, onCancel, submitting, error, mode = 'propose' }) {
-  // mode: 'propose' = brand-new proposal (day pickable); 'counter' = day locked
+function ProposeForm({
+  defaultDay, dayCount, onSubmit, onCancel, submitting, error,
+  mode = 'propose', replaceTarget = null,
+}) {
+  // mode:
+  //   'propose'  - brand-new add proposal (day pickable + title input)
+  //   'counter'  - day locked, title input (replying to a persona counter)
+  //   'replace'  - day locked, title input, shows what's being replaced
+  //   'move'     - day pickable only, no title input (target locked)
   const [dayNumber, setDayNumber] = useState(defaultDay || 1)
   const [title,     setTitle]     = useState('')
   const [message,   setMessage]   = useState('')
   useEffect(() => { setDayNumber(defaultDay || 1) }, [defaultDay])
+
+  const wantsTitle    = mode === 'propose' || mode === 'counter' || mode === 'replace'
+  const wantsDayPick  = mode === 'propose' || mode === 'move'
+  const headlineColor = mode === 'replace' || mode === 'move' ? GOLD : VIOLET
+  const headlineText  = {
+    propose: 'Propose an activity',
+    counter: 'Counter with…',
+    replace: 'Replace it with…',
+    move:    'Move to another day',
+  }[mode] || 'Propose an activity'
+
+  const canSubmit = wantsTitle ? title.trim().length > 0 : true
+
+  function send() {
+    if (!canSubmit) return
+    onSubmit({
+      dayNumber,
+      title: wantsTitle ? title.trim() : '',
+      message: message.trim(),
+    })
+  }
+
   return (
     <div style={{
       padding: '20px 22px', borderRadius: 14,
-      background: 'rgba(20,16,12,0.96)', border: `1px solid ${VIOLET}44`,
+      background: 'rgba(20,16,12,0.96)', border: `1px solid ${headlineColor}44`,
       boxShadow: `0 24px 60px rgba(0,0,0,0.4)`,
       display: 'flex', flexDirection: 'column', gap: 14,
       minWidth: 320, maxWidth: 460,
     }}>
       <p style={{
         fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 500,
-        letterSpacing: '0.22em', textTransform: 'uppercase', color: VIOLET, margin: 0,
+        letterSpacing: '0.22em', textTransform: 'uppercase', color: headlineColor, margin: 0,
       }}>
-        {mode === 'counter' ? 'Counter with…' : 'Propose an activity'}
+        {headlineText}
       </p>
-      {mode === 'propose' && (
+      {replaceTarget && (
+        <div style={{
+          padding: '8px 12px', borderRadius: 8,
+          background: 'rgba(232,212,168,0.04)', border: `1px dashed ${HAIRLINE}`,
+        }}>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: DIM, margin: 0 }}>
+            {mode === 'move' ? 'Moving' : 'Replacing'}
+          </p>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: BONE, margin: '4px 0 0' }}>
+            {replaceTarget.name} <span style={{ color: DIM }}>· day {replaceTarget.from_day}</span>
+          </p>
+        </div>
+      )}
+      {wantsDayPick && (
         <div>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, margin: '0 0 6px' }}>Day</p>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, margin: '0 0 6px' }}>
+            {mode === 'move' ? 'Move to' : 'Day'}
+          </p>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {Array.from({ length: dayCount }, (_, i) => i + 1).map(d => (
-              <button
-                key={d}
-                onClick={() => setDayNumber(d)}
-                style={{
-                  padding: '6px 12px', borderRadius: 14,
-                  background: d === dayNumber ? `${VIOLET}22` : 'transparent',
-                  border: `1px solid ${d === dayNumber ? `${VIOLET}88` : HAIRLINE}`,
-                  cursor: 'pointer', color: d === dayNumber ? BONE : MUTE,
-                  fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
-                }}
-              >Day {d}</button>
-            ))}
+            {Array.from({ length: dayCount }, (_, i) => i + 1).map(d => {
+              const isOrigin = replaceTarget && replaceTarget.from_day === d
+              return (
+                <button
+                  key={d}
+                  onClick={() => setDayNumber(d)}
+                  disabled={isOrigin}
+                  title={isOrigin ? 'Already on this day' : undefined}
+                  style={{
+                    padding: '6px 12px', borderRadius: 14,
+                    background: d === dayNumber ? `${headlineColor}22` : 'transparent',
+                    border: `1px solid ${d === dayNumber ? `${headlineColor}88` : HAIRLINE}`,
+                    cursor: isOrigin ? 'not-allowed' : 'pointer',
+                    color: isOrigin ? DIM : (d === dayNumber ? BONE : MUTE),
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+                    opacity: isOrigin ? 0.4 : 1,
+                  }}
+                >Day {d}</button>
+              )
+            })}
           </div>
         </div>
       )}
-      <input
-        value={title}
-        onChange={e => setTitle(e.target.value)}
-        placeholder="Activity (e.g. ramen at Ichiran)"
-        autoFocus
-        maxLength={140}
-        style={{
-          padding: '12px 14px', borderRadius: 10,
-          background: 'rgba(232,212,168,0.04)', border: `1px solid ${HAIRLINE}`,
-          color: BONE, outline: 'none',
-          fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 300,
-        }}
-      />
+      {wantsTitle && (
+        <input
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder={mode === 'replace' ? 'New activity' : 'Activity (e.g. ramen at Ichiran)'}
+          autoFocus
+          maxLength={140}
+          style={{
+            padding: '12px 14px', borderRadius: 10,
+            background: 'rgba(232,212,168,0.04)', border: `1px solid ${HAIRLINE}`,
+            color: BONE, outline: 'none',
+            fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 300,
+          }}
+        />
+      )}
       <textarea
         value={message}
         onChange={e => setMessage(e.target.value)}
@@ -246,22 +316,25 @@ function ProposeForm({ defaultDay, dayCount, onSubmit, onCancel, submitting, err
       {error && <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: '#F87171', margin: 0 }}>{error}</p>}
       <div style={{ display: 'flex', gap: 10 }}>
         <button
-          disabled={submitting || !title.trim()}
-          onClick={() => onSubmit({ dayNumber, title: title.trim(), message: message.trim() })}
+          disabled={submitting || !canSubmit}
+          onClick={send}
           style={{
             padding: '10px 18px', borderRadius: 18,
-            background: `linear-gradient(135deg, ${VIOLET} 0%, #6D28D9 100%)`,
-            border: 'none', cursor: submitting || !title.trim() ? 'not-allowed' : 'pointer',
+            background: `linear-gradient(135deg, ${headlineColor} 0%, #6D28D9 100%)`,
+            border: 'none', cursor: submitting || !canSubmit ? 'not-allowed' : 'pointer',
             color: '#fff', fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
             letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500,
-            opacity: submitting || !title.trim() ? 0.5 : 1,
+            opacity: submitting || !canSubmit ? 0.5 : 1,
             display: 'flex', alignItems: 'center', gap: 6,
           }}
         >
           {submitting
             ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, ease: 'linear', repeat: Infinity }}><Loader2 size={11}/></motion.span>
             : <Send size={11}/>}
-          {mode === 'counter' ? 'Send counter' : 'Send proposal'}
+          {mode === 'counter' ? 'Send counter' :
+           mode === 'replace' ? 'Send replacement' :
+           mode === 'move'    ? 'Send move' :
+                                'Send proposal'}
         </button>
         <button
           onClick={onCancel}
@@ -274,6 +347,70 @@ function ProposeForm({ defaultDay, dayCount, onSubmit, onCancel, submitting, err
           }}
         >Cancel</button>
       </div>
+    </div>
+  )
+}
+
+function ActivityRow({ activity, dayNumber, locked = false, onReplace, onMove }) {
+  const [hover, setHover] = useState(false)
+  const name = activity?.activity?.name || '—'
+  const category = activity?.activity?.category
+  const proposed = category === 'proposed'
+  const showActions = hover && !locked
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        padding: '12px 16px', borderRadius: 10,
+        border: `1px solid ${hover ? `${VIOLET}44` : HAIRLINE}`,
+        background: 'rgba(232,212,168,0.025)',
+        display: 'flex', alignItems: 'center', gap: 12,
+        transition: 'border-color 0.2s',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 500, color: BONE, margin: 0 }}>
+          {name}
+        </p>
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE, margin: '2px 0 0' }}>
+          {activity?.time || ''}
+          {category && !proposed ? <span> · {category}</span> : null}
+          {proposed ? <span style={{ color: GREEN }}> · added together</span> : null}
+        </p>
+      </div>
+      <AnimatePresence>
+        {showActions && (
+          <motion.div
+            initial={{ opacity: 0, x: 8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 8 }}
+            transition={{ duration: 0.15 }}
+            style={{ display: 'flex', gap: 6 }}
+          >
+            <button
+              onClick={() => onReplace(activity)}
+              style={{
+                padding: '5px 10px', borderRadius: 14,
+                background: 'transparent', border: `1px solid ${HAIRLINE}`,
+                cursor: 'pointer', color: MUTE,
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                letterSpacing: '0.18em', textTransform: 'uppercase',
+              }}
+            >Replace</button>
+            <button
+              onClick={() => onMove(activity)}
+              style={{
+                padding: '5px 10px', borderRadius: 14,
+                background: 'transparent', border: `1px solid ${HAIRLINE}`,
+                cursor: 'pointer', color: MUTE,
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                letterSpacing: '0.18em', textTransform: 'uppercase',
+              }}
+            >Move</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -292,6 +429,9 @@ export default function SharedItinerary() {
   const [proposeOpen, setProposeOpen] = useState(false)
   const [proposeDay, setProposeDay] = useState(1)
   const [counterTarget, setCounterTarget] = useState(null)    // ProposedChange we're countering
+  // For per-activity edits — we hold either a "replace" or "move" target.
+  // editTarget = { activity_id, name, from_day, mode: 'replace'|'move' }
+  const [editTarget, setEditTarget] = useState(null)
   const [otherDisplayName, setOtherDisplayName] = useState('them')
 
   const pollRef = useRef(null)
@@ -380,6 +520,9 @@ export default function SharedItinerary() {
     e.kind === 'evaluating' && e.actor_id !== selfId &&
     (Date.now() - new Date(e.created_at || 0).getTime()) < 12000,
   )
+  const finalized = (shared.activity_log || []).some(e => e.kind === 'finalized')
+  const acceptedCount = (shared.proposed_changes || []).filter(c => c.status === 'accepted').length
+  const canFinalize = !finalized && pendingChanges.length === 0 && acceptedCount > 0
 
   async function submitPropose({ dayNumber, title, message }) {
     setSubmitting(true); setError(null)
@@ -429,6 +572,63 @@ export default function SharedItinerary() {
     }
   }
 
+  async function withdrawPending(change) {
+    setSubmitting(true); setError(null)
+    try {
+      const res = await withdrawChange(id, { changeId: change.change_id, version: shared.version })
+      setShared(res.shared)
+    } catch (e) {
+      setError(e?.message || 'Could not withdraw')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function askToSuggest() {
+    setSubmitting(true); setError(null)
+    try {
+      const res = await askPersonaSuggest(id, { version: shared.version })
+      setShared(res.shared)
+    } catch (e) {
+      setError(e?.message || 'Could not get a suggestion')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function lockIn() {
+    setSubmitting(true); setError(null)
+    try {
+      const res = await finalizeShared(id, { version: shared.version })
+      setShared(res.shared)
+    } catch (e) {
+      setError(e?.message || 'Could not finalise')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function submitEdit({ dayNumber, title, message }) {
+    if (!editTarget) return
+    setSubmitting(true); setError(null)
+    try {
+      const res = await proposeChange(id, {
+        kind: editTarget.mode,                             // 'replace' | 'move'
+        dayNumber,                                          // move target / replace stays on origin day
+        title,                                              // empty for move
+        message,
+        replacesActivityId: editTarget.activity_id,
+        version: shared.version,
+      })
+      setShared(res.shared)
+      setEditTarget(null)
+    } catch (e) {
+      setError(e?.message || 'Could not send the edit')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
       <AppBackground accent={VIOLET}/>
@@ -449,14 +649,52 @@ export default function SharedItinerary() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 36 }}>
           <div>
             <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
-              Shared itinerary · v{shared.version}
+              Shared itinerary · v{shared.version}{finalized ? ' · locked' : ''}
             </p>
             <h1 style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 48, lineHeight: 1.1, color: BONE, margin: '8px 0 4px' }}>
               {itin?.destination?.city || 'Your trip'}
             </h1>
             <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE, margin: 0 }}>
-              Propose changes, agree or counter — both of you shape the trip.
+              {finalized
+                ? 'Locked in. No more changes can be made.'
+                : 'Propose changes, agree or counter — both of you shape the trip.'}
             </p>
+            {!finalized && (
+              <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+                <button
+                  onClick={askToSuggest}
+                  disabled={submitting}
+                  style={{
+                    padding: '8px 14px', borderRadius: 18,
+                    background: 'transparent', border: `1px solid ${VIOLET}55`,
+                    cursor: submitting ? 'wait' : 'pointer', color: VIOLET,
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                    letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 500,
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    opacity: submitting ? 0.6 : 1,
+                  }}
+                >
+                  <MessageCircle size={11}/> Ask {otherName} for an idea
+                </button>
+                {canFinalize && (
+                  <button
+                    onClick={lockIn}
+                    disabled={submitting}
+                    style={{
+                      padding: '8px 14px', borderRadius: 18,
+                      background: `linear-gradient(135deg, ${GREEN} 0%, #059669 100%)`,
+                      border: 'none', cursor: submitting ? 'wait' : 'pointer',
+                      color: '#fff', fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                      letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 500,
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      opacity: submitting ? 0.7 : 1,
+                    }}
+                  >
+                    <Check size={11}/> Lock it in
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {pendingChanges.length > 0 && (
@@ -472,6 +710,7 @@ export default function SharedItinerary() {
                   otherName={otherName}
                   onAccept={acceptPending}
                   onCounterClick={(ch) => { setCounterTarget(ch); setProposeOpen(false) }}
+                  onWithdraw={withdrawPending}
                   submitting={submitting}
                 />
               ))}
@@ -484,38 +723,41 @@ export default function SharedItinerary() {
                 <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 28, color: BONE, margin: 0 }}>
                   Day {day.day_number}{day.theme ? <span style={{ color: MUTE, fontSize: 16 }}> — {day.theme}</span> : null}
                 </h2>
-                <button
-                  onClick={() => { setProposeDay(day.day_number); setProposeOpen(true); setCounterTarget(null) }}
-                  style={{
-                    background: 'none', border: `1px solid ${VIOLET}55`, borderRadius: 18,
-                    padding: '6px 12px', cursor: 'pointer', color: VIOLET,
-                    fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
-                    letterSpacing: '0.18em', textTransform: 'uppercase',
-                    display: 'flex', alignItems: 'center', gap: 6,
-                  }}
-                >
-                  <Plus size={11}/> Propose
-                </button>
+                {!finalized && (
+                  <button
+                    onClick={() => { setProposeDay(day.day_number); setProposeOpen(true); setCounterTarget(null) }}
+                    style={{
+                      background: 'none', border: `1px solid ${VIOLET}55`, borderRadius: 18,
+                      padding: '6px 12px', cursor: 'pointer', color: VIOLET,
+                      fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                      display: 'flex', alignItems: 'center', gap: 6,
+                    }}
+                  >
+                    <Plus size={11}/> Propose
+                  </button>
+                )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {(day.activities || []).map((ia, i) => (
-                  <div key={ia?.activity?.activity_id || i} style={{
-                    padding: '12px 16px', borderRadius: 10,
-                    border: `1px solid ${HAIRLINE}`,
-                    background: 'rgba(232,212,168,0.025)',
-                    display: 'flex', alignItems: 'center', gap: 12,
-                  }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 500, color: BONE, margin: 0 }}>
-                        {ia?.activity?.name || '—'}
-                      </p>
-                      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE, margin: '2px 0 0' }}>
-                        {ia?.time || ''}
-                        {ia?.activity?.category && ia.activity.category !== 'proposed' ? <span> · {ia.activity.category}</span> : null}
-                        {ia?.activity?.category === 'proposed' ? <span style={{ color: GREEN }}> · added together</span> : null}
-                      </p>
-                    </div>
-                  </div>
+                  <ActivityRow
+                    key={ia?.activity?.activity_id || i}
+                    activity={ia}
+                    dayNumber={day.day_number}
+                    locked={finalized}
+                    onReplace={(act) => setEditTarget({
+                      activity_id: act?.activity?.activity_id,
+                      name:        act?.activity?.name || '',
+                      from_day:    day.day_number,
+                      mode:        'replace',
+                    })}
+                    onMove={(act) => setEditTarget({
+                      activity_id: act?.activity?.activity_id,
+                      name:        act?.activity?.name || '',
+                      from_day:    day.day_number,
+                      mode:        'move',
+                    })}
+                  />
                 ))}
               </div>
             </div>
@@ -533,9 +775,9 @@ export default function SharedItinerary() {
         </div>
       </div>
 
-      {/* Propose / Counter modal */}
+      {/* Propose / Counter / Replace / Move modal */}
       <AnimatePresence>
-        {(proposeOpen || counterTarget) && (
+        {(proposeOpen || counterTarget || editTarget) && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             style={{
@@ -544,14 +786,29 @@ export default function SharedItinerary() {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               padding: 32,
             }}
-            onClick={() => { setProposeOpen(false); setCounterTarget(null) }}
+            onClick={() => { setProposeOpen(false); setCounterTarget(null); setEditTarget(null) }}
           >
             <motion.div
               initial={{ scale: 0.95, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 12 }}
               transition={spring}
               onClick={e => e.stopPropagation()}
             >
-              {counterTarget ? (
+              {editTarget ? (
+                <ProposeForm
+                  mode={editTarget.mode}
+                  defaultDay={editTarget.mode === 'move'
+                    // For 'move', start on a non-origin day so the picker
+                    // has a sensible default. For 'replace', stay put.
+                    ? (editTarget.from_day === 1 ? Math.min(2, dayCount) : editTarget.from_day - 1)
+                    : editTarget.from_day}
+                  dayCount={dayCount}
+                  replaceTarget={editTarget}
+                  onSubmit={submitEdit}
+                  onCancel={() => setEditTarget(null)}
+                  submitting={submitting}
+                  error={error}
+                />
+              ) : counterTarget ? (
                 <ProposeForm
                   mode="counter"
                   defaultDay={counterTarget.day_number}

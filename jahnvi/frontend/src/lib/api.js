@@ -292,9 +292,16 @@ export async function getSharedItinerary(itineraryId) {
   return get(`/api/shared/${encodeURIComponent(itineraryId)}`)
 }
 
-export async function proposeChange(itineraryId, { kind = 'add', dayNumber, title, message = '', version }) {
+export async function proposeChange(itineraryId, {
+  kind = 'add', dayNumber, title = '', message = '', replacesActivityId = null, version,
+}) {
   return post(`/api/shared/${encodeURIComponent(itineraryId)}/propose`, {
-    kind, day_number: dayNumber, title, message, version,
+    kind,
+    day_number: dayNumber,
+    title,
+    message,
+    replaces_activity_id: replacesActivityId,
+    version,
   })
 }
 
@@ -302,6 +309,20 @@ export async function respondToChange(itineraryId, { changeId, decision, title =
   return post(`/api/shared/${encodeURIComponent(itineraryId)}/respond`, {
     change_id: changeId, decision, title, message, version,
   })
+}
+
+export async function withdrawChange(itineraryId, { changeId, version }) {
+  return post(`/api/shared/${encodeURIComponent(itineraryId)}/withdraw`, {
+    change_id: changeId, version,
+  })
+}
+
+export async function askPersonaSuggest(itineraryId, { version }) {
+  return post(`/api/shared/${encodeURIComponent(itineraryId)}/persona-suggest`, { version })
+}
+
+export async function finalizeShared(itineraryId, { version }) {
+  return post(`/api/shared/${encodeURIComponent(itineraryId)}/finalize`, { version })
 }
 
 // ── Voice (ElevenLabs TTS) ─────────────────────────────────────────────────

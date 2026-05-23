@@ -135,6 +135,13 @@ def _rejected_titles(changes: list[ProposedChange]) -> list[str]:
     return [c.title for c in changes if c.status == "countered" and c.title]
 
 
+def _is_finalized(shared: SharedItinerary) -> bool:
+    """Was a `finalized` entry ever appended to this itinerary's activity
+    log? v1 stores the lock state as a log entry rather than a dedicated
+    field; the latest such entry being present is the canonical signal."""
+    return any(e.kind == "finalized" for e in (shared.activity_log or []))
+
+
 def _is_duplicate(title: str, *, existing: list[str], accepted: list[str], rejected: list[str]) -> bool:
     """Token-Jaccard match against committed activities + decision
     history. "ramen at Ichiran" and "Ichiran ramen" collide (J=1.0);
@@ -385,6 +392,8 @@ async def propose(itinerary_id: str, body: ProposeRequest, uid: str = Depends(ve
     _assert_participant(shared, uid)
     if body.version != shared.version:
         raise HTTPException(status_code=409, detail={"error": "version conflict", "current_version": shared.version})
+    if _is_finalized(shared):
+        raise HTTPException(status_code=409, detail="itinerary is finalised — no more changes")
     if body.kind not in ("add", "replace", "move"):
         raise HTTPException(status_code=400, detail=f"Unsupported change kind: {body.kind}")
 
@@ -537,6 +546,8 @@ async def respond(itinerary_id: str, body: RespondRequest, uid: str = Depends(ve
     _assert_participant(shared, uid)
     if body.version != shared.version:
         raise HTTPException(status_code=409, detail={"error": "version conflict", "current_version": shared.version})
+    if _is_finalized(shared):
+        raise HTTPException(status_code=409, detail="itinerary is finalised — no more changes")
     if body.decision not in ("accept", "counter"):
         raise HTTPException(status_code=400, detail="decision must be 'accept' or 'counter'")
 
@@ -595,5 +606,194 @@ async def respond(itinerary_id: str, body: RespondRequest, uid: str = Depends(ve
         "decision": body.decision,
         "change_id": body.change_id,
         "actor_id":  uid,
+    })
+    return {"shared": shared.model_dump(mode="json")}
+
+
+# ── Withdraw ──────────────────────────────────────────────────────────────
+
+
+class WithdrawRequest(BaseModel):
+    change_id: str
+    version:   int
+
+
+@router.post("/shared/{itinerary_id}/withdraw")
+async def withdraw(itinerary_id: str, body: WithdrawRequest, uid: str = Depends(verify_token)):
+    """Proposer retracts their own pending proposal. Idempotent — calling
+    on a non-pending change returns 409 with current status so the
+    frontend can refresh."""
+    shared, session = await _load_or_bootstrap(itinerary_id, uid)
+    _assert_participant(shared, uid)
+    if body.version != shared.version:
+        raise HTTPException(status_code=409, detail={"error": "version conflict", "current_version": shared.version})
+    if _is_finalized(shared):
+        raise HTTPException(status_code=409, detail="itinerary is finalised — no more changes")
+
+    target = next((c for c in shared.proposed_changes if c.change_id == body.change_id), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail="change_id not found")
+    if target.proposer_id != uid:
+        raise HTTPException(status_code=403, detail="can only withdraw your own proposals")
+    if target.status != "proposed":
+        raise HTTPException(status_code=409, detail=f"change is {target.status}, not open for withdrawal")
+
+    target.status = "withdrawn"
+    shared.activity_log.append(ActivityLogEntry(
+        entry_id=_new_id("act"), actor_id=uid, kind="withdrawn",
+        title=target.title, day_number=target.day_number,
+        created_at=_now_iso(),
+    ))
+    shared.version += 1
+    shared.last_updated_by = uid
+    await write_shared_itinerary(shared)
+    _broadcast_async(session.session_id if session else None, {
+        "type": "shared_withdrawn", "version": shared.version,
+        "change_id": body.change_id, "actor_id": uid,
+    })
+    return {"shared": shared.model_dump(mode="json")}
+
+
+# ── Persona-initiated suggestion ──────────────────────────────────────────
+
+
+class SuggestRequest(BaseModel):
+    version: int
+
+
+@router.post("/shared/{itinerary_id}/persona-suggest")
+async def persona_suggest(itinerary_id: str, body: SuggestRequest, uid: str = Depends(verify_token)):
+    """Ask the synthetic persona to spontaneously propose ONE improvement.
+    The persona's suggestion is added as a pending ProposedChange the
+    user can then accept or counter — same flow as a user-initiated
+    proposal, just authored by the other side."""
+    from ali.generation.proposal_evaluator import suggest_proposal
+
+    shared, session = await _load_or_bootstrap(itinerary_id, uid)
+    _assert_participant(shared, uid)
+    if body.version != shared.version:
+        raise HTTPException(status_code=409, detail={"error": "version conflict", "current_version": shared.version})
+    if _is_finalized(shared):
+        raise HTTPException(status_code=409, detail="itinerary is finalised — no more changes")
+
+    profile_id = next((u for u in (shared.user_ids or []) if u != uid), None)
+    if not profile_id:
+        raise HTTPException(status_code=409, detail="no synthetic counterpart on this itinerary")
+
+    # Push an "evaluating" entry first so the UI shows the persona working
+    # on it even while the LLM call is in flight.
+    shared.activity_log.append(ActivityLogEntry(
+        entry_id=_new_id("act"), actor_id=profile_id, kind="evaluating",
+        title="", day_number=None, created_at=_now_iso(),
+    ))
+    shared.version += 1
+    await write_shared_itinerary(shared)
+    _broadcast_async(session.session_id if session else None, {
+        "type": "shared_suggesting", "version": shared.version, "actor_id": profile_id,
+    })
+
+    try:
+        from shreyas.retrieval.search import get_cotraveller_by_id
+        candidate = await get_cotraveller_by_id(profile_id)
+    except Exception as e:
+        logger.warning("persona_suggest: get_cotraveller_by_id failed: %s", e)
+        candidate = None
+
+    existing_titles = _all_existing_titles(shared.itinerary)
+    accepted_titles = _accepted_titles(shared.proposed_changes)
+    rejected_titles = _rejected_titles(shared.proposed_changes)
+    history_payload = [c.model_dump() for c in shared.proposed_changes[-8:]]
+    itin_state      = shared.itinerary.model_dump(mode="json")
+
+    suggestion: dict | None = None
+    if candidate is not None:
+        try:
+            suggestion = await suggest_proposal(
+                candidate, itin_state, history_payload,
+                accepted_titles, rejected_titles,
+            )
+        except Exception as e:
+            logger.warning("persona_suggest: suggest_proposal failed: %s", e)
+            suggestion = None
+
+    if suggestion is None or not suggestion.get("title"):
+        # No usable suggestion — return current state without adding noise.
+        return {"shared": shared.model_dump(mode="json"), "suggested": None}
+
+    title = suggestion["title"][:140]
+    # Backend dedupe — if the model still picked a dupe despite the prompt
+    # rule, treat as no-suggestion rather than circulate noise.
+    if _is_duplicate(title, existing=existing_titles,
+                     accepted=accepted_titles, rejected=rejected_titles):
+        logger.info("persona_suggest: model returned duplicate '%s', dropping", title)
+        return {"shared": shared.model_dump(mode="json"), "suggested": None}
+
+    day_number = max(1, min(int(suggestion.get("day_number") or 1), len(shared.itinerary.days or []) or 1))
+    persona_change = ProposedChange(
+        change_id=_new_id("chg"),
+        proposer_id=profile_id,
+        kind="add",
+        day_number=day_number,
+        title=title,
+        message=(suggestion.get("message") or "")[:400],
+        status="proposed",
+        created_at=_now_iso(),
+    )
+    shared.proposed_changes.append(persona_change)
+    shared.activity_log.append(ActivityLogEntry(
+        entry_id=_new_id("act"), actor_id=profile_id, kind="proposed",
+        title=title, day_number=day_number, created_at=_now_iso(),
+    ))
+    shared.version += 1
+    shared.last_updated_by = profile_id
+    await write_shared_itinerary(shared)
+    _broadcast_async(session.session_id if session else None, {
+        "type": "shared_proposed", "version": shared.version,
+        "change_id": persona_change.change_id, "actor_id": profile_id,
+    })
+    return {
+        "shared":    shared.model_dump(mode="json"),
+        "suggested": persona_change.model_dump(),
+    }
+
+
+# ── Finalize ──────────────────────────────────────────────────────────────
+
+
+class FinalizeRequest(BaseModel):
+    version: int
+
+
+@router.post("/shared/{itinerary_id}/finalize")
+async def finalize(itinerary_id: str, body: FinalizeRequest, uid: str = Depends(verify_token)):
+    """Lock the itinerary in. After both sides finalize (or one side
+    finalizes and the other doesn't object within the session), no more
+    propose/respond/withdraw is allowed. v1 implementation: any
+    participant can flip the lock; the other side's UI just shows the
+    final state."""
+    shared, session = await _load_or_bootstrap(itinerary_id, uid)
+    _assert_participant(shared, uid)
+    if body.version != shared.version:
+        raise HTTPException(status_code=409, detail={"error": "version conflict", "current_version": shared.version})
+
+    open_changes = [c for c in shared.proposed_changes if c.status == "proposed"]
+    if open_changes:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{len(open_changes)} change(s) still pending — resolve or withdraw before finalising",
+        )
+
+    # Record finalisation in the activity log; no dedicated field on the
+    # schema yet (kept v1 minimal). The frontend reads the trailing
+    # "finalized" entry to decide whether to lock the input surfaces.
+    shared.activity_log.append(ActivityLogEntry(
+        entry_id=_new_id("act"), actor_id=uid, kind="finalized",
+        title="", day_number=None, created_at=_now_iso(),
+    ))
+    shared.version += 1
+    shared.last_updated_by = uid
+    await write_shared_itinerary(shared)
+    _broadcast_async(session.session_id if session else None, {
+        "type": "shared_finalized", "version": shared.version, "actor_id": uid,
     })
     return {"shared": shared.model_dump(mode="json")}
