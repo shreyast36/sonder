@@ -171,6 +171,7 @@ def _make_proposed_activity(title: str) -> Activity:
         cost_usd=0.0,
         duration_hours=2.0,
         tags=["proposed"],
+        description=title,
     )
 
 
