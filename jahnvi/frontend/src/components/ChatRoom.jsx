@@ -339,8 +339,21 @@ export default function ChatRoom({ sessionId, selfId }) {
         </motion.button>
         <SonderNav3D markSize={32}/>
         <motion.button
-          whileHover={decisionUnlocked && !decisionMade ? { background: `${ROSE}18`, borderColor: `${ROSE}88` } : {}}
+          whileHover={decisionUnlocked && !decisionMade ? { background: `${ROSE}18`, borderColor: `${ROSE}AA` } : {}}
           whileTap={decisionUnlocked && !decisionMade ? { scale: 0.96 } : {}}
+          // Faint pulse once the decision unlocks — draws the eye without
+          // shouting. Disabled while the gate is closed (avoid teasing) and
+          // after a decision is made (avoid pulsing a sealed CTA).
+          animate={decisionUnlocked && !decisionMade ? {
+            boxShadow: [
+              `0 0 0 0 ${ROSE}00`,
+              `0 0 0 6px ${ROSE}1F`,
+              `0 0 0 0 ${ROSE}00`,
+            ],
+          } : { boxShadow: `0 0 0 0 ${ROSE}00` }}
+          transition={decisionUnlocked && !decisionMade
+            ? { duration: 2.4, repeat: Infinity, ease: 'easeInOut' }
+            : { duration: 0.3 }}
           onClick={() => { if (decisionUnlocked && !decisionMade) navigate(`/approve/${sessionId}`) }}
           disabled={!decisionUnlocked || decisionMade}
           title={decisionMade
