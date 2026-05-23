@@ -119,20 +119,81 @@ def _build_keyword_map() -> dict[re.Pattern, list[str]]:
 _KEYWORD_MAP: dict[re.Pattern, list[str]] = _build_keyword_map()
 
 
+# ── Negation handling ─────────────────────────────────────────────────────
+
+
+# Words / contractions that negate everything in the following few words.
+# Multi-word negators ("not really", "not into") have to come first so
+# their longer match wins over the single-word "not" within them.
+_NEGATION_TRIGGERS = re.compile(
+    r"\b(?:"
+    r"not\s+really|not\s+into|not\s+a\s+fan(?:\s+of)?|"
+    r"not\s+looking\s+for|don'?t\s+(?:want|like|need|care\s+for|do)|"
+    r"doesn'?t|isn'?t|aren'?t|wasn'?t|weren'?t|won'?t|wouldn'?t|"
+    r"never|nope|hardly|barely|hate|hating|avoid|avoiding|skip|"
+    r"pass\s+on|sick\s+of|tired\s+of|over\s+it|less|fewer|"
+    r"no\s+more|no\s+thanks|"
+    r"not|no"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Sentence-ending punctuation. A negation zone stops at the next clause
+# break — "I love food. Not into nightlife." only negates "nightlife",
+# not "food".
+_CLAUSE_BREAK = re.compile(r"[.!?;]")
+
+_NEGATION_WINDOW_WORDS = 5
+
+
+def _negation_zones(text: str) -> list[tuple[int, int]]:
+    """Return char ranges that should be treated as negated. A zone
+    starts at a negator and extends up to N words OR the next clause
+    break, whichever comes first."""
+    zones: list[tuple[int, int]] = []
+    for m in _NEGATION_TRIGGERS.finditer(text):
+        start = m.start()
+        zone_end = m.end()
+        # Find the next clause break after the negator.
+        clause = _CLAUSE_BREAK.search(text, m.end())
+        clause_end = clause.start() if clause else len(text)
+
+        # Walk N tokens forward but stop at the clause break.
+        tail = text[m.end():clause_end]
+        for i, w in enumerate(re.finditer(r"\S+", tail)):
+            zone_end = m.end() + w.end()
+            if i + 1 >= _NEGATION_WINDOW_WORDS:
+                break
+        zones.append((start, zone_end))
+    return zones
+
+
+def _in_negation_zone(pos: int, zones: list[tuple[int, int]]) -> bool:
+    return any(start <= pos < end for (start, end) in zones)
+
+
 # ── Public API ────────────────────────────────────────────────────────────
 
 
 def fired_features(text: str, allowed: set[str]) -> list[str]:
     """Return the unique cotraveller-policy features the text implies
-    should gain weight, restricted to features the policy actually uses."""
+    should gain weight, restricted to features the policy actually uses.
+
+    Negated keywords ("not into nightlife", "don't want luxury") are
+    skipped — the boost only fires for affirmative mentions.
+    """
     if not text:
         return []
+    zones = _negation_zones(text)
     out: list[str] = []
     for pattern, features in _KEYWORD_MAP.items():
-        if pattern.search(text):
+        for m in pattern.finditer(text):
+            if _in_negation_zone(m.start(), zones):
+                continue
             for f in features:
                 if f in allowed and f not in out:
                     out.append(f)
+            break   # one un-negated hit per pattern is enough
     return out
 
 
