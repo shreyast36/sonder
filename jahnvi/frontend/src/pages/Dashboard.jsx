@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, Plus, Zap } from 'lucide-react'
+import { ChevronRight, Plus } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
 import MatchCard from '../components/MatchCard'
 import { SonderNav3D } from '../components/SonderMark3D'
@@ -708,6 +708,57 @@ export default function Dashboard() {
           displayName={effectiveDisplayName || user?.displayName}
           uid={user?.uid}
         />
+
+        {/* Live stats strip — small glass pill with key signals */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease, delay: 0.4 }}
+          style={{
+            marginTop: 32,
+            display: 'inline-flex', alignItems: 'center', gap: 28,
+            padding: '12px 26px', borderRadius: 999,
+            background: 'rgba(8,8,7,0.55)', backdropFilter: 'blur(20px)',
+            border: `1px solid ${HAIRLINE}`,
+            boxShadow: `0 10px 30px rgba(0,0,0,0.4)`,
+            position: 'relative', zIndex: 1,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 22, color: BONE, lineHeight: 1 }}>
+              {pastTrips.length}
+            </span>
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: MUTE, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
+              {pastTrips.length === 1 ? 'trip' : 'trips'} planned
+            </span>
+          </div>
+          <span style={{ width: 1, height: 18, background: HAIRLINE }}/>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 22, color: BONE, lineHeight: 1 }}>
+              {matches.length}
+            </span>
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: MUTE, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
+              curated matches
+            </span>
+          </div>
+          {incoming.length > 0 && (
+            <>
+              <span style={{ width: 1, height: 18, background: HAIRLINE }}/>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <motion.span
+                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+                  style={{ width: 7, height: 7, borderRadius: '50%', background: '#8B5CF6', boxShadow: '0 0 10px #8B5CF6' }}
+                />
+                <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 22, color: '#8B5CF6', lineHeight: 1 }}>
+                  {incoming.length}
+                </span>
+                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: '#8B5CF6', letterSpacing: '0.22em', textTransform: 'uppercase' }}>
+                  awaiting you
+                </span>
+              </div>
+            </>
+          )}
+        </motion.div>
       </div>
 
       {/* main grid */}
@@ -716,7 +767,16 @@ export default function Dashboard() {
 
         {/* LEFT — trip card */}
         <motion.div variants={reveal} style={{ padding: '52px 52px', borderRight: `1px solid ${HAIRLINE}` }}>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 24 }}>Upcoming Trip</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
+            <motion.span
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+              style={{ width: 6, height: 6, borderRadius: '50%', background: AMBER, boxShadow: `0 0 10px ${AMBER}` }}
+            />
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+              Upcoming trip
+            </p>
+          </div>
 
           {trip ? (
             <motion.div
@@ -1001,25 +1061,35 @@ export default function Dashboard() {
             </motion.div>
           )}
 
-          {/* Your trips — every saved itinerary, current one badged. */}
-          {pastTrips.length > 0 && (
-            <PastTripsRow
-              trips={pastTrips}
-              onSelect={handleSwitchTrip}
-              switching={switchingTrip}
-            />
-          )}
+          {/* Past trips moved to its own full-width strip below the grid */}
         </motion.div>
 
         {/* RIGHT — companions + new trip */}
         <motion.div variants={reveal} style={{ padding: '52px 44px', display: 'flex', flexDirection: 'column', gap: 36 }}>
 
           <div>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 24 }}>
-              <div>
-                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 6 }}>Curated for you</p>
-                <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 30, color: BONE, lineHeight: 1 }}>Your fellow traveller recommendations</h2>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <motion.span
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                  style={{ width: 6, height: 6, borderRadius: '50%', background: GOLD, boxShadow: `0 0 10px ${GOLD}` }}
+                />
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+                  Curated for you
+                </p>
               </div>
+              <motion.h2
+                animate={{ filter: [`drop-shadow(0 0 12px rgba(212,182,134,0.18))`, `drop-shadow(0 0 28px rgba(212,182,134,0.45))`, `drop-shadow(0 0 12px rgba(212,182,134,0.18))`] }}
+                transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+                style={{
+                  fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
+                  fontSize: 34, color: BONE, lineHeight: 1.02, margin: 0,
+                  letterSpacing: '-0.015em',
+                }}
+              >
+                Travellers tuned to your rhythm.
+              </motion.h2>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {activePair && (
@@ -1066,29 +1136,72 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div style={{ height: 1, background: `linear-gradient(to right, transparent, ${HAIRLINE}, transparent)` }}/>
-
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 16 }}>
-              <Zap size={12} style={{ color: AMBER }}/>
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE }}>Ready for more?</p>
-            </div>
-            <motion.button
-              whileHover={{ y: -3, boxShadow: '0 0 40px rgba(245,158,11,0.18), inset 0 1px 0 rgba(245,158,11,0.12)', borderColor: 'rgba(245,158,11,0.35)', transition: spring }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => navigate('/preferences')}
-              style={{
-                width: '100%', padding: '20px 0',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                background: 'rgba(245,158,11,0.04)', border: `1px solid rgba(245,158,11,0.20)`,
-                borderRadius: 16, cursor: 'pointer', transition: 'all 0.25s',
-              }}
-            >
-              <Plus size={13} style={{ color: AMBER }}/>
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: AMBER }}>Plan a new trip</span>
-            </motion.button>
-          </div>
         </motion.div>
+
+        {/* Your trips — full-width strip between the main grid and Pulse */}
+        {pastTrips.length > 0 && (
+          <motion.section
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease, delay: 0.2 }}
+            style={{
+              gridColumn: '1 / -1',
+              padding: '40px 52px 24px',
+              borderTop: `1px solid ${HAIRLINE}`,
+              position: 'relative',
+            }}
+          >
+            {/* gold gradient hairline ornament */}
+            <div style={{
+              position: 'absolute', top: -1, left: '50%', transform: 'translateX(-50%)',
+              width: 120, height: 1,
+              background: `linear-gradient(to right, transparent, ${GOLD}, transparent)`,
+            }}/>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 22 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <motion.span
+                    animate={{ opacity: [0.4, 1, 0.4] }}
+                    transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                    style={{ width: 6, height: 6, borderRadius: '50%', background: AMBER, boxShadow: `0 0 10px ${AMBER}` }}
+                  />
+                  <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+                    Your trip vault
+                  </p>
+                </div>
+                <h2 style={{
+                  fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
+                  fontSize: 30, color: BONE, lineHeight: 1.05, margin: 0,
+                  letterSpacing: '-0.015em',
+                }}>
+                  Every trip you've planned.
+                </h2>
+              </div>
+              <motion.button
+                whileHover={{ y: -2, borderColor: 'rgba(245,158,11,0.40)' }} whileTap={{ scale: 0.97 }}
+                onClick={() => navigate('/preferences')}
+                style={{
+                  padding: '11px 20px', borderRadius: 999,
+                  background: `linear-gradient(135deg, rgba(245,158,11,0.10) 0%, rgba(245,158,11,0.04) 100%)`,
+                  border: `1px solid rgba(245,158,11,0.30)`,
+                  cursor: 'pointer', color: AMBER,
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10, fontWeight: 500,
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  display: 'inline-flex', alignItems: 'center', gap: 7,
+                  boxShadow: `0 6px 18px rgba(245,158,11,0.18)`,
+                  transition: 'all 0.2s',
+                }}
+              >
+                <Plus size={11}/> New trip
+              </motion.button>
+            </div>
+            <PastTripsRow
+              trips={pastTrips}
+              onSelect={handleSwitchTrip}
+              switching={switchingTrip}
+            />
+          </motion.section>
+        )}
 
         {/* Sonder Pulse — the discovery surface folded inline */}
         <DashboardPulse selfUid={user?.uid}/>
