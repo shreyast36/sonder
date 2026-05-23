@@ -3,42 +3,50 @@ Root conftest — fixtures available to all test modules.
 
 Shared fixtures: constraints, persona_answers, user_profile, activity, destination, itinerary
 HTTP client fixtures: client (async), override_auth (dependency override for verify_token)
+
+Field names match the current schemas — PersonaQuestionAnswers now only carries
+`small_thing` (free text), and the radio-style probes (`social_role`,
+`trip_feeling`, `friction_response`, `ideal_atmosphere`) live directly on
+TripConstraints. Pydantic v2 silently drops unknown kwargs, so passing stale
+field names produced silent data loss — the fixtures below stay aligned with
+the schema to keep tests honest about what they're actually exercising.
 """
 import pytest
 from datetime import date
 from shared.schemas import (
     TripConstraints, PersonaQuestionAnswers, UserProfile,
     Destination, Activity, ItineraryActivity, ItineraryDay, Itinerary,
-    PacePreference, BudgetStyle, TravelStyle, EmotionIntent,
+    PacePreference, TravelStyle, EmotionIntent,
 )
 
 
 @pytest.fixture
 def constraints():
     return TripConstraints(
+        destination_query="Bali, Indonesia",
         destination_type="beach",
         start_date=date(2025, 6, 1),
         end_date=date(2025, 6, 7),
         budget_usd=2000.0,
+        budget_currency="USD",
         group_size=2,
-        pace_preference=PacePreference.relaxed,
+        who_travelling_with=TravelStyle.couple,
+        pace=PacePreference.relaxed,
         must_haves=["snorkeling"],
         avoid_list=["nightclubs"],
+        # Personality probes — exercise the actual radio fields that drive
+        # ranking salience + emotional signature inference.
+        social_role="place_finder",
+        trip_feeling="story_collector",
+        friction_response="pivot",
+        ideal_atmosphere="slow_sunlit",
     )
 
 
 @pytest.fixture
 def persona_answers():
     return PersonaQuestionAnswers(
-        food_interest=5,
-        adventure_interest=2,
-        culture_interest=4,
-        nature_interest=3,
-        nightlife_interest=1,
-        budget_style=BudgetStyle.mid_range,
-        travel_style=TravelStyle.couple,
-        pace_preference=PacePreference.relaxed,
-        energy_level=3,
+        small_thing="the way the espresso machine at the corner cafe sighs when it warms up",
     )
 
 
@@ -50,7 +58,13 @@ def user_profile(constraints, persona_answers):
         constraints=constraints,
         persona_answers=persona_answers,
         emotion_intent=EmotionIntent.excited,
-        compatibility_signals={"pace": "relaxed", "top_interests": ["food", "culture"]},
+        compatibility_signals={
+            "pace": "relaxed",
+            "top_interests": ["food_drink", "culture_history"],
+            "top_push": ["escape_reset", "curiosity"],
+            "emotional_signature": "story_collector",
+            "emotional_tone": "warm curious",
+        },
     )
 
 

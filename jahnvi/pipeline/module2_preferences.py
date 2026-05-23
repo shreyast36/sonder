@@ -1,3 +1,18 @@
+"""
+Module 2 — Persona preference questions.
+
+PersonaQuestionAnswers now only carries the gold free-text field
+(`small_thing`); the four radio-style probes (social_role, trip_feeling,
+friction_response, ideal_atmosphere) live on TripConstraints. This
+module exposes the question prompts the frontend renders and a thin
+parser from raw form payload → PersonaQuestionAnswers.
+
+PART2_QUESTIONS / SCREEN3_QUESTIONS predate the schema simplification —
+they're kept as legacy reference for any FE flow that still surfaces
+the old long-form prompts, but `parse_answers` only writes what the
+current schema can hold.
+"""
+
 from jahnvi.schemas.user import PersonaQuestionAnswers
 
 PART2_QUESTIONS = [
@@ -17,40 +32,36 @@ SCREEN3_QUESTIONS = [
     {"id": "experiences_avoided", "question": "What kinds of experiences do you usually avoid?",             "type": "free_text"},
     {"id": "perfect_afternoon",   "question": "Describe your perfect unplanned afternoon.",                  "type": "free_text"},
     {"id": "lose_track_of_time",  "question": "What makes you completely lose track of time?",               "type": "free_text"},
-    {"id": "small_special",       "question": "What small thing always makes a trip feel special?",          "type": "free_text"},
+    {"id": "small_thing",         "question": "A small thing that's made you weirdly happy lately.",         "type": "free_text"},
 ]
-
-_ALL_QUESTION_IDS = {q["id"] for q in PART2_QUESTIONS + SCREEN3_QUESTIONS}
 
 
 def get_questions() -> list[dict]:
     """
-    Return all persona preference questions shown across Screen 2 (Part 2) and Screen 3.
-    Frontend renders PART2_QUESTIONS as a group and SCREEN3_QUESTIONS one at a time.
+    Return all persona preference questions. The frontend renders these in
+    its own order — see TripPreferences.jsx::PERSONA_SCREENS for the
+    canonical user-facing copy.
     """
     return PART2_QUESTIONS + SCREEN3_QUESTIONS
 
 
 def parse_answers(raw: dict) -> PersonaQuestionAnswers:
     """
-    Map raw form values (free-text strings keyed by question id) into a PersonaQuestionAnswers.
-    Any key not present in raw defaults to an empty string — all fields are optional.
+    Map raw form values into a PersonaQuestionAnswers. The current schema
+    only carries `small_thing`; everything else in the raw payload is
+    ignored here (the radio-style probes go onto TripConstraints in
+    module1_constraints).
 
     Expected input:
-        {
-            "travel_goal":     "I want to feel alive again",
-            "pace_preference": "Slow mornings, free afternoons",
-            ...
-        }
+        {"small_thing": "...", ...other free-text fields the FE may include}
 
     Expected output:
-        PersonaQuestionAnswers(
-            travel_goal     = "I want to feel alive again",
-            pace_preference = "Slow mornings, free afternoons",
-            ...  # unset fields default to ""
-        )
+        PersonaQuestionAnswers(small_thing="...")
     """
-    return PersonaQuestionAnswers(**{
-        field: str(raw.get(field) or "")
-        for field in _ALL_QUESTION_IDS
-    })
+    small_thing = ""
+    for key in ("small_thing", "small_special"):
+        value = raw.get(key)
+        if value:
+            small_thing = str(value).strip()
+            break
+    return PersonaQuestionAnswers(small_thing=small_thing)

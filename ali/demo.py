@@ -28,20 +28,23 @@ USER = UserProfile(
     user_id="demo_user_001",
     display_name="Ali",
     constraints=TripConstraints(
+        destination_query="Bali, Indonesia",
         destination_type="beach",
         start_date=date(2025, 6, 1),
         end_date=date(2025, 6, 4),
         budget_usd=1200.0,
         group_size=2,
-        pace_preference=PacePreference.relaxed,
+        who_travelling_with=TravelStyle.couple,
+        pace=PacePreference.relaxed,
         must_haves=["snorkeling"],
         avoid_list=["nightclubs"],
+        social_role="place_finder",
+        trip_feeling="story_collector",
+        friction_response="pivot",
+        ideal_atmosphere="slow_sunlit",
     ),
     persona_answers=PersonaQuestionAnswers(
-        food_interest=5, adventure_interest=2, culture_interest=4,
-        nature_interest=3, nightlife_interest=1,
-        budget_style=BudgetStyle.mid_range, travel_style=TravelStyle.couple,
-        pace_preference=PacePreference.relaxed, energy_level=3,
+        small_thing="cold sheets at the end of a long day",
     ),
     emotion_intent=EmotionIntent.excited,
     compatibility_signals={"top_interests": ["food", "culture"]},
@@ -110,8 +113,9 @@ async def demo_routing():
 
 async def demo_generation():
     divider("2. ITINERARY GENERATION  (streaming live)")
+    pace_str = USER.constraints.pace.value if USER.constraints.pace else "moderate"
     print(f"User: {USER.display_name} | {DESTINATION.city} | "
-          f"{USER.constraints.pace_preference.value} pace | "
+          f"{pace_str} pace | "
           f"${USER.constraints.budget_usd:.0f} budget | "
           f"{(USER.constraints.end_date - USER.constraints.start_date).days} days")
     print("Must-have: snorkeling | Avoid: nightclubs")
