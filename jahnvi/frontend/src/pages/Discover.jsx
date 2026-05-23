@@ -1,17 +1,27 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, MapPin } from 'lucide-react'
+import { ArrowLeft, MapPin, Loader2, Sparkles, MessageCircle, RefreshCw } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
+import SynthBadge from '../components/SynthBadge'
+import { useAuth } from '../hooks/useAuth'
+import {
+  getCurrentItinerary, getCotravellers, regenerateCotravellers,
+} from '../lib/api'
 
-const PINK   = '#EC4899'
+const VIOLET = '#8B5CF6'
+const ROSE   = '#F43F5E'
+const GREEN  = '#10B981'
 const spring = { type: 'spring', stiffness: 280, damping: 22 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────
 
 function useCountUp(target, duration = 600, delay = 200) {
   const [count, setCount] = useState(0)
   useEffect(() => {
+    if (!Number.isFinite(target)) return
     const timer = setTimeout(() => {
       const start = performance.now()
       const tick = now => {
@@ -27,47 +37,21 @@ function useCountUp(target, duration = 600, delay = 200) {
   return count
 }
 
-const ALL_MATCHES = [
-  { id: '1', display_name: 'Priya Mehta',   location: 'Mumbai, India',    match_score: 92, tags: ['Relaxed', 'Culture', 'Foodie'],   pace: 'slow',     avatar_url: 'https://i.pravatar.cc/80?img=47' },
-  { id: '2', display_name: 'Arjun Nair',    location: 'Bangalore, India', match_score: 87, tags: ['Adventure', 'Foodie'],             pace: 'moderate', avatar_url: 'https://i.pravatar.cc/80?img=12' },
-  { id: '3', display_name: 'Zara Khan',     location: 'Delhi, India',     match_score: 84, tags: ['Culture', 'History'],              pace: 'moderate', avatar_url: 'https://i.pravatar.cc/80?img=25' },
-  { id: '4', display_name: 'Meera Sharma',  location: 'Pune, India',      match_score: 79, tags: ['Wellness', 'Nature', 'Relaxed'],   pace: 'slow',     avatar_url: 'https://i.pravatar.cc/80?img=31' },
-  { id: '5', display_name: 'Rohan Verma',   location: 'Chennai, India',   match_score: 76, tags: ['Adventure', 'Nature'],             pace: 'fast',     avatar_url: 'https://i.pravatar.cc/80?img=18' },
-  { id: '6', display_name: 'Kavita Iyer',   location: 'Hyderabad, India', match_score: 73, tags: ['Foodie', 'Nightlife'],             pace: 'fast',     avatar_url: 'https://i.pravatar.cc/80?img=44' },
-]
-
-const STYLE_TAGS   = ['Adventure', 'Culture', 'Relaxed', 'Foodie', 'Nature', 'Wellness', 'Nightlife', 'History']
-const PACE_OPTIONS = [
-  { key: 'all',      label: 'Any pace'  },
-  { key: 'slow',     label: 'Slow'      },
-  { key: 'moderate', label: 'Moderate'  },
-  { key: 'fast',     label: 'Fast'      },
-]
-const SCORE_OPTIONS = [
-  { key: 'all', label: 'All',  min: 0  },
-  { key: '70+', label: '70%+', min: 70 },
-  { key: '80+', label: '80%+', min: 80 },
-  { key: '90+', label: '90%+', min: 90 },
-]
-
-const stagger    = { show: { transition: { staggerChildren: 0.07 } } }
-const cardReveal = { hidden: { opacity: 0, y: 20, scale: 0.97 }, show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.45, ease } } }
-
-function MiniRing({ score, size = 52 }) {
-  const r = (size / 2) - 5
+function ScoreRing({ score, size = 88 }) {
+  const r = (size / 2) - 7
   const circ = 2 * Math.PI * r
   const [offset, setOffset] = useState(circ)
   useEffect(() => {
-    const t = setTimeout(() => setOffset(circ - (score / 100) * circ), 600)
+    const t = setTimeout(() => setOffset(circ - (score / 100) * circ), 350)
     return () => clearTimeout(t)
   }, [score, circ])
-  const uid = `ring-${score}-${size}`
+  const uid = `ring-${score}-${size}-${Math.random().toString(36).slice(2, 6)}`
   return (
     <svg width={size} height={size} style={{ display: 'block', flexShrink: 0 }}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={HAIRLINE} strokeWidth="2"/>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={HAIRLINE} strokeWidth="2.5"/>
       <circle
         cx={size/2} cy={size/2} r={r} fill="none"
-        stroke={`url(#${uid})`} strokeWidth="2"
+        stroke={`url(#${uid})`} strokeWidth="2.5"
         strokeLinecap="round"
         strokeDasharray={circ} strokeDashoffset={offset}
         transform={`rotate(-90 ${size/2} ${size/2})`}
@@ -75,90 +59,241 @@ function MiniRing({ score, size = 52 }) {
       />
       <defs>
         <linearGradient id={uid} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor={PINK}/>
+          <stop offset="0%" stopColor={VIOLET}/>
           <stop offset="100%" stopColor="#D4B686"/>
         </linearGradient>
       </defs>
-      <text x={size/2} y={size/2 + 5} textAnchor="middle" fontFamily='"Cormorant Garamond",serif' fontSize="13" fill={BONE} fontStyle="italic">{score}</text>
+      <text x={size/2} y={size/2 + 4}
+            textAnchor="middle" fontFamily='"Cormorant Garamond",serif'
+            fontStyle="italic" fontSize={size * 0.32} fill={BONE}>
+        {score}
+      </text>
+      <text x={size/2} y={size/2 + (size * 0.22)}
+            textAnchor="middle" fontFamily='"Inter Tight",sans-serif'
+            fontSize={size * 0.08} fill={`${VIOLET}AA`}
+            letterSpacing="0.2em" textTransform="uppercase">
+        % MATCH
+      </text>
     </svg>
   )
 }
 
-function MatchCard({ match, onClick }) {
+// ── Match card (rich detail) ─────────────────────────────────────────────
+
+function RichMatchCard({ match, onClick, index }) {
+  const p = match?.profile || {}
+  const score = Math.round((Number(match?.match_score) || 0) * 100)
+  const reasons = (match?.match_reasons || []).slice(0, 3)
+  const interests = (p.interests || []).slice(0, 5)
+  const isSeed = !!p.is_seed
+
   return (
     <motion.div
-      variants={cardReveal}
-      whileHover={{ y: -6, boxShadow: `0 24px 64px rgba(0,0,0,0.55), 0 0 0 1px ${PINK}22`, transition: spring }}
-      whileTap={{ scale: 0.98 }}
+      initial={{ opacity: 0, y: 24, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.55, delay: 0.15 + index * 0.1, ease }}
+      whileHover={{ y: -4, boxShadow: `0 32px 80px rgba(0,0,0,0.55), 0 0 0 1px ${VIOLET}33` }}
       onClick={onClick}
-      style={{ padding: 1, borderRadius: 20, background: 'linear-gradient(145deg,rgba(232,212,168,0.12) 0%,rgba(8,8,7,0) 50%,rgba(232,212,168,0.06) 100%)', cursor: 'pointer', boxShadow: '0 8px 32px rgba(0,0,0,0.40)' }}
+      style={{
+        cursor: 'pointer',
+        padding: 1,
+        borderRadius: 22,
+        background: 'linear-gradient(145deg,rgba(232,212,168,0.14) 0%,rgba(8,8,7,0) 45%,rgba(212,182,134,0.08) 100%)',
+        boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
+      }}
     >
-      <div style={{ background: 'linear-gradient(160deg,rgba(20,16,10,0.99) 0%,rgba(12,10,7,1) 100%)', borderRadius: 19, padding: '24px', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: -60, right: -60, width: 200, height: 200, borderRadius: '50%', background: `radial-gradient(ellipse, ${PINK}0D 0%, transparent 70%)`, pointerEvents: 'none' }}/>
+      <div style={{
+        background: 'linear-gradient(160deg,rgba(20,16,10,0.99) 0%,rgba(12,10,7,1) 100%)',
+        borderRadius: 21, padding: '32px 36px',
+        position: 'relative', overflow: 'hidden',
+        display: 'grid', gridTemplateColumns: '120px 1fr 130px', gap: 32, alignItems: 'center',
+      }}>
+        {/* radial wash */}
+        <div style={{
+          position: 'absolute', top: -80, right: -80, width: 280, height: 280,
+          borderRadius: '50%',
+          background: `radial-gradient(ellipse, ${VIOLET}14 0%, transparent 70%)`,
+          pointerEvents: 'none',
+        }}/>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 18 }}>
-          <motion.div
-            animate={{ boxShadow: [`0 0 0 2px ${PINK}22, 0 0 16px ${PINK}0D`, `0 0 0 2px ${PINK}55, 0 0 32px ${PINK}22`, `0 0 0 2px ${PINK}22, 0 0 16px ${PINK}0D`] }}
-            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-            style={{ width: 52, height: 52, borderRadius: '50%', overflow: 'hidden', flexShrink: 0 }}
-          >
-            <img src={match.avatar_url} alt={match.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-          </motion.div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 22, color: BONE, lineHeight: 1, marginBottom: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{match.display_name}</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <MapPin size={9} style={{ color: GOLD, flexShrink: 0 }}/>
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{match.location}</span>
+        {/* avatar */}
+        <motion.div
+          animate={{
+            boxShadow: [
+              `0 0 0 2px ${VIOLET}33, 0 0 28px ${VIOLET}14`,
+              `0 0 0 2px ${VIOLET}66, 0 0 56px ${VIOLET}33`,
+              `0 0 0 2px ${VIOLET}33, 0 0 28px ${VIOLET}14`,
+            ],
+          }}
+          transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+          style={{
+            width: 116, height: 116, borderRadius: '50%', overflow: 'hidden',
+            background: 'rgba(212,182,134,0.06)', flexShrink: 0,
+          }}
+        >
+          {p.avatar_url ? (
+            <img src={p.avatar_url} alt={p.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+          ) : (
+            <div style={{
+              width: '100%', height: '100%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: '"Cormorant Garamond",serif', fontSize: 36, color: GOLD,
+            }}>
+              {(p.display_name || '?').split(/\s+/).slice(0, 2).map(s => s[0]?.toUpperCase()).join('')}
             </div>
+          )}
+        </motion.div>
+
+        {/* middle block — name + meta + reasons + interests */}
+        <div style={{ minWidth: 0, position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
+            <h2 style={{
+              fontFamily: '"Cormorant Garamond",serif', fontWeight: 400,
+              fontSize: 32, color: BONE, lineHeight: 1, margin: 0,
+            }}>{p.display_name || '—'}</h2>
+            {isSeed && <SynthBadge isSeed variant="inline"/>}
           </div>
-          <MiniRing score={match.match_score}/>
+          {p.archetype && (
+            <p style={{
+              fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+              fontSize: 14, color: MUTE, margin: '0 0 10px',
+            }}>{p.archetype}</p>
+          )}
+          {p.location && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
+              <MapPin size={10} style={{ color: GOLD }}/>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: MUTE }}>{p.location}</span>
+            </div>
+          )}
+
+          {reasons.length > 0 && (
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 14px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {reasons.map((r, i) => (
+                <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <span style={{ width: 4, height: 4, borderRadius: '50%', background: VIOLET, marginTop: 7, flexShrink: 0 }}/>
+                  <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: BONE, lineHeight: 1.5 }}>{r}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {interests.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {interests.map((tag, i) => {
+                const palette = [VIOLET, '#14B8A6', '#F59E0B', '#E07060', GOLD]
+                const c = palette[i % palette.length]
+                return (
+                  <span key={tag} style={{
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 8,
+                    letterSpacing: '0.18em', textTransform: 'uppercase', color: c,
+                    padding: '4px 10px', borderRadius: 12,
+                    border: `1px solid ${c}33`, background: `${c}0D`,
+                  }}>{tag}</span>
+                )
+              })}
+            </div>
+          )}
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {match.tags.map((tag, i) => {
-            const colors = [PINK, '#14B8A6', '#F59E0B']
-            const c = colors[i % colors.length]
-            return (
-              <span key={tag} style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.14em', textTransform: 'uppercase', color: c, padding: '4px 10px', borderRadius: 12, border: `1px solid ${c}33`, background: `${c}0D` }}>{tag}</span>
-            )
-          })}
+        {/* right — score ring + CTA hint */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, position: 'relative' }}>
+          <ScoreRing score={score}/>
+          <span style={{
+            fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+            letterSpacing: '0.2em', textTransform: 'uppercase', color: VIOLET,
+            display: 'flex', alignItems: 'center', gap: 5,
+          }}>
+            <MessageCircle size={10}/> Open profile
+          </span>
         </div>
       </div>
     </motion.div>
   )
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────
+
 export default function Discover() {
-  const navigate = useNavigate()
-  const [selectedStyles, setStyles] = useState([])
-  const [pace, setPace]             = useState('all')
-  const [scoreKey, setScore]        = useState('all')
+  const navigate    = useNavigate()
+  const { user }    = useAuth()
+  const [itinerary, setItinerary] = useState(null)
+  const [matches, setMatches]     = useState([])
+  const [activePair, setActivePair] = useState(null)
+  const [loading, setLoading]     = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError]         = useState(null)
 
-  const scoreMin = SCORE_OPTIONS.find(o => o.key === scoreKey)?.min ?? 0
+  // Hydrate current itinerary + matches.
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    setLoading(true); setError(null)
+    ;(async () => {
+      try {
+        const itin = await getCurrentItinerary().catch(() => null)
+        if (cancelled) return
+        setItinerary(itin || null)
+        const itinId = itin?.itinerary_id || null
+        const res = await getCotravellers(itinId)
+        if (cancelled) return
+        if (!Array.isArray(res) && res?.active_pair) {
+          // Already paired for this trip — bounce to the shared surface.
+          navigate(`/shared/${encodeURIComponent(res.active_pair.itinerary_id)}`, { replace: true })
+          return
+        }
+        const arr = Array.isArray(res) ? res : (res?.matches || [])
+        setMatches(arr)
+      } catch (e) {
+        if (!cancelled) setError(e?.message || 'Could not load companions')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [user?.uid, navigate])
 
-  const filtered = ALL_MATCHES.filter(m => {
-    if (selectedStyles.length > 0 && !selectedStyles.some(s => m.tags.includes(s))) return false
-    if (pace !== 'all' && m.pace !== pace) return false
-    if (m.match_score < scoreMin) return false
-    return true
-  })
+  const destinationLabel = useMemo(() => {
+    const dest = itinerary?.destination
+    if (!dest) return null
+    const city = dest.city || ''
+    const country = dest.country || ''
+    if (city && country) return `${city}, ${country}`
+    return city || country || null
+  }, [itinerary])
 
-  const countDisp = useCountUp(filtered.length, 600, 200)
-  const toggleStyle = s => setStyles(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
-  const hasFilters = selectedStyles.length > 0 || pace !== 'all' || scoreKey !== 'all'
+  const scoreDisp = useCountUp(matches.length, 700, 250)
+
+  async function regenerate() {
+    setRefreshing(true); setError(null)
+    try {
+      const excluded = matches.map(m => m?.profile?.profile_id).filter(Boolean)
+      const fresh = await regenerateCotravellers(excluded, '')
+      const arr = Array.isArray(fresh) ? fresh : (fresh?.matches || [])
+      setMatches(arr)
+    } catch (e) {
+      setError(e?.message || 'Could not refresh')
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
-      <AppBackground accent="#EC4899" />
+      <AppBackground accent={VIOLET}/>
 
       {/* nav */}
-      <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
+      <nav style={{
+        position: 'sticky', top: 0, zIndex: 50,
+        borderBottom: `1px solid ${HAIRLINE}`,
+        background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)',
+        padding: '0 48px', height: 68,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
         <motion.button
           whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
           onClick={() => navigate('/dashboard')}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTE, padding: 0, lineHeight: 0, display: 'flex', alignItems: 'center', gap: 8, transition: 'color 0.2s' }}
-          onMouseEnter={e => { e.currentTarget.style.color = BONE }}
-          onMouseLeave={e => { e.currentTarget.style.color = MUTE }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTE,
+                   display: 'flex', alignItems: 'center', gap: 8 }}
         >
           <ArrowLeft size={18}/>
           <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Dashboard</span>
@@ -167,138 +302,128 @@ export default function Discover() {
         <div style={{ width: 80 }}/>
       </nav>
 
-      {/* 2-column body */}
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '280px 1fr', maxWidth: 1240, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
+      <div style={{ maxWidth: 1040, margin: '0 auto', width: '100%', padding: '52px 48px 80px' }}>
 
-        {/* LEFT — filters */}
-        <div style={{ borderRight: `1px solid ${HAIRLINE}`, padding: '52px 40px', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 320, background: `radial-gradient(ellipse 90% 65% at 30% 20%, ${PINK}14 0%, transparent 65%)`, pointerEvents: 'none' }}/>
-
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Discover</p>
+        {/* hero */}
+        <motion.div
+          initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, ease }}
+          style={{ marginBottom: 48 }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <Sparkles size={11} style={{ color: VIOLET }}/>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+              Curated companions
+            </p>
+          </div>
           <motion.h1
-            animate={{ filter: [`drop-shadow(0 0 14px ${PINK}22)`, `drop-shadow(0 0 40px ${PINK}55)`, `drop-shadow(0 0 14px ${PINK}22)`] }}
+            animate={{ filter: [`drop-shadow(0 0 14px ${VIOLET}22)`, `drop-shadow(0 0 36px ${VIOLET}55)`, `drop-shadow(0 0 14px ${VIOLET}22)`] }}
             transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-            style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 40, color: BONE, lineHeight: 1.05, marginBottom: 10, letterSpacing: '-0.02em' }}
+            style={{
+              fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
+              fontSize: 56, color: BONE, lineHeight: 1.05, margin: '0 0 16px',
+              letterSpacing: '-0.02em',
+            }}
           >
-            Find your<br/>companion
+            Travellers whose<br/>rhythm fits yours.
           </motion.h1>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 12, lineHeight: 1.75, color: MUTE, marginBottom: 36 }}>
-            Matched to your travel style.
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 14, color: MUTE, margin: 0, maxWidth: 540, lineHeight: 1.7 }}>
+            {destinationLabel
+              ? <>Three matches picked for your <span style={{ color: BONE }}>{destinationLabel}</span> trip. Open one to vibe-check before deciding.</>
+              : <>Plan a trip first and we'll line up three companions whose rhythm fits yours.</>}
           </p>
 
-          <div style={{ height: 1, background: `linear-gradient(to right, ${HAIRLINE}, ${PINK}33, ${HAIRLINE})`, marginBottom: 28 }}/>
-
-          {/* style filters */}
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE, marginBottom: 12 }}>Travel style</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 28 }}>
-            {STYLE_TAGS.map(s => {
-              const active = selectedStyles.includes(s)
-              return (
-                <motion.button
-                  key={s}
-                  whileHover={{ scale: 1.06, transition: { duration: 0.14 } }}
-                  whileTap={{ scale: 0.94 }}
-                  onClick={() => toggleStyle(s)}
-                  style={{ padding: '7px 13px', borderRadius: 20, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.06em', background: active ? `${PINK}18` : 'transparent', border: `1px solid ${active ? `${PINK}66` : HAIRLINE}`, color: active ? PINK : MUTE, transition: 'all 0.18s', boxShadow: active ? `0 0 16px ${PINK}22` : 'none' }}
-                >
-                  {s}
-                </motion.button>
-              )
-            })}
-          </div>
-
-          {/* pace filter */}
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE, marginBottom: 10 }}>Pace</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 28 }}>
-            {PACE_OPTIONS.map(p => {
-              const active = pace === p.key
-              return (
-                <motion.button
-                  key={p.key}
-                  whileHover={{ x: 4, transition: { duration: 0.15 } }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => setPace(p.key)}
-                  style={{ padding: '10px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left', background: active ? `${PINK}12` : 'transparent', border: `1px solid ${active ? `${PINK}44` : 'transparent'}`, fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: active ? BONE : MUTE, transition: 'all 0.18s', boxShadow: active ? `0 0 20px ${PINK}1A` : 'none' }}
-                >
-                  {p.label}
-                </motion.button>
-              )
-            })}
-          </div>
-
-          {/* score filter */}
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE, marginBottom: 12 }}>Min. match score</p>
-          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-            {SCORE_OPTIONS.map(o => {
-              const active = scoreKey === o.key
-              return (
-                <motion.button
-                  key={o.key}
-                  whileHover={{ scale: 1.06, transition: { duration: 0.14 } }}
-                  whileTap={{ scale: 0.93 }}
-                  onClick={() => setScore(o.key)}
-                  style={{ padding: '7px 13px', borderRadius: 20, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.08em', background: active ? `${PINK}18` : 'transparent', border: `1px solid ${active ? `${PINK}55` : HAIRLINE}`, color: active ? PINK : MUTE, transition: 'all 0.18s', boxShadow: active ? `0 0 14px ${PINK}22` : 'none' }}
-                >
-                  {o.label}
-                </motion.button>
-              )
-            })}
-          </div>
-
-          {/* ghost count */}
-          <div style={{ marginTop: 'auto', paddingTop: 24 }}>
-            <motion.span
-              animate={{ filter: [`drop-shadow(0 0 16px ${PINK}22)`, `drop-shadow(0 0 48px ${PINK}55)`, `drop-shadow(0 0 16px ${PINK}22)`] }}
-              transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 140, lineHeight: 0.85, letterSpacing: '-0.04em', color: PINK, opacity: 0.12, userSelect: 'none', display: 'block' }}
-            >
-              {countDisp}
-            </motion.span>
-          </div>
-        </div>
-
-        {/* RIGHT — match grid */}
-        <div style={{ padding: '52px 52px', overflowY: 'auto' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 36 }}>
-            <div>
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 8 }}>Potential companions</p>
-              <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 36, color: BONE, lineHeight: 1 }}>
-                {filtered.length} match{filtered.length !== 1 ? 'es' : ''} found
-              </h2>
+          {!loading && matches.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 28 }}>
+              <span style={{
+                fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+                fontSize: 28, color: BONE,
+              }}>
+                {scoreDisp} {scoreDisp === 1 ? 'match' : 'matches'} ready
+              </span>
+              <motion.button
+                whileHover={!refreshing ? { scale: 1.05 } : {}}
+                whileTap={!refreshing ? { scale: 0.96 } : {}}
+                onClick={regenerate}
+                disabled={refreshing}
+                style={{
+                  background: 'transparent', border: `1px solid ${VIOLET}55`, borderRadius: 18,
+                  padding: '7px 14px', color: VIOLET,
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                  letterSpacing: '0.18em', textTransform: 'uppercase',
+                  cursor: refreshing ? 'wait' : 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  opacity: refreshing ? 0.6 : 1,
+                }}
+              >
+                {refreshing
+                  ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, ease: 'linear', repeat: Infinity }}><Loader2 size={11}/></motion.span>
+                  : <RefreshCw size={11}/>}
+                Fresh batch
+              </motion.button>
             </div>
-            <AnimatePresence>
-              {hasFilters && (
-                <motion.button
-                  initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }}
-                  whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-                  onClick={() => { setStyles([]); setPace('all'); setScore('all') }}
-                  style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: PINK, background: 'none', border: 'none', cursor: 'pointer', opacity: 0.8 }}
-                >
-                  Clear filters
-                </motion.button>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={`${selectedStyles.join()}-${pace}-${scoreKey}`}
-              variants={stagger} initial="hidden" animate="show"
-              style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}
-            >
-              {filtered.map(m => (
-                <MatchCard key={m.id} match={m} onClick={() => navigate(`/match/${m.id}`)}/>
-              ))}
-            </motion.div>
-          </AnimatePresence>
-
-          {filtered.length === 0 && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ textAlign: 'center', paddingTop: 80 }}>
-              <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 32, color: MUTE }}>No matches yet.</p>
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: DIM, marginTop: 10 }}>Try broadening your filters.</p>
-            </motion.div>
           )}
-        </div>
+        </motion.div>
+
+        {/* states */}
+        {loading && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '80px 0' }}>
+            <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.3, ease: 'linear', repeat: Infinity }}>
+              <Loader2 size={20} style={{ color: VIOLET }}/>
+            </motion.span>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE }}>
+              Finding companions…
+            </p>
+          </motion.div>
+        )}
+
+        {error && !loading && (
+          <div style={{ padding: '40px 32px', borderRadius: 14, border: '1px solid rgba(248,113,113,0.35)', background: 'rgba(248,113,113,0.04)', textAlign: 'center' }}>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 13, color: '#F87171', margin: 0 }}>{error}</p>
+          </div>
+        )}
+
+        {!loading && !error && matches.length === 0 && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ textAlign: 'center', padding: '80px 0' }}>
+            <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 32, color: MUTE, margin: 0 }}>
+              {destinationLabel ? 'No matches yet.' : 'Plan a trip to see companions.'}
+            </p>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: DIM, marginTop: 10 }}>
+              {destinationLabel
+                ? "We'll surface fresher options once you've sat with the matching for a beat."
+                : 'Once your itinerary is set we line up three companions automatically.'}
+            </p>
+            <motion.button
+              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.96 }}
+              onClick={() => navigate(destinationLabel ? '/dashboard' : '/preferences')}
+              style={{
+                marginTop: 22, padding: '11px 22px', borderRadius: 18,
+                background: `linear-gradient(135deg, ${VIOLET} 0%, #6D28D9 100%)`,
+                border: 'none', color: '#fff', cursor: 'pointer',
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500,
+              }}
+            >
+              {destinationLabel ? 'Back to dashboard' : 'Plan a trip'}
+            </motion.button>
+          </motion.div>
+        )}
+
+        {/* cards */}
+        <AnimatePresence>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {matches.map((m, i) => (
+              <RichMatchCard
+                key={m?.profile?.profile_id || i}
+                match={m}
+                index={i}
+                onClick={() => {
+                  const pid = m?.profile?.profile_id
+                  if (pid) navigate(`/match/${encodeURIComponent(pid)}`)
+                }}
+              />
+            ))}
+          </div>
+        </AnimatePresence>
       </div>
     </div>
   )
