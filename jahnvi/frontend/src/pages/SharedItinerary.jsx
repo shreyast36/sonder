@@ -33,18 +33,24 @@ function timeAgo(iso) {
 
 // ── Sub-components ────────────────────────────────────────────────────────
 
-function ActivityFeed({ log, selfId, otherName, otherEvaluating }) {
+function ActivityFeed({ log, selfId, otherName, otherEvaluating, since }) {
   // Show the last 12 entries, newest at top.
-  // Two filters run on the raw log before we render the feed:
-  // 1. Strip "evaluating" entries that have a follow-up resolution from
-  //    the same actor (accepted / countered / proposed) — those
+  // Filters that run on the raw log before we render the feed:
+  // 1. `since` — drop entries created before the page mounted, so a
+  //    reload wipes the visible history. Server-side activity_log is
+  //    untouched; this is a UI-only clean slate per session.
+  // 2. Strip "evaluating" entries that have a follow-up resolution
+  //    from the same actor (accepted / countered / proposed) — those
   //    "is reviewing" rows are noise once the verdict has landed.
-  // 2. Also strip "evaluating" entries older than 60s with NO follow-up
-  //    — those are orphans from a failed LLM call (suggest_proposal
-  //    returning None, etc.). They'd otherwise loiter at the top of
-  //    the feed forever.
+  // 3. Also strip "evaluating" entries older than 60s with NO follow-
+  //    up — those are orphans from a failed LLM call. They'd
+  //    otherwise loiter at the top of the feed forever.
   const entries = useMemo(() => {
-    const all = (log || [])
+    const all = (log || []).filter(e => {
+      if (!since) return true
+      const ts = new Date(e.created_at || 0).getTime()
+      return ts >= since
+    })
     const RESOLUTIONS = new Set(['proposed', 'accepted', 'countered', 'withdrawn', 'finalized'])
     const kept = []
     for (let i = 0; i < all.length; i++) {
@@ -476,6 +482,10 @@ export default function SharedItinerary() {
   const [otherDisplayName, setOtherDisplayName] = useState('them')
 
   const pollRef = useRef(null)
+  // Timestamp the user opened the page. ActivityFeed uses this to
+  // hide entries from earlier sessions — reloading the page gives a
+  // clean feed without touching the persisted log.
+  const pageOpenedAtRef = useRef(Date.now())
   const [pollErrorCount, setPollErrorCount] = useState(0)
   const refetch = useCallback(async () => {
     try {
@@ -844,6 +854,7 @@ export default function SharedItinerary() {
             selfId={selfId}
             otherName={otherName}
             otherEvaluating={otherEvaluating}
+            since={pageOpenedAtRef.current}
           />
         </div>
       </div>

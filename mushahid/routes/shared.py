@@ -444,27 +444,56 @@ async def propose(itinerary_id: str, body: ProposeRequest, uid: str = Depends(ve
         "change_id": user_change.change_id, "actor_id": uid,
     })
 
-    # Evaluate via persona LLM.
-    persona_change: ProposedChange | None = None
-    persona_message = ""
-    persona_decision = "accept"
+    # Evaluation runs off the request path — frontend already sees the
+    # user's proposal and the "evaluating" entry, polls/WS picks up the
+    # verdict when the background task writes it back.
     if profile_id:
+        asyncio.create_task(_evaluate_proposal_async(
+            itinerary_id=itinerary_id,
+            uid=uid,
+            profile_id=profile_id,
+            user_change_id=user_change.change_id,
+            session_id=session.session_id if session else None,
+        ))
+
+    return {
+        "shared":       shared.model_dump(mode="json"),
+        "decision":     "pending",
+        "message":      "",
+        "user_change":  user_change.model_dump(),
+        "counter":      None,
+    }
+
+
+async def _evaluate_proposal_async(
+    *, itinerary_id: str, uid: str, profile_id: str,
+    user_change_id: str, session_id: str | None,
+) -> None:
+    """Background persona evaluation for a user proposal. Re-reads the
+    SharedItinerary (state may have moved since the request returned),
+    runs evaluate_proposal, applies the verdict, writes + broadcasts.
+    Failures are logged and dropped — the user's proposal still stands
+    as pending, and the frontend will retry via the next poll."""
+    try:
+        shared = await get_shared_itinerary(itinerary_id)
+        if shared is None:
+            return
+        user_change = next((c for c in shared.proposed_changes if c.change_id == user_change_id), None)
+        if user_change is None or user_change.status != "proposed":
+            return
+
         try:
             from shreyas.retrieval.search import get_cotraveller_by_id
             candidate = await get_cotraveller_by_id(profile_id)
         except Exception as e:
-            logger.warning("shared propose: get_cotraveller_by_id failed: %s", e)
+            logger.warning("shared propose bg: get_cotraveller_by_id failed: %s", e)
             candidate = None
 
-        # Load the signed-in user's UserProfile so the evaluator weighs
-        # both parties' tastes, not just the persona's. Failure is
-        # non-fatal — the evaluator handles None by falling back to a
-        # persona-only decision.
         try:
             from mushahid.routes.cotraveller import _load_user_profile
             viewer = await _load_user_profile(uid, itinerary_id)
         except Exception as e:
-            logger.warning("shared propose: _load_user_profile failed: %s", e)
+            logger.warning("shared propose bg: _load_user_profile failed: %s", e)
             viewer = None
 
         existing_titles  = _all_existing_titles(shared.itinerary)
@@ -481,7 +510,7 @@ async def propose(itinerary_id: str, body: ProposeRequest, uid: str = Depends(ve
                     accepted_titles, rejected_titles,
                 )
             except Exception as e:
-                logger.warning("shared propose: evaluate_proposal failed: %s", e)
+                logger.warning("shared propose bg: evaluate_proposal failed: %s", e)
                 verdict = {"decision": "accept", "message": "yeah works for me.", "counterproposal_title": None}
         else:
             verdict = {"decision": "accept", "message": "sure, let's do it.", "counterproposal_title": None}
@@ -490,18 +519,15 @@ async def propose(itinerary_id: str, body: ProposeRequest, uid: str = Depends(ve
         persona_message  = verdict["message"]
         counter_title    = verdict["counterproposal_title"]
 
-        # Backend dedupe — overrides the model if it tried to counter
-        # with something already on the table.
         if persona_decision == "counter" and counter_title:
             if _is_duplicate(counter_title, existing=existing_titles,
                              accepted=accepted_titles, rejected=rejected_titles):
-                logger.info("shared propose: counter '%s' was duplicate, flipping to accept", counter_title)
+                logger.info("shared propose bg: counter '%s' was duplicate, flipping to accept", counter_title)
                 persona_decision = "accept"
                 counter_title = None
                 persona_message = persona_message or "yeah okay, let's go with yours."
 
-        # Update the user's proposal status and (when accepting) commit
-        # the change to the itinerary.
+        persona_change: ProposedChange | None = None
         if persona_decision == "accept":
             user_change.status = "accepted"
             shared.itinerary = _apply_change(shared.itinerary, user_change)
@@ -530,23 +556,17 @@ async def propose(itinerary_id: str, body: ProposeRequest, uid: str = Depends(ve
                 created_at=_now_iso(),
             ))
 
-    shared.version += 1
-    shared.last_updated_by = profile_id or uid
-    await write_shared_itinerary(shared)
-    _broadcast_async(session.session_id if session else None, {
-        "type": "shared_responded", "version": shared.version,
-        "decision": persona_decision,
-        "change_id": (persona_change.change_id if persona_change else user_change.change_id),
-        "actor_id":  profile_id,
-    })
-
-    return {
-        "shared":       shared.model_dump(mode="json"),
-        "decision":     persona_decision,
-        "message":      persona_message,
-        "user_change":  user_change.model_dump(),
-        "counter":      persona_change.model_dump() if persona_change else None,
-    }
+        shared.version += 1
+        shared.last_updated_by = profile_id
+        await write_shared_itinerary(shared)
+        _broadcast_async(session_id, {
+            "type": "shared_responded", "version": shared.version,
+            "decision": persona_decision,
+            "change_id": (persona_change.change_id if persona_change else user_change.change_id),
+            "actor_id":  profile_id,
+        })
+    except Exception as e:
+        logger.warning("shared propose bg: top-level failure for %s: %s", itinerary_id, e)
 
 
 @router.post("/shared/{itinerary_id}/respond")
@@ -692,10 +712,12 @@ async def persona_suggest(itinerary_id: str, body: SuggestRequest, uid: str = De
     if not profile_id:
         raise HTTPException(status_code=409, detail="no synthetic counterpart on this itinerary")
 
-    # Push an "evaluating" entry first so the UI shows the persona working
-    # on it even while the LLM call is in flight. We track its id so the
-    # no-result paths below can DROP it instead of leaving an orphaned
-    # "is reviewing" row in the feed forever.
+    # Push an "evaluating" entry + return immediately so the UI shows
+    # the persona working on it. The actual LLM call runs in the
+    # background; polling/WS pick up the suggested change when it
+    # lands. eval_entry_id is passed through so the background task
+    # can drop it on the no-result paths instead of leaving an
+    # orphaned "is reviewing" row in the feed.
     eval_entry_id = _new_id("act")
     shared.activity_log.append(ActivityLogEntry(
         entry_id=eval_entry_id, actor_id=profile_id, kind="evaluating",
@@ -707,89 +729,116 @@ async def persona_suggest(itinerary_id: str, body: SuggestRequest, uid: str = De
         "type": "shared_suggesting", "version": shared.version, "actor_id": profile_id,
     })
 
-    def _drop_evaluating():
-        shared.activity_log[:] = [e for e in shared.activity_log if e.entry_id != eval_entry_id]
-
-    try:
-        from shreyas.retrieval.search import get_cotraveller_by_id
-        candidate = await get_cotraveller_by_id(profile_id)
-    except Exception as e:
-        logger.warning("persona_suggest: get_cotraveller_by_id failed: %s", e)
-        candidate = None
-
-    existing_titles = _all_existing_titles(shared.itinerary)
-    accepted_titles = _accepted_titles(shared.proposed_changes)
-    rejected_titles = _rejected_titles(shared.proposed_changes)
-    history_payload = [c.model_dump() for c in shared.proposed_changes[-8:]]
-    itin_state      = shared.itinerary.model_dump(mode="json")
-
-    # Same intersection-of-tastes pass: load the user's profile so the
-    # persona suggests with both parties in mind, not in a vacuum.
-    try:
-        from mushahid.routes.cotraveller import _load_user_profile
-        viewer = await _load_user_profile(uid, itinerary_id)
-    except Exception as e:
-        logger.warning("persona_suggest: _load_user_profile failed: %s", e)
-        viewer = None
-
-    suggestion: dict | None = None
-    if candidate is not None:
-        try:
-            suggestion = await suggest_proposal(
-                candidate, viewer, itin_state, history_payload,
-                accepted_titles, rejected_titles,
-            )
-        except Exception as e:
-            logger.warning("persona_suggest: suggest_proposal failed: %s", e)
-            suggestion = None
-
-    if suggestion is None or not suggestion.get("title"):
-        # No usable suggestion — drop the evaluating entry so the feed
-        # doesn't show "is reviewing" forever, persist the cleanup, and
-        # return current state.
-        _drop_evaluating()
-        shared.version += 1
-        await write_shared_itinerary(shared)
-        return {"shared": shared.model_dump(mode="json"), "suggested": None}
-
-    title = suggestion["title"][:140]
-    # Backend dedupe — if the model still picked a dupe despite the prompt
-    # rule, treat as no-suggestion rather than circulate noise.
-    if _is_duplicate(title, existing=existing_titles,
-                     accepted=accepted_titles, rejected=rejected_titles):
-        logger.info("persona_suggest: model returned duplicate '%s', dropping", title)
-        _drop_evaluating()
-        shared.version += 1
-        await write_shared_itinerary(shared)
-        return {"shared": shared.model_dump(mode="json"), "suggested": None}
-
-    day_number = max(1, min(int(suggestion.get("day_number") or 1), len(shared.itinerary.days or []) or 1))
-    persona_change = ProposedChange(
-        change_id=_new_id("chg"),
-        proposer_id=profile_id,
-        kind="add",
-        day_number=day_number,
-        title=title,
-        message=(suggestion.get("message") or "")[:400],
-        status="proposed",
-        created_at=_now_iso(),
-    )
-    shared.proposed_changes.append(persona_change)
-    shared.activity_log.append(ActivityLogEntry(
-        entry_id=_new_id("act"), actor_id=profile_id, kind="proposed",
-        title=title, day_number=day_number, created_at=_now_iso(),
+    asyncio.create_task(_persona_suggest_async(
+        itinerary_id=itinerary_id,
+        uid=uid,
+        profile_id=profile_id,
+        eval_entry_id=eval_entry_id,
+        session_id=session.session_id if session else None,
     ))
-    shared.version += 1
-    shared.last_updated_by = profile_id
-    await write_shared_itinerary(shared)
-    _broadcast_async(session.session_id if session else None, {
-        "type": "shared_proposed", "version": shared.version,
-        "change_id": persona_change.change_id, "actor_id": profile_id,
-    })
-    return {
-        "shared":    shared.model_dump(mode="json"),
-        "suggested": persona_change.model_dump(),
-    }
+
+    return {"shared": shared.model_dump(mode="json"), "suggested": None}
+
+
+async def _persona_suggest_async(
+    *, itinerary_id: str, uid: str, profile_id: str,
+    eval_entry_id: str, session_id: str | None,
+) -> None:
+    """Background persona-initiated suggestion. Same shape as the
+    request-path version, but runs after we've already returned. On
+    the no-result paths the evaluating entry is dropped so the feed
+    doesn't show "is reviewing" forever."""
+    from ali.generation.proposal_evaluator import suggest_proposal
+    try:
+        shared = await get_shared_itinerary(itinerary_id)
+        if shared is None:
+            return
+
+        def _drop_evaluating():
+            shared.activity_log[:] = [e for e in shared.activity_log if e.entry_id != eval_entry_id]
+
+        try:
+            from shreyas.retrieval.search import get_cotraveller_by_id
+            candidate = await get_cotraveller_by_id(profile_id)
+        except Exception as e:
+            logger.warning("persona_suggest bg: get_cotraveller_by_id failed: %s", e)
+            candidate = None
+
+        existing_titles = _all_existing_titles(shared.itinerary)
+        accepted_titles = _accepted_titles(shared.proposed_changes)
+        rejected_titles = _rejected_titles(shared.proposed_changes)
+        history_payload = [c.model_dump() for c in shared.proposed_changes[-8:]]
+        itin_state      = shared.itinerary.model_dump(mode="json")
+
+        try:
+            from mushahid.routes.cotraveller import _load_user_profile
+            viewer = await _load_user_profile(uid, itinerary_id)
+        except Exception as e:
+            logger.warning("persona_suggest bg: _load_user_profile failed: %s", e)
+            viewer = None
+
+        suggestion: dict | None = None
+        if candidate is not None:
+            try:
+                suggestion = await suggest_proposal(
+                    candidate, viewer, itin_state, history_payload,
+                    accepted_titles, rejected_titles,
+                )
+            except Exception as e:
+                logger.warning("persona_suggest bg: suggest_proposal failed: %s", e)
+                suggestion = None
+
+        if suggestion is None or not suggestion.get("title"):
+            _drop_evaluating()
+            shared.version += 1
+            await write_shared_itinerary(shared)
+            _broadcast_async(session_id, {
+                "type": "shared_responded", "version": shared.version,
+                "decision": "no_suggestion", "actor_id": profile_id,
+            })
+            return
+
+        title = suggestion["title"][:140]
+        if _is_duplicate(title, existing=existing_titles,
+                         accepted=accepted_titles, rejected=rejected_titles):
+            logger.info("persona_suggest bg: model returned duplicate '%s', dropping", title)
+            _drop_evaluating()
+            shared.version += 1
+            await write_shared_itinerary(shared)
+            _broadcast_async(session_id, {
+                "type": "shared_responded", "version": shared.version,
+                "decision": "no_suggestion", "actor_id": profile_id,
+            })
+            return
+
+        day_number = max(1, min(int(suggestion.get("day_number") or 1), len(shared.itinerary.days or []) or 1))
+        persona_change = ProposedChange(
+            change_id=_new_id("chg"),
+            proposer_id=profile_id,
+            kind="add",
+            day_number=day_number,
+            title=title,
+            message=(suggestion.get("message") or "")[:400],
+            status="proposed",
+            created_at=_now_iso(),
+        )
+        shared.proposed_changes.append(persona_change)
+        # Drop the evaluating entry now that the persona has resolved into
+        # a concrete proposal — the "proposed" entry below replaces it.
+        _drop_evaluating()
+        shared.activity_log.append(ActivityLogEntry(
+            entry_id=_new_id("act"), actor_id=profile_id, kind="proposed",
+            title=title, day_number=day_number, created_at=_now_iso(),
+        ))
+        shared.version += 1
+        shared.last_updated_by = profile_id
+        await write_shared_itinerary(shared)
+        _broadcast_async(session_id, {
+            "type": "shared_proposed", "version": shared.version,
+            "change_id": persona_change.change_id, "actor_id": profile_id,
+        })
+    except Exception as e:
+        logger.warning("persona_suggest bg: top-level failure for %s: %s", itinerary_id, e)
 
 
 # ── Finalize ──────────────────────────────────────────────────────────────
