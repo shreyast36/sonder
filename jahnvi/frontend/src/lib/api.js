@@ -70,6 +70,22 @@ async function post(path, body) {
   return res.json()
 }
 
+async function _del(path) {
+  let res
+  try {
+    res = await fetch(`${BASE}${path}`, { method: 'DELETE', headers: await authHeaders() })
+  } catch (networkErr) {
+    _reportIfServerError(networkErr, 'DELETE', path)
+    throw networkErr
+  }
+  if (!res.ok) {
+    const err = Object.assign(new Error(await _readError(res)), { status: res.status })
+    _reportIfServerError(err, 'DELETE', path)
+    throw err
+  }
+  return res.json()
+}
+
 export async function createUserProfile(displayName) {
   return post('/api/users/profile', { display_name: displayName })
 }
@@ -284,6 +300,63 @@ export async function registerPushSubscription(subscription) {
 
 export async function unregisterPushSubscription(endpoint) {
   return post('/api/push/unsubscribe', { endpoint })
+}
+
+// ── Discover (open trips + join requests) ─────────────────────────────────
+
+export async function listOpenTrips(limit = 40) {
+  return get(`/api/discover/trips?limit=${limit}`)
+}
+
+export async function openMyTrip(itineraryId, { joinCapacity = 1, note = '' } = {}) {
+  return post(`/api/itineraries/${encodeURIComponent(itineraryId)}/open`, {
+    join_capacity: joinCapacity, note,
+  })
+}
+
+export async function closeMyTrip(itineraryId) {
+  return post(`/api/itineraries/${encodeURIComponent(itineraryId)}/close`, {})
+}
+
+export async function requestToJoin(itineraryId, message = '') {
+  return post(`/api/discover/trips/${encodeURIComponent(itineraryId)}/join-request`, { message })
+}
+
+export async function listMyJoinRequests({ asOwner = false } = {}) {
+  const q = asOwner ? '?as=owner' : ''
+  return get(`/api/discover/join-requests${q}`)
+}
+
+export async function respondJoinRequest(requestId, decision) {
+  return post(`/api/discover/join-requests/${encodeURIComponent(requestId)}/respond`, { decision })
+}
+
+// ── Social feed (posts + comments) ────────────────────────────────────────
+
+export async function listFeed({ limit = 30, before = null } = {}) {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (before) params.set('before', before)
+  return get(`/api/feed?${params.toString()}`)
+}
+
+export async function createPost({ text, linkedTripId = null, imageUrl = null }) {
+  return post('/api/feed/posts', {
+    text,
+    linked_trip_id: linkedTripId,
+    image_url: imageUrl,
+  })
+}
+
+export async function deletePost(postId) {
+  return _del(`/api/feed/posts/${encodeURIComponent(postId)}`)
+}
+
+export async function listComments(postId) {
+  return get(`/api/feed/posts/${encodeURIComponent(postId)}/comments`)
+}
+
+export async function addComment(postId, text) {
+  return post(`/api/feed/posts/${encodeURIComponent(postId)}/comments`, { text })
 }
 
 // ── Shared itinerary (collaborative negotiation) ───────────────────────────

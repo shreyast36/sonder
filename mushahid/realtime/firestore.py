@@ -537,3 +537,239 @@ async def append_chat_message(session_id: str, message: dict) -> None:
             .document(msg_id)
             .set(message)
     )
+
+
+# ── Discover surface: open trips + join requests + social feed ────────────
+
+
+async def list_open_trips(limit: int = 60) -> list[dict]:
+    """Return Itinerary docs where is_open_to_join=True. Bounded so the
+    feed query stays cheap; v1 has no pagination — newest first."""
+    if LOCAL_MODE:
+        out = [v for k, v in _store.items()
+               if k.startswith("itinerary:")
+               and isinstance(v, dict)
+               and v.get("is_open_to_join")]
+        return sorted(out, key=lambda d: d.get("created_at") or "", reverse=True)[:limit]
+    try:
+        docs = await asyncio.to_thread(
+            lambda: list(
+                get_db().collection("itineraries")
+                .where("is_open_to_join", "==", True)
+                .limit(limit).stream()
+            )
+        )
+        return [d.to_dict() | {"itinerary_id": d.id} for d in docs]
+    except Exception as e:
+        logger.warning("list_open_trips failed: %s", e)
+        return []
+
+
+async def set_itinerary_open(itinerary_id: str, *, is_open: bool, join_capacity: int) -> bool:
+    """Flip an itinerary's join-discovery state. Returns True on success."""
+    payload = {"is_open_to_join": bool(is_open), "join_capacity": max(0, int(join_capacity))}
+    if LOCAL_MODE:
+        key = f"itinerary:{itinerary_id}"
+        if key not in _store:
+            return False
+        _store[key] = {**_store[key], **payload}
+        return True
+    try:
+        await asyncio.to_thread(
+            lambda: get_db().collection("itineraries").document(itinerary_id).set(payload, merge=True)
+        )
+        return True
+    except Exception as e:
+        logger.warning("set_itinerary_open failed for %s: %s", itinerary_id, e)
+        return False
+
+
+async def write_join_request(req: dict) -> None:
+    """Upsert a JoinRequest. request_id is the key. Caller mints it."""
+    rid = req.get("request_id")
+    if not rid:
+        return
+    if LOCAL_MODE:
+        _store[f"join_request:{rid}"] = req
+        return
+    try:
+        await asyncio.to_thread(
+            lambda: get_db().collection("join_requests").document(rid).set(req)
+        )
+    except Exception as e:
+        logger.warning("write_join_request failed: %s", e)
+
+
+async def get_join_request(request_id: str) -> dict | None:
+    if LOCAL_MODE:
+        return _store.get(f"join_request:{request_id}")
+    try:
+        doc = await asyncio.to_thread(
+            lambda: get_db().collection("join_requests").document(request_id).get()
+        )
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        logger.warning("get_join_request failed: %s", e)
+        return None
+
+
+async def list_join_requests_for_user(user_id: str, *, as_owner: bool = False) -> list[dict]:
+    """Return requests where the user is either the requester (default)
+    or the owner (as_owner=True). v1 caps at 50 — most users won't have
+    more open requests than that."""
+    field = "owner_id" if as_owner else "requester_id"
+    if LOCAL_MODE:
+        return [v for k, v in _store.items()
+                if k.startswith("join_request:")
+                and isinstance(v, dict)
+                and v.get(field) == user_id]
+    try:
+        docs = await asyncio.to_thread(
+            lambda: list(
+                get_db().collection("join_requests")
+                .where(field, "==", user_id)
+                .limit(50).stream()
+            )
+        )
+        return [d.to_dict() for d in docs]
+    except Exception as e:
+        logger.warning("list_join_requests_for_user failed for %s: %s", user_id, e)
+        return []
+
+
+async def write_social_post(post: dict) -> None:
+    """Upsert a SocialPost. post_id is the key."""
+    pid = post.get("post_id")
+    if not pid:
+        return
+    if LOCAL_MODE:
+        _store[f"post:{pid}"] = post
+        return
+    try:
+        await asyncio.to_thread(
+            lambda: get_db().collection("social_posts").document(pid).set(post)
+        )
+    except Exception as e:
+        logger.warning("write_social_post failed: %s", e)
+
+
+async def get_social_post(post_id: str) -> dict | None:
+    if LOCAL_MODE:
+        return _store.get(f"post:{post_id}")
+    try:
+        doc = await asyncio.to_thread(
+            lambda: get_db().collection("social_posts").document(post_id).get()
+        )
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        logger.warning("get_social_post failed: %s", e)
+        return None
+
+
+async def delete_social_post(post_id: str) -> bool:
+    if LOCAL_MODE:
+        existed = f"post:{post_id}" in _store
+        _store.pop(f"post:{post_id}", None)
+        # Also drop any comments under this post.
+        for k in [k for k in _store.keys() if k.startswith(f"comment:{post_id}:")]:
+            _store.pop(k, None)
+        return existed
+    try:
+        # Best-effort delete of comments subcollection first, then the doc.
+        await asyncio.to_thread(
+            lambda: [
+                d.reference.delete()
+                for d in get_db().collection("social_posts").document(post_id)
+                                .collection("comments").stream()
+            ]
+        )
+        await asyncio.to_thread(
+            lambda: get_db().collection("social_posts").document(post_id).delete()
+        )
+        return True
+    except Exception as e:
+        logger.warning("delete_social_post failed for %s: %s", post_id, e)
+        return False
+
+
+async def list_social_posts(limit: int = 40, before: str | None = None) -> list[dict]:
+    """Newest-first feed page. `before` is the ISO timestamp of the
+    oldest post the client already has — passing it walks older pages.
+    v1 returns up to 40 posts; pagination is keyset-style on created_at."""
+    if LOCAL_MODE:
+        all_posts = [v for k, v in _store.items()
+                     if k.startswith("post:") and isinstance(v, dict)]
+        all_posts.sort(key=lambda p: p.get("created_at") or "", reverse=True)
+        if before:
+            all_posts = [p for p in all_posts if (p.get("created_at") or "") < before]
+        return all_posts[:limit]
+    try:
+        q = get_db().collection("social_posts").order_by("created_at", direction="DESCENDING").limit(limit)
+        if before:
+            q = q.start_after({"created_at": before})
+        docs = await asyncio.to_thread(lambda: list(q.stream()))
+        return [d.to_dict() for d in docs]
+    except Exception as e:
+        logger.warning("list_social_posts failed: %s", e)
+        return []
+
+
+async def write_social_comment(post_id: str, comment: dict) -> None:
+    cid = comment.get("comment_id")
+    if not cid:
+        return
+    if LOCAL_MODE:
+        _store[f"comment:{post_id}:{cid}"] = comment
+        return
+    try:
+        await asyncio.to_thread(
+            lambda: get_db().collection("social_posts")
+                            .document(post_id)
+                            .collection("comments")
+                            .document(cid).set(comment)
+        )
+    except Exception as e:
+        logger.warning("write_social_comment failed: %s", e)
+
+
+async def list_social_comments(post_id: str, limit: int = 50) -> list[dict]:
+    """Oldest-first so the thread reads top-to-bottom."""
+    if LOCAL_MODE:
+        out = [v for k, v in _store.items()
+               if k.startswith(f"comment:{post_id}:") and isinstance(v, dict)]
+        return sorted(out, key=lambda c: c.get("created_at") or "")[:limit]
+    try:
+        docs = await asyncio.to_thread(
+            lambda: list(
+                get_db().collection("social_posts")
+                .document(post_id)
+                .collection("comments")
+                .order_by("created_at")
+                .limit(limit).stream()
+            )
+        )
+        return [d.to_dict() for d in docs]
+    except Exception as e:
+        logger.warning("list_social_comments failed for %s: %s", post_id, e)
+        return []
+
+
+async def increment_post_comment_count(post_id: str, delta: int = 1) -> None:
+    """Denormalised counter on SocialPost so the feed query doesn't need
+    to count subcollection sizes per card. Best-effort — failure is logged
+    and ignored; the next post update will fix the count."""
+    if LOCAL_MODE:
+        key = f"post:{post_id}"
+        if key not in _store:
+            return
+        cur = int(_store[key].get("comment_count") or 0)
+        _store[key]["comment_count"] = max(0, cur + delta)
+        return
+    try:
+        from google.cloud.firestore import Increment
+        await asyncio.to_thread(
+            lambda: get_db().collection("social_posts").document(post_id)
+                            .set({"comment_count": Increment(delta)}, merge=True)
+        )
+    except Exception as e:
+        logger.debug("increment_post_comment_count failed for %s: %s", post_id, e)

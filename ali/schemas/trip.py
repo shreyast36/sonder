@@ -109,3 +109,10 @@ class Itinerary(BaseModel):
     total_budget_usd: float
     notes:            list[str] = []
     co_traveller_ids: list[str] = []
+    # Trip-discovery fields. When `is_open_to_join` is True, the trip
+    # surfaces in /discover for other users to request joining. Owner
+    # can flip this on/off and adjust `join_capacity` (how many more
+    # co-travellers they want — independent of co_traveller_ids which
+    # tracks already-confirmed companions).
+    is_open_to_join:  bool = False
+    join_capacity:    int  = 1

@@ -7,7 +7,7 @@ import MatchCard from '../components/MatchCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
-import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary } from '../lib/api'
+import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, openMyTrip, closeMyTrip } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
 import { storage } from '../lib/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -339,6 +339,9 @@ export default function Dashboard() {
   const [matches, setMatches] = useState([])
   const [activePair, setActivePair] = useState(null)
   const [matchesLoading, setMatchesLoading] = useState(false)
+  // Open-to-companions toggle state for the current trip. Synced from
+  // storedItinerary.is_open_to_join when the itinerary loads.
+  const [openToggleBusy, setOpenToggleBusy] = useState(false)
   const [pastTrips, setPastTrips] = useState([])
   const [switchingTrip, setSwitchingTrip] = useState(false)
 
@@ -795,6 +798,44 @@ export default function Dashboard() {
                   Notes from {trip.city}
                 </motion.button>
               )}
+              {/* Open-to-companions toggle. Surfaces this trip in
+                  /discover so other users can request to join. */}
+              <motion.button
+                whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
+                disabled={openToggleBusy}
+                onClick={async () => {
+                  if (openToggleBusy) return
+                  setOpenToggleBusy(true)
+                  try {
+                    if (storedItinerary?.is_open_to_join) {
+                      await closeMyTrip(storedItinerary.itinerary_id)
+                      setStoredItinerary(prev => prev ? { ...prev, is_open_to_join: false } : prev)
+                    } else {
+                      await openMyTrip(storedItinerary.itinerary_id, { joinCapacity: 1, note: '' })
+                      setStoredItinerary(prev => prev ? { ...prev, is_open_to_join: true, join_capacity: 1 } : prev)
+                    }
+                  } catch (err) {
+                    console.warn('open/close trip failed:', err?.message || err)
+                  } finally {
+                    setOpenToggleBusy(false)
+                  }
+                }}
+                style={{
+                  flex: '1 1 180px', padding: '12px 18px',
+                  background: storedItinerary?.is_open_to_join
+                    ? 'rgba(139,92,246,0.10)'
+                    : 'rgba(232,212,168,0.03)',
+                  border: `1px solid ${storedItinerary?.is_open_to_join ? 'rgba(139,92,246,0.50)' : HAIRLINE}`,
+                  borderRadius: 12, cursor: openToggleBusy ? 'wait' : 'pointer',
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  color: storedItinerary?.is_open_to_join ? '#8B5CF6' : GOLD,
+                  opacity: openToggleBusy ? 0.6 : 1,
+                  transition: 'all 0.2s',
+                }}
+              >
+                {storedItinerary?.is_open_to_join ? '✓ Open to companions' : 'Open to companions'}
+              </motion.button>
             </div>
           )}
 

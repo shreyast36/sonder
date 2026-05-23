@@ -18,6 +18,7 @@
 #
 from jahnvi.schemas.enums        import *
 from jahnvi.schemas.user         import *
+from jahnvi.schemas.social       import *
 from ali.schemas.enums           import *
 from ali.schemas.trip            import *
 from mushahid.schemas.enums      import *
