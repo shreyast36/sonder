@@ -455,6 +455,17 @@ async def propose(itinerary_id: str, body: ProposeRequest, uid: str = Depends(ve
             logger.warning("shared propose: get_cotraveller_by_id failed: %s", e)
             candidate = None
 
+        # Load the signed-in user's UserProfile so the evaluator weighs
+        # both parties' tastes, not just the persona's. Failure is
+        # non-fatal — the evaluator handles None by falling back to a
+        # persona-only decision.
+        try:
+            from mushahid.routes.cotraveller import _load_user_profile
+            viewer = await _load_user_profile(uid, itinerary_id)
+        except Exception as e:
+            logger.warning("shared propose: _load_user_profile failed: %s", e)
+            viewer = None
+
         existing_titles  = _all_existing_titles(shared.itinerary)
         accepted_titles  = _accepted_titles(shared.proposed_changes)
         rejected_titles  = _rejected_titles(shared.proposed_changes)
@@ -465,7 +476,7 @@ async def propose(itinerary_id: str, body: ProposeRequest, uid: str = Depends(ve
         if candidate is not None:
             try:
                 verdict = await evaluate_proposal(
-                    candidate, itin_state, proposal_payload, history_payload,
+                    candidate, viewer, itin_state, proposal_payload, history_payload,
                     accepted_titles, rejected_titles,
                 )
             except Exception as e:
@@ -705,11 +716,20 @@ async def persona_suggest(itinerary_id: str, body: SuggestRequest, uid: str = De
     history_payload = [c.model_dump() for c in shared.proposed_changes[-8:]]
     itin_state      = shared.itinerary.model_dump(mode="json")
 
+    # Same intersection-of-tastes pass: load the user's profile so the
+    # persona suggests with both parties in mind, not in a vacuum.
+    try:
+        from mushahid.routes.cotraveller import _load_user_profile
+        viewer = await _load_user_profile(uid, itinerary_id)
+    except Exception as e:
+        logger.warning("persona_suggest: _load_user_profile failed: %s", e)
+        viewer = None
+
     suggestion: dict | None = None
     if candidate is not None:
         try:
             suggestion = await suggest_proposal(
-                candidate, itin_state, history_payload,
+                candidate, viewer, itin_state, history_payload,
                 accepted_titles, rejected_titles,
             )
         except Exception as e:
