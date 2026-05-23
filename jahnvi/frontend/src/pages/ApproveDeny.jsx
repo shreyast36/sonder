@@ -168,6 +168,22 @@ export default function ApproveDeny() {
   const scoreDisp    = useCountUp(matchScore, 900, 400)
   const reasons      = match?.match_reasons || []
 
+  // When the match ends in denial — either the user or the persona —
+  // briefly show the outcome panel, then auto-replace the route with
+  // the matches list so the user lands on a refreshed top-3 that
+  // filters this profile out. replace:true so the dead approval URL
+  // isn't in the back-stack. Approved is handled separately (the
+  // "See your itinerary" CTA navigates explicitly).
+  useEffect(() => {
+    if (session?.approval_status !== 'denied') return
+    const itinId = session?.itinerary_id
+    const t = setTimeout(() => {
+      navigate(itinId ? `/companions/${encodeURIComponent(itinId)}` : '/dashboard',
+               { replace: true })
+    }, 1800)
+    return () => clearTimeout(t)
+  }, [session?.approval_status, session?.itinerary_id, navigate])
+
   // Early return AFTER all hook calls so React's hook-order invariant holds
   // when error transitions in/out across renders.
   const fatalError = error && !session
