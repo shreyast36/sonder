@@ -816,15 +816,32 @@ def _emotional_signature_block(profile: Any, *, label: str) -> str:
     )
 
 
-def _build_persona_system(profile: Any) -> str:
+def _build_persona_system(profile: Any, trip_destination: str | None = None) -> str:
     """Build a persona system prompt for a synthetic co-traveller.
 
     Heavy first-person framing keeps the model from drifting into assistant
     register. PPM and emotional signature are included as private psychology,
     not vocabulary to surface.
+
+    `trip_destination` is the user's actual planned trip. When provided, it
+    becomes a hard constraint at the top of the system prompt — the persona
+    must only discuss travel in the context of THIS destination, never their
+    own home city or other places.
     """
     signature_block = _emotional_signature_block(profile, label="YOU")
+    dest = _clean_text(trip_destination)
+    destination_block = (
+        f"HARD CONSTRAINT — THE TRIP IS TO {dest}.\n"
+        f"You are chatting with someone you matched with for a trip to {dest}.\n"
+        "Every travel reference, every \"where should we go\", every food/place/"
+        "scene you bring up MUST be about " f"{dest}" " only. Never volunteer "
+        "your own home city or any other destination as a place to go or visit. "
+        "If the other person brings up another city, gently redirect to "
+        f"{dest}. This rule overrides any other inclination in your profile.\n\n"
+        if dest != _EMPTY else ""
+    )
     return (
+        f"{destination_block}"
         f"You ARE {_clean_text(getattr(profile, 'display_name', ''), 'this person')}.\n"
         f"PROFILE: {_profile_snapshot(profile)}\n\n"
         f"PRIVATE TRAVEL PSYCHOLOGY:\n{_ppm_block('YOU', profile)}\n\n"
@@ -855,18 +872,33 @@ async def generate_chat_reply(
     profile: Any,
     last_message: str,
     history: list[dict],
+    trip_destination: str | None = None,
 ) -> str:
     """
     Generate the synthetic co-traveller's next turn in an ongoing chat.
 
     Routes to the LARGE tier via complex_refinement because multi-turn persona
     chat needs consistency and stronger social reasoning.
+
+    `trip_destination` pins the conversation to the user's actual planned
+    trip — without it the model defaults to the persona's own
+    preferred_destination, which is wrong (e.g. Paris persona talking
+    about Lisbon when the user matched for a Japan trip).
     """
-    system = _build_persona_system(profile)
+    system = _build_persona_system(profile, trip_destination=trip_destination)
     transcript = _format_history(history, getattr(profile, "profile_id", ""))
+
+    dest = _clean_text(trip_destination)
+    destination_line = (
+        f"THE TRIP IS TO: {dest}. Every reference to 'the trip', 'where we'd go', "
+        "or any travel context must be about THIS destination only — never your "
+        "own home city, never any other place.\n\n"
+        if dest != _EMPTY else ""
+    )
 
     if transcript:
         prompt = (
+            f"{destination_line}"
             "CONVERSATION SO FAR (ME = you, THEM = the other person):\n"
             f"{transcript}\n\n"
             f"THEM just said: {_clean_text(last_message)}\n\n"
@@ -875,6 +907,7 @@ async def generate_chat_reply(
         )
     else:
         prompt = (
+            f"{destination_line}"
             f"THEM just said: {_clean_text(last_message)}\n\n"
             "This is the start of your conversation. Reply in character and give "
             "them something specific to react to."

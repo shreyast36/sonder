@@ -100,6 +100,7 @@ async def start_chat(body: ChatStartRequest, uid: str = Depends(verify_token)):
         session_id=session_id,
         user_id=uid,
         profile_id=profile_id,
+        itinerary_id=itinerary_id,
         approval_status=ApprovalStatus.pending,
         created_at=datetime.now(timezone.utc).isoformat(),
     )
@@ -134,14 +135,22 @@ async def _load_session_safe(session_id: str) -> dict | None:
     cached = _sessions.get(session_id)
     if cached:
         s = cached["session"]
-        return {"user_id": s.user_id, "profile_id": s.profile_id}
+        return {
+            "user_id":      s.user_id,
+            "profile_id":   s.profile_id,
+            "itinerary_id": getattr(s, "itinerary_id", None),
+        }
     try:
         stored = await get_chat_session(session_id)
     except Exception:
         return None
     if stored is None:
         return None
-    return {"user_id": stored.get("user_id"), "profile_id": stored.get("profile_id")}
+    return {
+        "user_id":      stored.get("user_id"),
+        "profile_id":   stored.get("profile_id"),
+        "itinerary_id": stored.get("itinerary_id"),
+    }
 
 
 @router.get("/chat/session/{session_id}")
@@ -308,6 +317,28 @@ async def _send_synthetic_reply(
             logger.warning("synthetic reply: no profile in Pinecone for %s", profile_id)
             return
 
+        # Resolve the trip destination from the linked itinerary so the
+        # persona's reply stays anchored to where the user is actually
+        # going. Without this the model defaults to the persona's own
+        # preferred_destination — e.g. a Paris persona talking about
+        # Lisbon when the user matched for a Japan trip.
+        trip_destination: str | None = None
+        itinerary_id = session_meta.get("itinerary_id")
+        if itinerary_id:
+            try:
+                from mushahid.realtime.firestore import get_itinerary
+                itin = await get_itinerary(itinerary_id)
+                dest = getattr(itin, "destination", None) if itin else None
+                city    = (getattr(dest, "city", "") or "").strip()
+                country = (getattr(dest, "country", "") or "").strip()
+                if city and country:
+                    trip_destination = f"{city}, {country}"
+                elif city:
+                    trip_destination = city
+            except Exception as e:
+                logger.warning("synthetic reply: failed to load itinerary %s for destination: %s",
+                               itinerary_id, e)
+
         # Tiny pause before the typing dots appear so it doesn't fire in the
         # same tick as the user's message — feels more natural.
         await asyncio.sleep(random.uniform(*_REPLY_BEFORE_TYPING_S))
@@ -324,7 +355,7 @@ async def _send_synthetic_reply(
         keepalive = asyncio.create_task(_typing_keepalive(session_id, profile_id))
 
         history = await list_chat_messages(session_id)
-        reply_text = await generate_chat_reply(candidate, last_message, history)
+        reply_text = await generate_chat_reply(candidate, last_message, history, trip_destination=trip_destination)
         if not reply_text:
             return
 
@@ -353,7 +384,9 @@ async def _send_synthetic_reply(
                     speaker = "ME" if m.get("sender_id") == profile_id else "THEM"
                     history_lines.append(f"{speaker}: {text}")
                 history_str = "\n".join(history_lines)
-                fallback_city = getattr(candidate, "preferred_destination", None) or None
+                # Prefer the user's actual trip destination so validator repairs
+                # don't reintroduce the persona's own preferred_destination.
+                fallback_city = trip_destination or getattr(candidate, "preferred_destination", None) or None
 
                 validated_reply, telemetry = await validate_and_repair_chat_reply_wired(
                     profile_json=profile_json,

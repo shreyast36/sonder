@@ -44,6 +44,12 @@ class ChatSession(BaseModel):
     profile_id:      str
     approval_status: ApprovalStatus = ApprovalStatus.pending
     created_at:      str
+    # The trip this chat is anchored to. The synthetic persona's replies
+    # are pinned to this trip's destination — without it the persona drifts
+    # into talking about their own home city or preferred destination
+    # instead of the user's actual planned trip. Optional only for back-
+    # compat with sessions created before this field existed.
+    itinerary_id:    str | None = None
 
 
 class SharedItinerary(BaseModel):
