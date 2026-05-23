@@ -47,18 +47,35 @@ class ChatStartRequest(BaseModel):
 
 @router.post("/chat/start", response_model=ChatStartResponse)
 async def start_chat(body: ChatStartRequest, uid: str = Depends(verify_token)):
-    from ali.generation.topics import generate_topics, generate_icebreaker
+    from ali.generation.topics import generate_topics, generate_persona_opener
     from shared.schemas import UserProfile, CoTravellerMatch, CoTravellerProfile, Itinerary, Destination
     from shared.schemas import PacePreference, BudgetStyle, TravelStyle
+    from mushahid.realtime.firestore import get_user_profile, get_itinerary
 
     profile_id   = body.profile_id
     itinerary_id = body.itinerary_id
 
-    user_profile = UserProfile(user_id=uid, display_name=uid, constraints=None, persona_answers=None)
+    # Resolve the user's actual display name from their Firestore profile
+    # so the persona's opener can address them by name. Falls back to uid
+    # if the profile lookup fails — better a placeholder than no greeting.
+    user_display_name = uid
+    try:
+        prof = await get_user_profile(uid)
+        if prof:
+            name = (prof.get("display_name") or "").strip()
+            if name:
+                user_display_name = name
+    except Exception as e:
+        logger.warning("start_chat: get_user_profile(%s) failed: %s", uid, e)
 
-    # Best-effort fetch of the real synthetic profile so the icebreaker has
-    # something to anchor on. Fall back to a neutral CoTravellerMatch when
-    # Pinecone is unreachable so chat still starts.
+    user_profile = UserProfile(
+        user_id=uid, display_name=user_display_name,
+        constraints=None, persona_answers=None,
+    )
+
+    # Best-effort fetch of the real synthetic profile so the opener has
+    # something to anchor on. Fall back to a neutral CoTravellerProfile
+    # when Pinecone is unreachable so chat still starts.
     candidate = None
     try:
         from shreyas.retrieval.search import get_cotraveller_by_id
@@ -81,18 +98,60 @@ async def start_chat(body: ChatStartRequest, uid: str = Depends(verify_token)):
         compatibility_breakdown={},
     )
 
-    dummy_itinerary = Itinerary(
-        itinerary_id=itinerary_id, user_id=uid,
+    # Load the real itinerary so the opener can reference the actual
+    # destination + planned stops. Fall back to a stub when Firestore is
+    # unreachable (chat still works, opener is just less specific).
+    real_itinerary: Itinerary | None = None
+    trip_destination: str | None = None
+    itinerary_digest: str | None = None
+    try:
+        real_itinerary = await get_itinerary(itinerary_id) if itinerary_id else None
+    except Exception as e:
+        logger.warning("start_chat: get_itinerary(%s) failed: %s", itinerary_id, e)
+
+    if real_itinerary is not None:
+        dest = getattr(real_itinerary, "destination", None)
+        city    = (getattr(dest, "city", "") or "").strip() if dest else ""
+        country = (getattr(dest, "country", "") or "").strip() if dest else ""
+        if city and country:
+            trip_destination = f"{city}, {country}"
+        elif city:
+            trip_destination = city
+
+        days = getattr(real_itinerary, "days", None) or []
+        digest_lines: list[str] = []
+        for day in days[:5]:
+            day_no = getattr(day, "day_number", None) or len(digest_lines) + 1
+            activities = getattr(day, "activities", []) or []
+            names: list[str] = []
+            for act in activities[:3]:
+                name = getattr(act, "name", None) or getattr(act, "activity_name", "") or ""
+                name = (name or "").strip()
+                if name:
+                    names.append(name)
+            if names:
+                digest_lines.append(f"Day {day_no}: {' / '.join(names)}")
+        if digest_lines:
+            itinerary_digest = "\n".join(digest_lines)
+
+    # If the itinerary didn't load, still pass a stub to generate_topics so
+    # it doesn't crash on getattr(itinerary, "destination").
+    itinerary_for_topics = real_itinerary or Itinerary(
+        itinerary_id=itinerary_id or "", user_id=uid,
         destination=Destination(
-            destination_id="dest_001", city="Destination", country="",
+            destination_id="dest_stub", city=trip_destination or "Destination", country="",
             avg_daily_cost_usd=100.0, tags=[], description="",
         ),
         days=[], total_budget_usd=0.0,
     )
 
-    icebreaker, topics = await asyncio.gather(
-        generate_icebreaker(user_profile, match),
-        generate_topics(user_profile, match, dummy_itinerary),
+    opener, topics = await asyncio.gather(
+        generate_persona_opener(
+            candidate, user_display_name,
+            trip_destination=trip_destination,
+            itinerary_digest=itinerary_digest,
+        ),
+        generate_topics(user_profile, match, itinerary_for_topics),
     )
 
     session_id = str(uuid.uuid4())
@@ -107,10 +166,32 @@ async def start_chat(body: ChatStartRequest, uid: str = Depends(verify_token)):
     _sessions[session_id] = {"session": session, "messages": []}
     await write_chat_session(session)
 
+    # Persist the persona's opener as the first message so it shows up
+    # when the user lands on /chat/{session_id}. From the user's POV it
+    # looks like the persona texted them first — which is exactly what we
+    # want.
+    if opener:
+        opener_msg = {
+            "message_id": str(uuid.uuid4()),
+            "session_id": session_id,
+            "sender_id":  profile_id,
+            "content":    opener,
+            "timestamp":  datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            await append_chat_message(session_id, opener_msg)
+            _sessions[session_id]["messages"].append(opener_msg)
+        except Exception as e:
+            logger.warning("start_chat: failed to persist opener for %s: %s", session_id, e)
+
     from mushahid.monitoring import capture
     capture(uid, "chat_started", {"session_id": session_id, "profile_id": profile_id})
 
-    return ChatStartResponse(session=session, icebreaker=icebreaker, topics=topics)
+    # `icebreaker` field of the response is now the persona's opener — kept
+    # the field name for back-compat with the existing pydantic response
+    # model. Frontend ignores it (the message is already in the session
+    # history) but consumers that read the field still see meaningful text.
+    return ChatStartResponse(session=session, icebreaker=opener, topics=topics)
 
 
 async def _assert_participant(session_id: str, uid: str) -> None:

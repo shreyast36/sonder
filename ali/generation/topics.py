@@ -959,6 +959,91 @@ async def generate_chat_reply(
     return cleaned
 
 
+async def generate_persona_opener(
+    profile: Any,
+    user_display_name: str,
+    trip_destination: str | None = None,
+    itinerary_digest: str | None = None,
+) -> str:
+    """
+    Generate the synthetic persona's opening message — they text the user
+    first, not the other way around.
+
+    Format requirement: "Hey! {user_first_name}, " + one short question
+    grounded in the destination or a specific planned itinerary stop.
+
+    Routes to the LARGE tier for tonal consistency with subsequent replies.
+    Without `trip_destination` / `itinerary_digest`, falls back to a
+    deterministic generic opener so chat still starts even if the
+    itinerary failed to load.
+    """
+    raw_name = _clean_text(user_display_name)
+    first_name = "there"
+    if raw_name != _EMPTY:
+        # Strip emails / Firebase uids that slip through as display names.
+        clean = raw_name.split("@")[0].strip()
+        if clean and clean.lower() != raw_name.lower().strip():
+            first_name = clean.split()[0] if clean.split() else "there"
+        elif clean:
+            first_name = clean.split()[0]
+
+    dest   = _clean_text(trip_destination)
+    digest = _clean_text(itinerary_digest)
+
+    system = _build_persona_system(
+        profile,
+        trip_destination=trip_destination,
+        itinerary_digest=itinerary_digest,
+    )
+
+    rules = (
+        f"You are texting {first_name} FIRST — they haven't said anything yet. "
+        f"Your message MUST start exactly with: \"Hey! {first_name}, \" (capital H, "
+        "exclamation mark, comma after the name, then a single space).\n\n"
+        "After that opener, ask ONE short question grounded in:\n"
+    )
+    if dest != _EMPTY and digest != _EMPTY:
+        rules += (
+            f"- the destination ({dest}) OR\n"
+            "- one specific planned stop from the itinerary above\n\n"
+            "Reference the stop by name when possible — concrete beats generic.\n"
+        )
+    elif dest != _EMPTY:
+        rules += f"- the destination ({dest})\n\n"
+    else:
+        rules += "- the trip in general\n\n"
+
+    rules += (
+        "Keep it ONE SHORT MESSAGE. One sentence after the greeting. No "
+        "introductions about yourself. No \"I'm X from Y\". No emoji. "
+        "Lowercase after the greeting is fine — matches the casual texting register."
+    )
+
+    raw = await route_request("complex_refinement", rules, system)
+    cleaned = _clean_message(raw, max_chars=400)
+
+    # Guard against the model echoing the persona's own name.
+    pname = _clean_text(getattr(profile, "display_name", ""))
+    if pname and cleaned.lower().startswith(pname.lower() + ":"):
+        cleaned = cleaned[len(pname) + 1:].lstrip()
+
+    # Enforce the "Hey! {first_name}, " prefix even if the model drifted.
+    expected_prefix = f"Hey! {first_name},"
+    if not cleaned.lower().startswith(expected_prefix.lower()):
+        # Strip any drifted greeting and re-prefix.
+        tail = cleaned
+        for bad_start in (f"Hey {first_name},", f"Hi {first_name},", f"Hello {first_name},",
+                          "Hey,", "Hi,", "Hello,", "Hey!"):
+            if tail.lower().startswith(bad_start.lower()):
+                tail = tail[len(bad_start):].lstrip(" ,!")
+                break
+        if not tail.strip():
+            tail = f"what are you most curious about for {dest if dest != _EMPTY else 'the trip'}?"
+        cleaned = f"{expected_prefix} {tail.lstrip()}"
+
+    return cleaned
+
+
 async def generate_icebreaker(user_profile: UserProfile, match: CoTravellerMatch) -> str:
     """
     Generate the pre-filled first message the user can send or edit.
