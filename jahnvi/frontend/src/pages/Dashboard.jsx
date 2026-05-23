@@ -319,6 +319,7 @@ function matchToCard(m) {
     match_score:  Math.round((Number(m?.match_score) || 0) * 100),
     tags:         [...dimTags, paceTag, budgetTag].filter(Boolean).slice(0, 3),
     avatar_url:   p.avatar_url || null,
+    is_seed:      Boolean(p.is_seed),
   }
 }
 

@@ -33,6 +33,7 @@ function matchToCard(m) {
     tags:         [...dimTags, _PACE_TAG[p.pace], _BUDGET_TAG[p.budget_style]].filter(Boolean).slice(0, 3),
     avatar_url:   p.avatar_url || null,
     reasons:      Array.isArray(m?.match_reasons) ? m.match_reasons : [],
+    is_seed:      Boolean(p.is_seed),
   }
 }
 

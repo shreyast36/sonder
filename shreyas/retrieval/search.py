@@ -164,6 +164,7 @@ async def get_cotraveller_by_id(profile_id: str) -> "CoTravellerProfile | None":
             quirks                = list(md.get("quirks") or []),
             voice_id              = md.get("voice_id"),
             compatibility_signals = _json_decode(md.get("compatibility_signals_json")),
+            is_seed               = bool(md.get("is_seed", False)),
         )
     except Exception as e:
         logger.warning("get_cotraveller_by_id parse failed for %s: %s", profile_id, e)
@@ -240,6 +241,7 @@ async def search_cotravellers(
                 quirks                = list(md.get("quirks") or []),
                 voice_id              = md.get("voice_id"),
                 compatibility_signals = _json_decode(md.get("compatibility_signals_json")),
+                is_seed               = bool(md.get("is_seed", False)),
             ))
         except Exception as e:
             logger.warning("skipping malformed cotraveller %s: %s", match.id, e)

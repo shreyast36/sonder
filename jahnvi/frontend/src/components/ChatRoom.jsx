@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Send, Check, MapPin } from 'lucide-react'
+import SynthBadge from './SynthBadge'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
@@ -144,6 +145,7 @@ export default function ChatRoom({ sessionId, selfId }) {
   const otherName     = otherProfile?.display_name || (otherUserId ? otherUserId.split('_')[0] : 'Companion')
   const otherLocation = otherProfile?.location || ''
   const otherAvatar   = otherProfile?.avatar_url || ''
+  const otherIsSeed   = !!otherProfile?.is_seed
   const otherTyping   = otherUserId ? typingUsers.includes(otherUserId) : typingUsers.length > 0
   const otherOnline   = otherUserId ? !!presence[otherUserId] : false
   const matchPct      = other?.match_score ? Math.round(other.match_score * 100) : null
@@ -211,6 +213,11 @@ export default function ChatRoom({ sessionId, selfId }) {
           </div>
 
           <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 34, color: BONE, lineHeight: 1, marginBottom: 8 }}>{otherName}</h2>
+          {otherIsSeed && (
+            <div style={{ marginBottom: 8 }}>
+              <SynthBadge isSeed={true} variant="default" />
+            </div>
+          )}
           {otherLocation && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
               <MapPin size={10} style={{ color: ROSE }}/>

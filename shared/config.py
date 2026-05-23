@@ -11,6 +11,10 @@ FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
 FIREBASE_PRIVATE_KEY = os.getenv("FIREBASE_PRIVATE_KEY", "").replace("\\n", "\n")
 FIREBASE_CLIENT_EMAIL = os.getenv("FIREBASE_CLIENT_EMAIL")
 FIRESTORE_DATABASE_ID = os.getenv("FIRESTORE_DATABASE_ID")  # None → "(default)"; set if using a named DB
+# Firebase Storage bucket — e.g. "your-project.appspot.com" or "your-project.firebasestorage.app".
+# Required for synthetic avatar uploads + future audio caching. Mirror of VITE_FIREBASE_STORAGE_BUCKET
+# on the frontend.
+FIREBASE_STORAGE_BUCKET = os.getenv("FIREBASE_STORAGE_BUCKET")
 
 # LLM providers
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

@@ -229,23 +229,28 @@ async def _push_chat_notification(
     if not recipient_user_id:
         return
     sender_name = sender_id
+    sender_is_seed = False
     try:
         from shreyas.retrieval.search import get_cotraveller_by_id
         cand = await get_cotraveller_by_id(sender_id)
-        if cand and cand.display_name:
-            sender_name = cand.display_name
+        if cand:
+            if cand.display_name:
+                sender_name = cand.display_name
+            sender_is_seed = bool(getattr(cand, "is_seed", False))
     except Exception:
         pass
 
     short_preview = preview[:140]
     timestamp     = datetime.now(timezone.utc).isoformat()
 
-    # In-app channel.
+    # In-app channel — includes is_seed so the banner can render the
+    # "Sonder Curated" badge for synthetic senders.
     await manager.notify_user(recipient_user_id, {
         "type":        "chat_notification",
         "session_id":  session_id,
         "sender_id":   sender_id,
         "sender_name": sender_name,
+        "sender_is_seed": sender_is_seed,
         "preview":     short_preview,
         "timestamp":   timestamp,
     })

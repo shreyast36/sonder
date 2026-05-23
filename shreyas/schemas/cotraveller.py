@@ -65,6 +65,11 @@ class CoTravellerProfile(BaseModel):
     voice_id:              Optional[str] = None
     compatibility_signals: dict          = Field(default_factory=dict)
 
+    # Disclosure flag — True when the profile came from seed_cotravellers.py.
+    # The frontend reads this to render the "Sonder Curated" badge on every
+    # surface where a synthetic persona could be mistaken for a real user.
+    is_seed: bool = False
+
 
 class CompanionPrefs(BaseModel):
     """

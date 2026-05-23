@@ -6,6 +6,7 @@ import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import { useAuth } from '../hooks/useAuth'
 import { getCurrentItinerary, getCotravellerProfile, startChat } from '../lib/api'
+import SynthBadge from '../components/SynthBadge'
 
 // vivid violet — accent for the match-detail screen
 const VIOLET = '#8B5CF6'
@@ -222,9 +223,14 @@ export default function MatchDetail() {
             </div>
           )}
           {profile.archetype && (
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.28em', textTransform: 'uppercase', color: VIOLET, marginBottom: 22 }}>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.28em', textTransform: 'uppercase', color: VIOLET, marginBottom: 14 }}>
               {profile.archetype}
             </p>
+          )}
+          {profile.is_seed && (
+            <div style={{ marginBottom: 22 }}>
+              <SynthBadge isSeed={true} variant="default" />
+            </div>
           )}
 
           {/* Tags */}

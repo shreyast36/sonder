@@ -1,6 +1,7 @@
 import { MapPin } from 'lucide-react'
 import { GOLD, BONE, MUTE, HAIRLINE } from '../lib/tokens'
 import LuxCard from './LuxCard'
+import SynthBadge from './SynthBadge'
 
 function MatchRing({ pct = 92 }) {
   const r = 22, c = 2 * Math.PI * r
@@ -43,6 +44,7 @@ export default function MatchCard({ match, onClick }) {
     location = '',
     match_score = 0,
     tags = [],
+    is_seed = false,
   } = match ?? {}
 
   return (
@@ -58,12 +60,15 @@ export default function MatchCard({ match, onClick }) {
           <Initials name={display_name} size={50} />
         )}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{
-            color: BONE, fontSize: 15,
-            fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, marginBottom: 3,
-          }}>
-            {display_name}
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' }}>
+            <p style={{
+              color: BONE, fontSize: 15,
+              fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, margin: 0,
+            }}>
+              {display_name}
+            </p>
+            <SynthBadge isSeed={is_seed} variant="compact" />
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
             <MapPin size={9} style={{ color: GOLD, flexShrink: 0 }}/>
             <span style={{ fontSize: 10, color: MUTE, fontFamily: '"Inter Tight",sans-serif' }}>{location}</span>

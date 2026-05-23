@@ -6,6 +6,7 @@ import { auth } from '../lib/firebase'
 import { openNotificationSocket } from '../lib/api'
 import { ensurePushSubscribed, dropPushSubscription, pushSupported } from '../lib/push'
 import { BG, BONE, MUTE } from '../lib/tokens'
+import SynthBadge from './SynthBadge'
 
 const ROSE = '#F43F5E'
 const NotificationContext = createContext(null)
@@ -41,12 +42,17 @@ export default function NotificationProvider({ children }) {
 
   const handleEvent = useCallback((data) => {
     if (data?.type !== 'chat_notification') return
-    const { session_id, sender_name, preview } = data
+    const { session_id, sender_name, sender_is_seed, preview } = data
     // Suppress if the user is already on the chat page for this session —
     // they're literally looking at the message arrive.
     if (locRef.current === `/chat/${session_id}`) return
 
-    setBanner({ sessionId: session_id, senderName: sender_name || 'New message', preview: preview || '' })
+    setBanner({
+      sessionId:  session_id,
+      senderName: sender_name || 'New message',
+      senderIsSeed: !!sender_is_seed,
+      preview:    preview || '',
+    })
 
     // OS notification when the tab is hidden — but only when the service
     // worker DIDN'T already get a push for this message. If swPushActive is
@@ -181,12 +187,15 @@ export default function NotificationProvider({ children }) {
               <MessageCircle size={16} style={{ color: '#fff' }}/>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{
-                fontFamily: '"Inter Tight",sans-serif', fontSize: 11, fontWeight: 500,
-                color: BONE, margin: 0, letterSpacing: '0.04em',
-              }}>
-                {banner.senderName}
-              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <p style={{
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 11, fontWeight: 500,
+                  color: BONE, margin: 0, letterSpacing: '0.04em',
+                }}>
+                  {banner.senderName}
+                </p>
+                <SynthBadge isSeed={banner.senderIsSeed} variant="inline" />
+              </div>
               <p style={{
                 fontFamily: '"Inter Tight",sans-serif', fontSize: 12, fontWeight: 300,
                 color: MUTE, margin: '3px 0 0', lineHeight: 1.45,
