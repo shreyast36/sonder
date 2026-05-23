@@ -10,7 +10,7 @@ import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import {
   getSharedItinerary, proposeChange, respondToChange,
-  getUserProfile,
+  getUserProfile, getCotravellerProfile,
 } from '../lib/api'
 
 const ROSE   = '#F43F5E'
@@ -325,25 +325,28 @@ export default function SharedItinerary() {
     return () => { cancelled = true; clearInterval(pollRef.current) }
   }, [id, refetch])
 
-  // Other side's display name — for synthetic personas we don't have a
-  // direct lookup here, so derive from the activity log or fall back.
+  // Resolve the other party's display name. For synthetic personas we
+  // hit getCotravellerProfile (Pinecone-backed); for real users we'd
+  // need a user-by-id endpoint, which doesn't exist yet — fall back to
+  // a friendly placeholder rather than rendering "them" forever.
   useEffect(() => {
     if (!shared || !selfId) return
     const otherId = (shared.user_ids || []).find(u => u !== selfId)
-    if (!otherId) return
-    // Try to load co-traveller name from the matches cache. If not
-    // available, leave the fallback.
+    if (!otherId) { setOtherDisplayName('them'); return }
+    let cancelled = false
     ;(async () => {
+      // Synthetic profile_ids start with "ct_". Try the cotraveller
+      // route first; if that 404s (real user), keep the fallback.
       try {
-        const me = await getUserProfile()
-        // me.display_name is the signed-in user; the other side's name
-        // we already get from the chat history if needed. For now, the
-        // 'them' fallback is fine until we wire a profile lookup here.
-        if (me?.display_name) {
-          // no-op; just confirms auth works
-        }
-      } catch { /* noop */ }
+        const match = await getCotravellerProfile(otherId, shared.itinerary_id || '')
+        if (cancelled) return
+        const name = match?.profile?.display_name?.split(/\s+/)?.[0]
+        if (name) setOtherDisplayName(name)
+      } catch {
+        if (!cancelled) setOtherDisplayName('your match')
+      }
     })()
+    return () => { cancelled = true }
   }, [shared, selfId])
 
   if (error && !shared) {

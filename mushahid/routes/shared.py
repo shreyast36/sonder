@@ -80,8 +80,41 @@ def _broadcast_async(session_id: str | None, payload: dict) -> None:
         logger.debug("shared broadcast failed for %s: %s", session_id, e)
 
 
-def _normalize(s: str) -> str:
-    return (s or "").strip().lower()
+# Connective words that carry no information about *which* activity is
+# being proposed. Stripped before token comparison so "ramen at Ichiran"
+# vs "Ichiran ramen" collide cleanly but "Ippudo ramen" doesn't.
+_STOPWORDS: frozenset[str] = frozenset({
+    "a", "an", "the", "at", "in", "on", "by", "to", "for", "from", "with",
+    "of", "and", "or", "near", "around", "via", "&", "+",
+    "stop", "visit", "go", "doing", "trip", "tour",
+})
+
+# Token-Jaccard threshold above which two titles are considered the same
+# activity. 0.6 is the empirical sweet spot:
+#   "ramen at Ichiran" ↔ "Ichiran ramen"   → 1.0 ✓ dupe
+#   "Ichiran ramen"    ↔ "Ippudo ramen"    → 0.33 ✓ distinct
+#   "Senso-ji temple"  ↔ "Senso ji temple" → 1.0 ✓ dupe (punct stripped)
+_DUPE_THRESHOLD = 0.6
+
+
+def _tokens(title: str) -> set[str]:
+    """Lowercase, strip punctuation, split on whitespace, drop stopwords.
+    Empty set when the title is unusable — caller treats that as a dupe
+    so we don't ship empty counters."""
+    if not title:
+        return set()
+    import re
+    cleaned = re.sub(r"[^a-z0-9\s]+", " ", title.lower())
+    parts   = cleaned.split()
+    return {p for p in parts if p and p not in _STOPWORDS and len(p) > 1}
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    inter = len(a & b)
+    union = len(a | b)
+    return inter / union if union else 0.0
 
 
 def _all_existing_titles(itin: Itinerary) -> list[str]:
@@ -103,18 +136,22 @@ def _rejected_titles(changes: list[ProposedChange]) -> list[str]:
 
 
 def _is_duplicate(title: str, *, existing: list[str], accepted: list[str], rejected: list[str]) -> bool:
-    """Substring-match against committed activities + decision history.
-    Loose match so 'ramen at Ichiran' collides with 'Ichiran ramen'."""
+    """Token-Jaccard match against committed activities + decision
+    history. "ramen at Ichiran" and "Ichiran ramen" collide (J=1.0);
+    "Ichiran ramen" and "Ippudo ramen" don't (J=0.33). Threshold
+    tuned at _DUPE_THRESHOLD."""
     if not title:
         return True
-    t = _normalize(title)
-    if not t:
+    my_tokens = _tokens(title)
+    if not my_tokens:
+        # Stopword-only titles (e.g. "the stop") collapse to empty —
+        # treat as dupe so we don't ship vacuous counters.
         return True
     for other in existing + accepted + rejected:
-        o = _normalize(other)
-        if not o:
+        other_tokens = _tokens(other)
+        if not other_tokens:
             continue
-        if t == o or t in o or o in t:
+        if _jaccard(my_tokens, other_tokens) >= _DUPE_THRESHOLD:
             return True
     return False
 
@@ -130,6 +167,17 @@ def _make_proposed_activity(title: str) -> Activity:
     )
 
 
+def _find_activity(itin: Itinerary, activity_id: str) -> tuple[int, int] | None:
+    """Locate an activity by id. Returns (day_idx, activity_idx) or None."""
+    if not activity_id:
+        return None
+    for di, day in enumerate(itin.days or []):
+        for ai, ia in enumerate(day.activities or []):
+            if getattr(getattr(ia, "activity", None), "activity_id", None) == activity_id:
+                return di, ai
+    return None
+
+
 def _apply_add(itin: Itinerary, day_number: int, title: str) -> Itinerary:
     """Append a new ItineraryActivity to the given day. If day_number is
     out of range, append to the last day rather than failing the
@@ -137,11 +185,7 @@ def _apply_add(itin: Itinerary, day_number: int, title: str) -> Itinerary:
     days = list(itin.days or [])
     if not days:
         return itin
-    target_idx = None
-    for i, d in enumerate(days):
-        if d.day_number == day_number:
-            target_idx = i
-            break
+    target_idx = next((i for i, d in enumerate(days) if d.day_number == day_number), None)
     if target_idx is None:
         target_idx = len(days) - 1
     day = days[target_idx]
@@ -155,12 +199,67 @@ def _apply_add(itin: Itinerary, day_number: int, title: str) -> Itinerary:
     return itin.model_copy(update={"days": days})
 
 
+def _apply_replace(itin: Itinerary, replaces_activity_id: str, title: str) -> Itinerary:
+    """Swap the activity identified by `replaces_activity_id` for a new
+    one with `title`, keeping the same day + time slot. If the target
+    activity doesn't exist, the change degrades to an add on the
+    requested change's day (handled by caller)."""
+    located = _find_activity(itin, replaces_activity_id)
+    if located is None:
+        return itin
+    di, ai = located
+    days = list(itin.days or [])
+    day  = days[di]
+    new_acts = list(day.activities or [])
+    old_ia = new_acts[ai]
+    new_ia = ItineraryActivity(
+        activity=_make_proposed_activity(title),
+        time=getattr(old_ia, "time", "TBD") or "TBD",
+        why_this="Replaced during shared itinerary negotiation.",
+    )
+    new_acts[ai] = new_ia
+    days[di] = day.model_copy(update={"activities": new_acts})
+    return itin.model_copy(update={"days": days})
+
+
+def _apply_move(itin: Itinerary, replaces_activity_id: str, target_day_number: int) -> Itinerary:
+    """Move an existing activity to a different day, preserving its
+    Activity object (so we don't lose category/cost/tags). No-op if the
+    activity doesn't exist or the target day matches the current day."""
+    located = _find_activity(itin, replaces_activity_id)
+    if located is None:
+        return itin
+    di, ai = located
+    days = list(itin.days or [])
+    if days[di].day_number == target_day_number:
+        return itin
+    target_di = next((i for i, d in enumerate(days) if d.day_number == target_day_number), None)
+    if target_di is None:
+        return itin
+    moved = days[di].activities[ai]
+    src_acts = list(days[di].activities or [])
+    src_acts.pop(ai)
+    days[di] = days[di].model_copy(update={"activities": src_acts})
+    dst_acts = list(days[target_di].activities or [])
+    dst_acts.append(moved.model_copy(update={
+        "why_this": "Rescheduled during shared itinerary negotiation.",
+    }))
+    days[target_di] = days[target_di].model_copy(update={"activities": dst_acts})
+    return itin.model_copy(update={"days": days})
+
+
 def _apply_change(itin: Itinerary, change: ProposedChange) -> Itinerary:
-    """Apply an accepted change to the base itinerary. v1 supports add;
-    move + replace fall through as no-ops with a log line so we know."""
+    """Commit an accepted change to the base itinerary. Supports all
+    three v1 kinds. Replace/move silently no-op when their target
+    activity_id can't be resolved — the caller already accepted the
+    decision so failing loudly here would feel worse than degrading."""
     if change.kind == "add":
         return _apply_add(itin, change.day_number, change.title)
-    logger.info("shared: change kind=%s not yet implemented, skipping apply", change.kind)
+    if change.kind == "replace":
+        return _apply_replace(itin, change.replaces_activity_id or "", change.title)
+    if change.kind == "move":
+        return _apply_move(itin, change.replaces_activity_id or "", change.day_number)
+    logger.info("shared: unknown change kind=%s, skipping apply", change.kind)
     return itin
 
 
@@ -241,10 +340,11 @@ async def _find_session(itinerary_id: str, uid: str) -> ChatSession | None:
 
 
 class ProposeRequest(BaseModel):
-    kind:        str = "add"           # "add" only in v1
+    kind:        str = "add"                          # "add" | "replace" | "move"
     day_number:  int
-    title:       str = Field(..., min_length=1, max_length=140)
+    title:       str = Field(default="", max_length=140)  # required for add/replace
     message:     str = Field(default="", max_length=400)
+    replaces_activity_id: str | None = None           # required for replace/move
     version:     int
 
 
@@ -285,13 +385,17 @@ async def propose(itinerary_id: str, body: ProposeRequest, uid: str = Depends(ve
     _assert_participant(shared, uid)
     if body.version != shared.version:
         raise HTTPException(status_code=409, detail={"error": "version conflict", "current_version": shared.version})
-    if body.kind not in ("add",):
+    if body.kind not in ("add", "replace", "move"):
         raise HTTPException(status_code=400, detail=f"Unsupported change kind: {body.kind}")
 
-    title   = sanitize_user_input(body.title)[:140].strip()
+    title   = sanitize_user_input(body.title or "")[:140].strip()
     message = sanitize_user_input(body.message)[:400].strip()
-    if not title:
-        raise HTTPException(status_code=400, detail="title is empty after sanitisation")
+    # add/replace need a title; move only repositions an existing
+    # activity and doesn't carry a new title.
+    if body.kind in ("add", "replace") and not title:
+        raise HTTPException(status_code=400, detail="title is required for add/replace")
+    if body.kind in ("replace", "move") and not body.replaces_activity_id:
+        raise HTTPException(status_code=400, detail="replaces_activity_id is required for replace/move")
 
     # Resolve the persona for evaluation.
     profile_id = next((u for u in (shared.user_ids or []) if u != uid), None)
@@ -306,6 +410,7 @@ async def propose(itinerary_id: str, body: ProposeRequest, uid: str = Depends(ve
         day_number=body.day_number,
         title=title,
         message=message,
+        replaces_activity_id=body.replaces_activity_id,
         status="proposed",
         created_at=_now_iso(),
     )
