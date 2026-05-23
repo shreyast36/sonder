@@ -25,6 +25,20 @@ def _json_decode(value):
         return {}
 
 
+def _extract_voice_id(md: dict) -> str | None:
+    """The seed writes the full voice_profile dict as `voice_profile_json`
+    (JSON string) for richer metadata, but the schema exposes a flat
+    `voice_id` string. Prefer the flat field if the seed wrote one; fall
+    back to parsing the nested dict so existing records (seeded before
+    we added the flat field) still resolve."""
+    flat = md.get("voice_id")
+    if flat:
+        return flat
+    profile = _json_decode(md.get("voice_profile_json"))
+    nested = profile.get("voice_id") if isinstance(profile, dict) else None
+    return nested or None
+
+
 def search_destinations(user_profile: UserProfile, top_k: int = 10) -> list[dict]:
     """
     Not used in v1. The user types their destination on the form, so the
@@ -162,7 +176,7 @@ async def get_cotraveller_by_id(profile_id: str) -> "CoTravellerProfile | None":
             persona_answers       = _json_decode(md.get("persona_answers_json")),
             voice_anchor          = md.get("voice_anchor"),
             quirks                = list(md.get("quirks") or []),
-            voice_id              = md.get("voice_id"),
+            voice_id              = _extract_voice_id(md),
             compatibility_signals = _json_decode(md.get("compatibility_signals_json")),
             is_seed               = bool(md.get("is_seed", False)),
         )
@@ -239,7 +253,7 @@ async def search_cotravellers(
                 persona_answers       = _json_decode(md.get("persona_answers_json")),
                 voice_anchor          = md.get("voice_anchor"),
                 quirks                = list(md.get("quirks") or []),
-                voice_id              = md.get("voice_id"),
+                voice_id              = _extract_voice_id(md),
                 compatibility_signals = _json_decode(md.get("compatibility_signals_json")),
                 is_seed               = bool(md.get("is_seed", False)),
             ))

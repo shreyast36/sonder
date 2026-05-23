@@ -878,6 +878,7 @@ def build_metadata(
         "avatar_url":            avatar_url or "",
         "voice_anchor":          persona.get("voice_anchor", ""),
         "quirks":                persona.get("quirks", []),
+        "voice_id":              voice_profile.get("voice_id") or "",
         "voice_profile_json":    json.dumps(voice_profile, ensure_ascii=False),
         "appearance_descriptor": persona.get("appearance_descriptor", ""),
         "accent_bucket":         accent_for_appearance(persona.get("appearance_descriptor")),
