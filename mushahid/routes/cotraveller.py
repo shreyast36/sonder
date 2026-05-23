@@ -179,7 +179,11 @@ async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verif
         candidates = await search_cotravellers(profile, extra_text=extra)
         if denied_ids:
             candidates = [c for c in candidates if getattr(c, "profile_id", None) not in denied_ids]
-        matches = get_top_matches(profile, candidates)
+        # Cap the surfaced list at the top 3. When the user denies one,
+        # _session_filters drops it from `denied_ids` on the next call
+        # and the next-best candidate slides into the third slot — so
+        # the user always sees three live options to consider.
+        matches = get_top_matches(profile, candidates, top_n=3)
         capture(uid, "match_found", {
             "match_count":  len(matches),
             "itinerary_id": body.itinerary_id,
@@ -261,7 +265,9 @@ async def regenerate_cotraveller_matches(body: RegenerateMatchesRequest, uid: st
         # shouldn't resurrect them.
         denied_ids, _active = await _session_filters(uid, None)
         excluded = list({*(body.excluded_profile_ids or []), *denied_ids})
-        matches = await regenerate_matches(profile, excluded, feedback=feedback)
+        # Same top-3 cap as the main /cotraveller endpoint — keeps the
+        # "always show 3 live candidates" invariant after regenerate too.
+        matches = await regenerate_matches(profile, excluded, feedback=feedback, top_n=3)
         # Analytics: regenerate is the "show me different matches" signal —
         # high rate means current matches aren't resonating. Excluded count
         # tells us how deep the user has dug.
