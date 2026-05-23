@@ -285,8 +285,15 @@ export default function MatchDetail() {
                 opacity: starting ? 0.7 : 1 }}
             >
               <MessageCircle size={13}/>
-              {starting ? 'Opening chat…' : `Start chat with ${profile.display_name.split(' ')[0]}`}
+              {starting ? 'Opening chat…' : `Chat to vibe-check ${profile.display_name.split(' ')[0]}`}
             </motion.button>
+            <p style={{
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+              letterSpacing: '0.14em', textTransform: 'uppercase',
+              color: 'rgba(232,212,168,0.45)', textAlign: 'center', margin: '2px 0 0',
+            }}>
+              You'll both decide after
+            </p>
             {startError && (
               <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: '#F87171', textAlign: 'center', margin: 0 }}>
                 {startError}

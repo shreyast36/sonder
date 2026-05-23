@@ -295,6 +295,22 @@ export default function ChatRoom({ sessionId, selfId }) {
 
   const otherProfile  = other?.profile
   const otherUserId   = session && (session.user_id === selfId ? session.profile_id : session.user_id)
+  // Decision gate — only un-dim the "Decide" button once both sides have
+  // sent at least 4 messages each (a real vibe-check, not a snap decision
+  // off the persona's opener). exchangeCount = min(theirs, yours).
+  const exchangeCount = useMemo(() => {
+    let mine = 0, theirs = 0
+    for (const m of messages || []) {
+      if (m.sender_id === selfId) mine++
+      else theirs++
+    }
+    return Math.min(mine, theirs)
+  }, [messages, selfId])
+  const decisionUnlocked = exchangeCount >= 4
+  const decisionMade     = session && session.approval_status && session.approval_status !== 'pending'
+  const decisionLabel    = session?.approval_status === 'approved' ? 'Matched — travelling together'
+                          : session?.approval_status === 'rejected' ? 'Match closed'
+                          : null
   const otherName     = otherProfile?.display_name || (otherUserId ? otherUserId.split('_')[0] : 'Companion')
   const otherLocation = otherProfile?.location || ''
   const otherAvatar   = otherProfile?.avatar_url || ''
@@ -323,12 +339,28 @@ export default function ChatRoom({ sessionId, selfId }) {
         </motion.button>
         <SonderNav3D markSize={32}/>
         <motion.button
-          whileHover={{ background: `${ROSE}18`, borderColor: `${ROSE}55` }}
-          whileTap={{ scale: 0.96 }}
-          onClick={() => navigate(`/approve/${sessionId}`)}
-          style={{ background: 'none', border: `1px solid ${ROSE}44`, borderRadius: 20, padding: '8px 18px', cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: ROSE }}
+          whileHover={decisionUnlocked && !decisionMade ? { background: `${ROSE}18`, borderColor: `${ROSE}88` } : {}}
+          whileTap={decisionUnlocked && !decisionMade ? { scale: 0.96 } : {}}
+          onClick={() => { if (decisionUnlocked && !decisionMade) navigate(`/approve/${sessionId}`) }}
+          disabled={!decisionUnlocked || decisionMade}
+          title={decisionMade
+            ? decisionLabel
+            : (decisionUnlocked
+                ? 'Decide whether to travel with them'
+                : `Chat a bit more first — ${Math.max(0, 4 - exchangeCount)} exchange${4 - exchangeCount === 1 ? '' : 's'} to go`)}
+          style={{
+            background: 'none',
+            border: `1px solid ${decisionUnlocked && !decisionMade ? `${ROSE}66` : `${ROSE}22`}`,
+            borderRadius: 20, padding: '8px 18px',
+            cursor: decisionUnlocked && !decisionMade ? 'pointer' : 'not-allowed',
+            fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+            letterSpacing: '0.18em', textTransform: 'uppercase',
+            color: ROSE,
+            opacity: decisionMade ? 0.5 : (decisionUnlocked ? 1 : 0.35),
+            transition: 'opacity 0.3s, border-color 0.3s',
+          }}
         >
-          Review match
+          {decisionMade ? decisionLabel : 'Decide: travel together?'}
         </motion.button>
       </nav>
 
@@ -435,26 +467,54 @@ export default function ChatRoom({ sessionId, selfId }) {
           </div>
 
           <div style={{ borderTop: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.96)', padding: '18px 52px 26px', flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <input
-                value={input}
-                onChange={e => onChangeInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') send() }}
-                placeholder={`Message ${otherName || 'them'}…`}
-                style={{ flex: 1, padding: '14px 20px', background: 'rgba(232,212,168,0.04)', border: `1px solid ${HAIRLINE}`, borderRadius: 24, color: BONE, outline: 'none', fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 300 }}
-                onFocus={e => { e.currentTarget.style.borderColor = `${ROSE}55`; e.currentTarget.style.boxShadow = `0 0 0 3px ${ROSE}0F` }}
-                onBlur={e => { e.currentTarget.style.borderColor = HAIRLINE; e.currentTarget.style.boxShadow = 'none' }}
-              />
-              <motion.button
-                whileHover={input.trim() ? { scale: 1.08, boxShadow: `0 0 40px ${ROSE}55` } : {}}
-                whileTap={input.trim() ? { scale: 0.92 } : {}}
-                transition={spring}
-                onClick={() => send()}
-                style={{ width: 48, height: 48, borderRadius: '50%', flexShrink: 0, background: input.trim() ? `linear-gradient(135deg, ${ROSE} 0%, #E11D48 100%)` : 'rgba(212,182,134,0.07)', border: 'none', cursor: input.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: input.trim() ? `0 0 24px ${ROSE}44` : 'none' }}
-              >
-                <Send size={16} style={{ color: input.trim() ? '#fff' : MUTE }}/>
-              </motion.button>
-            </div>
+            {decisionMade ? (
+              <div style={{
+                padding: '18px 22px', borderRadius: 16,
+                background: session?.approval_status === 'approved'
+                  ? 'linear-gradient(135deg, rgba(34,197,94,0.10) 0%, rgba(34,197,94,0.04) 100%)'
+                  : 'linear-gradient(135deg, rgba(100,116,139,0.10) 0%, rgba(100,116,139,0.04) 100%)',
+                border: `1px solid ${session?.approval_status === 'approved' ? 'rgba(34,197,94,0.35)' : 'rgba(100,116,139,0.35)'}`,
+                textAlign: 'center',
+              }}>
+                <p style={{
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10, fontWeight: 500,
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  color: session?.approval_status === 'approved' ? '#22C55E' : MUTE,
+                  margin: 0,
+                }}>
+                  {decisionLabel}
+                </p>
+                <p style={{
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 11, fontWeight: 300,
+                  color: MUTE, margin: '6px 0 0',
+                }}>
+                  {session?.approval_status === 'approved'
+                    ? 'Conversation is sealed — your travel plans pick up from here.'
+                    : 'This match has been closed. No more messages.'}
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <input
+                  value={input}
+                  onChange={e => onChangeInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') send() }}
+                  placeholder={`Message ${otherName || 'them'}…`}
+                  style={{ flex: 1, padding: '14px 20px', background: 'rgba(232,212,168,0.04)', border: `1px solid ${HAIRLINE}`, borderRadius: 24, color: BONE, outline: 'none', fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 300 }}
+                  onFocus={e => { e.currentTarget.style.borderColor = `${ROSE}55`; e.currentTarget.style.boxShadow = `0 0 0 3px ${ROSE}0F` }}
+                  onBlur={e => { e.currentTarget.style.borderColor = HAIRLINE; e.currentTarget.style.boxShadow = 'none' }}
+                />
+                <motion.button
+                  whileHover={input.trim() ? { scale: 1.08, boxShadow: `0 0 40px ${ROSE}55` } : {}}
+                  whileTap={input.trim() ? { scale: 0.92 } : {}}
+                  transition={spring}
+                  onClick={() => send()}
+                  style={{ width: 48, height: 48, borderRadius: '50%', flexShrink: 0, background: input.trim() ? `linear-gradient(135deg, ${ROSE} 0%, #E11D48 100%)` : 'rgba(212,182,134,0.07)', border: 'none', cursor: input.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: input.trim() ? `0 0 24px ${ROSE}44` : 'none' }}
+                >
+                  <Send size={16} style={{ color: input.trim() ? '#fff' : MUTE }}/>
+                </motion.button>
+              </div>
+            )}
           </div>
         </div>
       </div>
