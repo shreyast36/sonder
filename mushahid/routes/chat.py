@@ -335,27 +335,27 @@ async def _apply_decision(session_id: str, *, side: str, decision: ApprovalStatu
 async def _schedule_persona_decision(session_id: str, profile_id: str) -> None:
     """Simulate the synthetic persona's reciprocal decision. A short
     randomised delay sells the "they're reviewing" UI state; the verdict
-    is gated on the match_score the user actually saw on MatchDetail
-    (persisted to ChatSession.match_score at /chat/start). When no score
-    was passed through, default to approved — personas only surface as
-    matches if ranking already liked them."""
+    is a coin flip weighted by the session's live match_score, which is
+    the ranker's inferred compatibility (and gets nudged up/down during
+    the chat by _apply_chat_signals). High score → mostly approves, low
+    score → mostly denies, with real variance on borderline matches."""
     try:
         await asyncio.sleep(random.uniform(2.4, 5.0))
 
-        verdict = ApprovalStatus.approved
         sess_meta = _sessions.get(session_id)
         if sess_meta:
             score = sess_meta["session"].match_score
         else:
             stored = await get_chat_session(session_id)
             score = stored.get("match_score") if stored else None
-        # 0.55 floor is calibrated against the cotraveller policy's
-        # 6-feature equal-weight scoring — features each in [0,1] mean
-        # the typical curated match lands in the 0.55-0.85 band, so
-        # this threshold denies the bottom ~15-20% of surfaced matches.
-        # See shreyas/ranking/policies/cotraveller.py for the feature set.
-        if isinstance(score, (int, float)) and score < 0.55:
-            verdict = ApprovalStatus.denied
+
+        p_approve = float(score) if isinstance(score, (int, float)) else 0.5
+        roll = random.random()
+        verdict = ApprovalStatus.approved if roll < p_approve else ApprovalStatus.denied
+        logger.info(
+            "persona verdict session=%s p_approve=%.3f roll=%.3f -> %s",
+            session_id, p_approve, roll, verdict.value,
+        )
 
         updated = await _apply_decision(session_id, side="profile", decision=verdict)
         if updated is None:
