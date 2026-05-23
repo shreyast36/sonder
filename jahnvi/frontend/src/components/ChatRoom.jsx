@@ -1,22 +1,55 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Send, Check, MapPin } from 'lucide-react'
+import { ArrowLeft, Send, Check, MapPin, Volume2, Loader2 } from 'lucide-react'
 import SynthBadge from './SynthBadge'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { getCotravellerProfile, getChatSession, getChatMessages } from '../lib/api'
+import { getCotravellerProfile, getChatSession, getChatMessages, synthesizeVoice } from '../lib/api'
 
 const ROSE   = '#F43F5E'
 const VIOLET = '#8B5CF6'
 
 const spring = { type: 'spring', stiffness: 300, damping: 24 }
 
-function Bubble({ message, isOwn, otherName, seenByOther }) {
+function Bubble({ message, isOwn, otherName, seenByOther, otherProfileId, canPlayVoice }) {
   const { content, timestamp, message_id } = message
   const timeStr = new Date(timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+  // Voice playback state — one Audio element per bubble, fetched on first
+  // click. Backend caches by text hash, so replays are instant + free.
+  const [playState, setPlayState] = useState('idle')   // idle | loading | playing | error
+  const audioRef = useRef(null)
+
+  async function togglePlay() {
+    if (playState === 'loading') return
+    if (audioRef.current && playState === 'playing') {
+      audioRef.current.pause()
+      setPlayState('idle')
+      return
+    }
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0
+      audioRef.current.play().catch(() => setPlayState('error'))
+      setPlayState('playing')
+      return
+    }
+    setPlayState('loading')
+    try {
+      const { audio_url } = await synthesizeVoice(otherProfileId, content)
+      const a = new Audio(audio_url)
+      a.onended = () => setPlayState('idle')
+      a.onerror = () => setPlayState('error')
+      audioRef.current = a
+      await a.play()
+      setPlayState('playing')
+    } catch {
+      setPlayState('error')
+    }
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, x: isOwn ? 24 : -24, y: 8 }}
@@ -40,10 +73,27 @@ function Bubble({ message, isOwn, otherName, seenByOther }) {
           {content}
         </p>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
         <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: DIM }}>{timeStr}</span>
         {isOwn && message_id && seenByOther && (
           <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: GOLD, opacity: 0.7 }}>Seen</span>
+        )}
+        {!isOwn && canPlayVoice && (
+          <button
+            onClick={togglePlay}
+            disabled={playState === 'loading'}
+            aria-label={playState === 'playing' ? 'Pause voice' : 'Play voice'}
+            title={playState === 'error' ? 'Voice unavailable' : 'Play voice'}
+            style={{
+              background: 'none', border: 'none', padding: 2, cursor: playState === 'loading' ? 'default' : 'pointer',
+              color: playState === 'playing' ? ROSE : playState === 'error' ? DIM : MUTE,
+              display: 'flex', alignItems: 'center',
+            }}
+          >
+            {playState === 'loading'
+              ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, ease: 'linear', repeat: Infinity }} style={{ display: 'inline-flex' }}><Loader2 size={11}/></motion.span>
+              : <Volume2 size={11}/>}
+          </button>
         )}
       </div>
     </motion.div>
@@ -275,6 +325,8 @@ export default function ChatRoom({ sessionId, selfId }) {
                   isOwn={isOwn}
                   otherName={otherName}
                   seenByOther={seen}
+                  otherProfileId={otherProfile?.profile_id}
+                  canPlayVoice={!!otherProfile?.is_seed}
                 />
               )
             })}

@@ -278,3 +278,12 @@ export async function registerPushSubscription(subscription) {
 export async function unregisterPushSubscription(endpoint) {
   return post('/api/push/unsubscribe', { endpoint })
 }
+
+// ── Voice (ElevenLabs TTS) ─────────────────────────────────────────────────
+
+// Synthesize one chat message into a Firebase-hosted MP3 URL. Same text
+// from the same persona is cached, so re-plays cost $0 and load instantly.
+// Returns { audio_url, cached, voice_id }.
+export async function synthesizeVoice(profileId, text) {
+  return post('/api/voice/synthesize', { profile_id: profileId, text })
+}

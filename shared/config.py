@@ -21,6 +21,12 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
+# ElevenLabs — TTS for synthetic co-traveller voice playback.
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+# Model id passed to ElevenLabs. Multilingual v2 handles non-English accents
+# for personas from non-English cities (Mumbai, Tokyo, Lisbon, etc.).
+ELEVENLABS_MODEL_ID = os.getenv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
+
 # LLM model selection — Ali decides Small + Large; Mushahid decides validators
 # *_MODEL_PROVIDER picks the primary provider for the tier. The engine still
 # falls back to the other provider on failure, but each client now uses its
