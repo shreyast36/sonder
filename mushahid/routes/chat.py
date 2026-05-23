@@ -319,6 +319,65 @@ async def _send_synthetic_reply(
         if not reply_text:
             return
 
+        # Run the validator + repair orchestrator. Catches assistant-voice
+        # leaks, semantic drift, repetitive token loops, memory contradictions
+        # against earlier chat turns, and unsafe content. Gracefully skipped
+        # when SMALL_VALIDATOR_PROVIDER isn't configured (preserves the
+        # pre-validator behaviour for envs that haven't set it up yet).
+        try:
+            from shared.config import SMALL_VALIDATOR_PROVIDER as _VALIDATOR_PROVIDER
+            if _VALIDATOR_PROVIDER:
+                from mushahid.validation.critic import validate_and_repair_chat_reply_wired
+                profile_json = candidate.model_dump_json() if hasattr(candidate, "model_dump_json") else json.dumps({
+                    "display_name": getattr(candidate, "display_name", ""),
+                    "archetype":    getattr(candidate, "archetype", ""),
+                    "location":     getattr(candidate, "location", ""),
+                })
+                # Render the transcript the same way the LLM persona prompt
+                # rendered it — keeps the validator's contradiction check
+                # consistent with what the model actually saw.
+                history_lines: list[str] = []
+                for m in history[-40:]:
+                    text = (m.get("content") or "").strip()
+                    if not text:
+                        continue
+                    speaker = "ME" if m.get("sender_id") == profile_id else "THEM"
+                    history_lines.append(f"{speaker}: {text}")
+                history_str = "\n".join(history_lines)
+                fallback_city = getattr(candidate, "preferred_destination", None) or None
+
+                validated_reply, telemetry = await validate_and_repair_chat_reply_wired(
+                    profile_json=profile_json,
+                    history=history_str,
+                    last_message=last_message,
+                    reply=reply_text,
+                    city=fallback_city,
+                )
+                if validated_reply and validated_reply != reply_text:
+                    logger.info(
+                        "chat reply validator changed output for session %s — "
+                        "repaired or fell back",
+                        session_id,
+                    )
+                if telemetry:
+                    # Compact log line — full PostHog payload is in telemetry
+                    # if someone wires it to product analytics later.
+                    props = telemetry.get("properties", {}) if isinstance(telemetry, dict) else {}
+                    logger.info(
+                        "chat_validator session=%s passed_first_try=%s repairs=%s anomalies=%s latency_ms=%s",
+                        session_id,
+                        props.get("validator_passed_first_try"),
+                        props.get("repair_count"),
+                        props.get("detected_anomalies"),
+                        props.get("total_latency_ms"),
+                    )
+                reply_text = validated_reply or reply_text
+        except Exception as e:
+            # Validator is a quality gate, not a correctness gate — never
+            # block the user-facing flow on it. Fall through with the raw
+            # LLM reply.
+            logger.warning("chat reply validator pipeline failed open for %s: %s", session_id, e)
+
         # Hold typing for a beat after the LLM finishes so the reply doesn't
         # appear instantaneously with the indicator still showing.
         await asyncio.sleep(random.uniform(*_REPLY_AFTER_REPLY_S))
