@@ -605,7 +605,26 @@ export default function Dashboard() {
       {/* nav */}
       <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
         <SonderNav3D markSize={32}/>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          {/* Always-visible Plan-a-trip CTA — primary action from any
+              dashboard state, replaces the old bottom-right button. */}
+          <motion.button
+            whileHover={{ y: -2, boxShadow: `0 8px 24px rgba(245,158,11,0.30)` }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => navigate('/preferences')}
+            style={{
+              padding: '9px 18px', borderRadius: 999,
+              background: `linear-gradient(135deg, ${AMBER} 0%, #D97706 100%)`,
+              border: 'none', cursor: 'pointer', color: '#0a0807',
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 10, fontWeight: 600,
+              letterSpacing: '0.20em', textTransform: 'uppercase',
+              display: 'inline-flex', alignItems: 'center', gap: 7,
+              boxShadow: `0 6px 18px rgba(245,158,11,0.30)`,
+              transition: 'all 0.2s',
+            }}
+          >
+            <Plus size={12}/> Plan a trip
+          </motion.button>
           <div style={{ position: 'relative' }}>
             <div style={{ cursor: 'pointer' }} onClick={() => setDropdown(o => !o)}>
               <motion.img
