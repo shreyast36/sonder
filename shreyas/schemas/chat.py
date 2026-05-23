@@ -59,10 +59,19 @@ class ChatSession(BaseModel):
     # The match_score that surfaced this candidate (0..1, weighted mean of
     # 6 ranking features from shreyas/ranking/policies/cotraveller.py).
     # Persisted at /chat/start so the persona's reciprocal decision can
-    # honestly read the same number the user saw on MatchDetail — instead
-    # of fabricating a verdict at decision time. None means "unknown" and
-    # the persona defaults to approve.
+    # honestly read the same number the user saw on MatchDetail. As the
+    # chat unfolds, chat_signal_scanner updates live_weights and re-ranks
+    # the candidate, refreshing this value — so the persona's verdict
+    # reflects what the user actually said in the chat, not just the
+    # pre-chat retrieval. None means "unknown" → persona defaults to
+    # approve.
     match_score:      float | None   = None
+    # Per-session feature weights for cotraveller ranking. Starts at the
+    # policy's default; chat_signal_scanner boosts features whose keywords
+    # fire in user messages, then we re-rank the candidate with these
+    # weights to refresh match_score. None means "untouched" → policy
+    # defaults apply.
+    live_weights:     dict[str, float] | None = None
 
 
 class SharedItinerary(BaseModel):

@@ -367,6 +367,92 @@ async def _schedule_persona_decision(session_id: str, profile_id: str) -> None:
         logger.warning("persona decision task failed for session=%s: %s", session_id, e)
 
 
+async def _apply_chat_signals(
+    session_id: str,
+    session_meta: dict,
+    user_id: str,
+    message: str,
+) -> None:
+    """Scan a user message for compatibility cues, update the session's
+    live_weights, and refresh match_score by re-ranking the candidate
+    against the user with the new weights. Fire-and-forget from the WS
+    handler — must never raise. The refreshed score is what the persona's
+    reciprocal-approval threshold reads at decision time.
+    """
+    try:
+        from shreyas.cotraveller.chat_signal_scanner import scan_and_apply
+        from shreyas.ranking.policies import load_policy
+        from shreyas.retrieval.search import get_cotraveller_by_id
+        from shreyas.cotraveller.matching import score_compatibility
+        from mushahid.realtime.firestore import get_user_profile
+        from shared.schemas import UserProfile
+
+        policy = load_policy("cotraveller")
+
+        # Pull current live_weights off the session (in-memory first,
+        # Firestore fallback). Default to policy weights when absent.
+        sess_meta = _sessions.get(session_id)
+        if sess_meta:
+            current: ChatSession = sess_meta["session"]
+        else:
+            stored = await get_chat_session(session_id)
+            if not stored:
+                return
+            current = ChatSession(**{k: v for k, v in stored.items() if k != "messages"})
+
+        new_weights, fired = scan_and_apply(message, current.live_weights, policy)
+        if not fired:
+            return   # No signals fired — nothing to refresh.
+
+        # Re-rank the candidate against the user with updated weights.
+        # The matching engine reads per-user weight overrides from
+        # compatibility_signals.ranker_weights[surface] — inject the
+        # session weights there as a transient overlay.
+        profile_id = current.profile_id
+        candidate = await get_cotraveller_by_id(profile_id)
+        if candidate is None:
+            return
+
+        viewer_doc = await get_user_profile(user_id) or {}
+        # Build a UserProfile with the session weights spliced in.
+        viewer_signals = dict(viewer_doc.get("compatibility_signals") or {})
+        rw = dict(viewer_signals.get("ranker_weights") or {})
+        rw["cotraveller"] = new_weights
+        viewer_signals["ranker_weights"] = rw
+        viewer = UserProfile(
+            user_id=user_id,
+            display_name=viewer_doc.get("display_name") or "",
+            constraints=viewer_doc.get("constraints"),
+            persona_answers=viewer_doc.get("persona_answers"),
+            compatibility_signals=viewer_signals,
+            travel_style_embedding=viewer_doc.get("travel_style_embedding") or [],
+        )
+
+        match = score_compatibility(viewer, candidate)
+        new_score = float(match.match_score)
+
+        updated = current.model_copy(update={
+            "live_weights": new_weights,
+            "match_score":  new_score,
+        })
+        if sess_meta:
+            sess_meta["session"] = updated
+        else:
+            _sessions[session_id] = {"session": updated, "messages": []}
+        try:
+            await write_chat_session(updated)
+        except Exception as e:
+            logger.warning("chat signal write_chat_session failed for %s: %s", session_id, e)
+
+        logger.info(
+            "chat_signal session=%s fired=%s score=%.3f (was %.3f)",
+            session_id, fired, new_score,
+            current.match_score if current.match_score is not None else -1.0,
+        )
+    except Exception as e:
+        logger.warning("chat signal scan failed for session=%s: %s", session_id, e)
+
+
 class DecisionRequest(BaseModel):
     session_id: str
 
@@ -811,6 +897,13 @@ async def chat_websocket(websocket: WebSocket, session_id: str):
                 if uid == session_meta["user_id"]:
                     asyncio.create_task(_send_synthetic_reply(
                         session_id, session_meta, content, outgoing["message_id"],
+                    ))
+                    # Scan the user's message for compatibility signals
+                    # and re-rank the candidate with updated session weights.
+                    # The refreshed match_score is what the persona's
+                    # reciprocal approval threshold reads.
+                    asyncio.create_task(_apply_chat_signals(
+                        session_id, session_meta, uid, content,
                     ))
     except WebSocketDisconnect:
         pass
