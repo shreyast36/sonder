@@ -163,6 +163,41 @@ async def get_itinerary(itinerary_id: str) -> Itinerary | None:
     return Itinerary.model_validate(doc.to_dict()) if doc.exists else None
 
 
+# ── Shared itinerary (collaborative negotiation surface) ──────────────────
+
+
+async def write_shared_itinerary(shared) -> None:
+    """Upsert the SharedItinerary doc. Caller increments version +
+    sets last_updated_by before calling."""
+    if LOCAL_MODE:
+        _store[f"shared:{shared.itinerary_id}"] = shared.model_dump()
+        return
+    data = shared.model_dump(mode="json")
+    try:
+        await asyncio.to_thread(
+            lambda: get_db().collection("shared_itineraries").document(shared.itinerary_id).set(data)
+        )
+    except Exception as e:
+        logger.warning("write_shared_itinerary failed: %s", e)
+
+
+async def get_shared_itinerary(itinerary_id: str):
+    """Return the SharedItinerary or None when no shared doc exists yet."""
+    from shared.schemas import SharedItinerary
+    if LOCAL_MODE:
+        data = _store.get(f"shared:{itinerary_id}")
+        return SharedItinerary.model_validate(data) if data else None
+    try:
+        doc = await asyncio.to_thread(
+            lambda: get_db().collection("shared_itineraries").document(itinerary_id).get()
+        )
+        return SharedItinerary.model_validate(doc.to_dict()) if doc.exists else None
+    except Exception as e:
+        logger.warning("get_shared_itinerary failed for %s: %s", itinerary_id, e)
+        return None
+
+
+
 async def create_user_profile(user_id: str, display_name: str) -> None:
     doc = {
         "user_id": user_id,

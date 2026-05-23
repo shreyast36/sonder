@@ -392,7 +392,10 @@ export default function ApproveDeny() {
               {overall === 'approved' && (
                 <motion.button
                   whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                  onClick={() => navigate('/dashboard')}
+                  onClick={() => {
+                    const itinId = session?.itinerary_id
+                    navigate(itinId ? `/shared/${encodeURIComponent(itinId)}` : '/dashboard')
+                  }}
                   style={{
                     marginTop: 18, padding: '10px 22px', borderRadius: 18,
                     background: `linear-gradient(135deg, ${GREEN} 0%, #059669 100%)`,

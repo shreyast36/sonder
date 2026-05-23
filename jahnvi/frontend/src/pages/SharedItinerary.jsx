@@ -1,255 +1,576 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Share2, Mail, Download, Users } from 'lucide-react'
+import { useNavigate, useParams } from 'react-router-dom'
+import {
+  ArrowLeft, Plus, Check, X, Send, Loader2, MessageCircle, Users,
+} from 'lucide-react'
+import { useAuth } from '../hooks/useAuth'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
-import ActivityCard from '../components/ActivityCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
+import {
+  getSharedItinerary, proposeChange, respondToChange,
+  getUserProfile,
+} from '../lib/api'
 
-const CYAN   = '#06B6D4'
+const ROSE   = '#F43F5E'
+const VIOLET = '#8B5CF6'
+const GREEN  = '#10B981'
 const spring = { type: 'spring', stiffness: 280, damping: 22 }
 
-const DAYS = [
-  {
-    day: 1, theme: 'Arrival & First Light',
-    activities: [
-      { id: 'a1', name: 'Alaya Ubud',               category: 'Accommodation', time: '3:00 PM',  addedBy: 'You',   why: 'Boutique resort with wellness focus.' },
-      { id: 'a2', name: 'Sacred Monkey Forest',      category: 'Nature',        time: '5:00 PM',  addedBy: 'Priya', why: 'Priya added — a short walk from the hotel.' },
-      { id: 'a3', name: 'Locavore NXT',              category: 'Fine Dining',   time: '7:30 PM',  addedBy: 'You',   why: "Ubud's most celebrated chef-led tasting menu." },
-    ],
-  },
-  {
-    day: 2, theme: 'Culture & Ceremony',
-    activities: [
-      { id: 'b1', name: 'Tirta Empul Temple',        category: 'Culture',       time: '8:00 AM',  addedBy: 'Priya', why: 'Best visited early to avoid crowds.' },
-      { id: 'b2', name: 'Tegalalang Rice Terraces',  category: 'Nature',        time: '11:00 AM', addedBy: 'You',   why: 'Morning light is ideal.' },
-      { id: 'b3', name: 'Kecak Fire Dance, Uluwatu', category: 'Culture',       time: '6:00 PM',  addedBy: 'Priya', why: 'Sunset backdrop — unmissable.' },
-    ],
-  },
-  {
-    day: 3, theme: 'Coastline & Calm',
-    activities: [
-      { id: 'c1', name: 'Uluwatu Temple',            category: 'Culture',       time: '9:00 AM',  addedBy: 'You',   why: 'Dramatic 70m cliff views.' },
-      { id: 'c2', name: 'Padang Padang Beach',       category: 'Nature',        time: '11:30 AM', addedBy: 'Priya', why: 'Hidden cove — worth the descent.' },
-      { id: 'c3', name: 'Jimbaran Seafood',          category: 'Dining',        time: '6:30 PM',  addedBy: 'You',   why: 'Fresh catch on the beach at sunset.' },
-    ],
-  },
-]
+// ── Helpers ───────────────────────────────────────────────────────────────
 
-const stagger    = { show: { transition: { staggerChildren: 0.09 } } }
-const cardReveal = { hidden: { opacity: 0, y: 22 }, show: { opacity: 1, y: 0, transition: { duration: 0.5, ease } } }
+function timeAgo(iso) {
+  if (!iso) return ''
+  const ms = Date.now() - new Date(iso).getTime()
+  if (ms < 0)        return 'just now'
+  if (ms < 1500)     return 'just now'
+  if (ms < 60_000)   return `${Math.floor(ms/1000)}s ago`
+  if (ms < 3600_000) return `${Math.floor(ms/60_000)}m ago`
+  return `${Math.floor(ms/3600_000)}h ago`
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────
+
+function ActivityFeed({ log, selfId, otherName, otherEvaluating }) {
+  // Show the last 12 entries, newest at top.
+  const entries = useMemo(
+    () => (log || []).slice(-12).reverse(),
+    [log],
+  )
+  return (
+    <div style={{
+      padding: '20px 22px',
+      borderRadius: 14,
+      border: `1px solid ${HAIRLINE}`,
+      background: 'rgba(232,212,168,0.025)',
+      display: 'flex', flexDirection: 'column', gap: 10,
+      minHeight: 240,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <Users size={11} style={{ color: GOLD }}/>
+        <span style={{
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 500,
+          letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE,
+        }}>Live activity</span>
+      </div>
+      {otherEvaluating && (
+        <motion.div
+          initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+            background: `${VIOLET}10`, border: `1px solid ${VIOLET}33`, borderRadius: 10,
+          }}
+        >
+          <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.1, ease: 'linear', repeat: Infinity }}>
+            <Loader2 size={12} style={{ color: VIOLET }}/>
+          </motion.span>
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: BONE }}>
+            {otherName} is thinking…
+          </span>
+        </motion.div>
+      )}
+      {entries.length === 0 && !otherEvaluating && (
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: DIM, margin: 0 }}>
+          Nothing yet. Propose something to get started.
+        </p>
+      )}
+      {entries.map((e) => {
+        const actor =
+          e.actor_id === 'system' ? '—' :
+          e.actor_id === selfId   ? 'You' :
+                                    otherName
+        const verb =
+          e.kind === 'proposed'   ? 'proposed' :
+          e.kind === 'accepted'   ? 'agreed to' :
+          e.kind === 'countered'  ? 'countered with' :
+          e.kind === 'evaluating' ? 'is reviewing' :
+          e.kind === 'joined'     ? 'joined the trip' :
+          e.kind
+        const color =
+          e.kind === 'accepted'   ? GREEN :
+          e.kind === 'countered'  ? ROSE :
+          e.kind === 'evaluating' ? VIOLET :
+                                    MUTE
+        return (
+          <div key={e.entry_id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: color, marginTop: 8, flexShrink: 0 }}/>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: BONE, margin: 0, lineHeight: 1.4 }}>
+                <span style={{ color: color, fontWeight: 500 }}>{actor}</span>{' '}
+                {verb}
+                {e.title ? <span style={{ color: BONE, fontWeight: 400 }}>{' '}"{e.title}"</span> : null}
+                {typeof e.day_number === 'number' ? <span style={{ color: DIM }}>{' '}· day {e.day_number}</span> : null}
+              </p>
+              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: DIM, margin: '2px 0 0' }}>
+                {timeAgo(e.created_at)}
+              </p>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function PendingProposalCard({ change, selfId, otherName, onAccept, onCounterClick, submitting }) {
+  const mine = change.proposer_id === selfId
+  return (
+    <div style={{
+      padding: '16px 18px',
+      borderRadius: 12,
+      border: `1px solid ${mine ? `${GOLD}55` : `${ROSE}55`}`,
+      background: mine ? 'rgba(232,212,168,0.04)' : `${ROSE}08`,
+      display: 'flex', flexDirection: 'column', gap: 8,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 500,
+          letterSpacing: '0.18em', textTransform: 'uppercase', color: mine ? GOLD : ROSE,
+        }}>
+          {mine ? `Your proposal · waiting on ${otherName}` : `${otherName} proposed`}
+        </span>
+        <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: DIM }}>
+          · day {change.day_number}
+        </span>
+      </div>
+      <p style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 22, lineHeight: 1.15, color: BONE, margin: 0 }}>
+        {change.title}
+      </p>
+      {change.message && (
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE, margin: 0, lineHeight: 1.5 }}>
+          "{change.message}"
+        </p>
+      )}
+      {!mine && (
+        <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+          <button
+            disabled={submitting}
+            onClick={() => onAccept(change)}
+            style={{
+              padding: '9px 16px', borderRadius: 18,
+              background: `linear-gradient(135deg, ${GREEN} 0%, #059669 100%)`,
+              border: 'none', cursor: submitting ? 'wait' : 'pointer',
+              color: '#fff', fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+              letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 500,
+              opacity: submitting ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            <Check size={11}/> Agree
+          </button>
+          <button
+            disabled={submitting}
+            onClick={() => onCounterClick(change)}
+            style={{
+              padding: '9px 16px', borderRadius: 18,
+              background: 'rgba(212,182,134,0.05)', border: `1px solid ${HAIRLINE}`,
+              cursor: submitting ? 'wait' : 'pointer', color: MUTE,
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em',
+              textTransform: 'uppercase', fontWeight: 500,
+            }}
+          >
+            Counter
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProposeForm({ defaultDay, dayCount, onSubmit, onCancel, submitting, error, mode = 'propose' }) {
+  // mode: 'propose' = brand-new proposal (day pickable); 'counter' = day locked
+  const [dayNumber, setDayNumber] = useState(defaultDay || 1)
+  const [title,     setTitle]     = useState('')
+  const [message,   setMessage]   = useState('')
+  useEffect(() => { setDayNumber(defaultDay || 1) }, [defaultDay])
+  return (
+    <div style={{
+      padding: '20px 22px', borderRadius: 14,
+      background: 'rgba(20,16,12,0.96)', border: `1px solid ${VIOLET}44`,
+      boxShadow: `0 24px 60px rgba(0,0,0,0.4)`,
+      display: 'flex', flexDirection: 'column', gap: 14,
+      minWidth: 320, maxWidth: 460,
+    }}>
+      <p style={{
+        fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 500,
+        letterSpacing: '0.22em', textTransform: 'uppercase', color: VIOLET, margin: 0,
+      }}>
+        {mode === 'counter' ? 'Counter with…' : 'Propose an activity'}
+      </p>
+      {mode === 'propose' && (
+        <div>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, margin: '0 0 6px' }}>Day</p>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {Array.from({ length: dayCount }, (_, i) => i + 1).map(d => (
+              <button
+                key={d}
+                onClick={() => setDayNumber(d)}
+                style={{
+                  padding: '6px 12px', borderRadius: 14,
+                  background: d === dayNumber ? `${VIOLET}22` : 'transparent',
+                  border: `1px solid ${d === dayNumber ? `${VIOLET}88` : HAIRLINE}`,
+                  cursor: 'pointer', color: d === dayNumber ? BONE : MUTE,
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+                }}
+              >Day {d}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      <input
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+        placeholder="Activity (e.g. ramen at Ichiran)"
+        autoFocus
+        maxLength={140}
+        style={{
+          padding: '12px 14px', borderRadius: 10,
+          background: 'rgba(232,212,168,0.04)', border: `1px solid ${HAIRLINE}`,
+          color: BONE, outline: 'none',
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 300,
+        }}
+      />
+      <textarea
+        value={message}
+        onChange={e => setMessage(e.target.value)}
+        placeholder="Why? (optional, one line)"
+        rows={2}
+        maxLength={400}
+        style={{
+          padding: '12px 14px', borderRadius: 10,
+          background: 'rgba(232,212,168,0.04)', border: `1px solid ${HAIRLINE}`,
+          color: BONE, outline: 'none', resize: 'none',
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 12, fontWeight: 300,
+        }}
+      />
+      {error && <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: '#F87171', margin: 0 }}>{error}</p>}
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button
+          disabled={submitting || !title.trim()}
+          onClick={() => onSubmit({ dayNumber, title: title.trim(), message: message.trim() })}
+          style={{
+            padding: '10px 18px', borderRadius: 18,
+            background: `linear-gradient(135deg, ${VIOLET} 0%, #6D28D9 100%)`,
+            border: 'none', cursor: submitting || !title.trim() ? 'not-allowed' : 'pointer',
+            color: '#fff', fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+            letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500,
+            opacity: submitting || !title.trim() ? 0.5 : 1,
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}
+        >
+          {submitting
+            ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, ease: 'linear', repeat: Infinity }}><Loader2 size={11}/></motion.span>
+            : <Send size={11}/>}
+          {mode === 'counter' ? 'Send counter' : 'Send proposal'}
+        </button>
+        <button
+          onClick={onCancel}
+          style={{
+            padding: '10px 18px', borderRadius: 18,
+            background: 'transparent', border: `1px solid ${HAIRLINE}`,
+            cursor: 'pointer', color: MUTE,
+            fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+            letterSpacing: '0.22em', textTransform: 'uppercase',
+          }}
+        >Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────
 
 export default function SharedItinerary() {
-  const navigate              = useNavigate()
-  const [activeDay, setDay]   = useState(0)
-  const [shareOpen, setShare] = useState(false)
-  const [addOpen, setAdd]     = useState(false)
-  const [newActivity, setNew] = useState('')
-  const [feedback, setFb]     = useState([])
+  const navigate     = useNavigate()
+  const { id }       = useParams()
+  const { user }     = useAuth()
+  const selfId       = user?.uid
 
-  const day = DAYS[activeDay]
+  const [shared, setShared]       = useState(null)
+  const [error, setError]         = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [proposeOpen, setProposeOpen] = useState(false)
+  const [proposeDay, setProposeDay] = useState(1)
+  const [counterTarget, setCounterTarget] = useState(null)    // ProposedChange we're countering
+  const [otherDisplayName, setOtherDisplayName] = useState('them')
+
+  const pollRef = useRef(null)
+  const refetch = useCallback(async () => {
+    try {
+      const next = await getSharedItinerary(id)
+      setShared(next)
+    } catch (e) {
+      setError(e?.message || 'Could not load itinerary')
+    }
+  }, [id])
+
+  // Hydrate + light polling so the user sees the persona's response
+  // even when WS isn't connected (e.g. on a fresh tab).
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const data = await getSharedItinerary(id)
+        if (cancelled) return
+        setShared(data)
+      } catch (e) {
+        if (!cancelled) setError(e?.message || 'Could not load itinerary')
+      }
+    })()
+    pollRef.current = setInterval(() => {
+      if (cancelled) return
+      refetch()
+    }, 4000)
+    return () => { cancelled = true; clearInterval(pollRef.current) }
+  }, [id, refetch])
+
+  // Other side's display name — for synthetic personas we don't have a
+  // direct lookup here, so derive from the activity log or fall back.
+  useEffect(() => {
+    if (!shared || !selfId) return
+    const otherId = (shared.user_ids || []).find(u => u !== selfId)
+    if (!otherId) return
+    // Try to load co-traveller name from the matches cache. If not
+    // available, leave the fallback.
+    ;(async () => {
+      try {
+        const me = await getUserProfile()
+        // me.display_name is the signed-in user; the other side's name
+        // we already get from the chat history if needed. For now, the
+        // 'them' fallback is fine until we wire a profile lookup here.
+        if (me?.display_name) {
+          // no-op; just confirms auth works
+        }
+      } catch { /* noop */ }
+    })()
+  }, [shared, selfId])
+
+  if (error && !shared) {
+    return (
+      <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ color: MUTE, fontSize: 13 }}>{error}</p>
+          <button onClick={() => navigate(-1)} style={{ marginTop: 16, color: GOLD, background: 'none', border: 'none', cursor: 'pointer' }}>Go back</button>
+        </div>
+      </div>
+    )
+  }
+  if (!shared) {
+    return (
+      <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.2, ease: 'linear', repeat: Infinity }}>
+          <Loader2 size={20} style={{ color: VIOLET }}/>
+        </motion.span>
+      </div>
+    )
+  }
+
+  const itin       = shared.itinerary
+  const days       = itin.days || []
+  const dayCount   = Math.max(days.length, 1)
+  const otherId    = (shared.user_ids || []).find(u => u !== selfId)
+  const otherName  = otherDisplayName
+
+  const pendingChanges = (shared.proposed_changes || []).filter(c => c.status === 'proposed')
+  const otherEvaluating = (shared.activity_log || []).some(e =>
+    e.kind === 'evaluating' && e.actor_id !== selfId &&
+    (Date.now() - new Date(e.created_at || 0).getTime()) < 12000,
+  )
+
+  async function submitPropose({ dayNumber, title, message }) {
+    setSubmitting(true); setError(null)
+    try {
+      const res = await proposeChange(id, {
+        kind: 'add', dayNumber, title, message, version: shared.version,
+      })
+      setShared(res.shared)
+      setProposeOpen(false)
+      setCounterTarget(null)
+    } catch (e) {
+      setError(e?.message || 'Could not send proposal')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function submitCounter({ dayNumber, title, message }) {
+    if (!counterTarget) return
+    setSubmitting(true); setError(null)
+    try {
+      const res = await respondToChange(id, {
+        changeId: counterTarget.change_id, decision: 'counter',
+        title, message, version: shared.version,
+      })
+      setShared(res.shared)
+      setCounterTarget(null)
+    } catch (e) {
+      setError(e?.message || 'Could not send counter')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function acceptPending(change) {
+    setSubmitting(true); setError(null)
+    try {
+      const res = await respondToChange(id, {
+        changeId: change.change_id, decision: 'accept',
+        version: shared.version,
+      })
+      setShared(res.shared)
+    } catch (e) {
+      setError(e?.message || 'Could not record agreement')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
-      <AppBackground accent="#06B6D4" />
+      <AppBackground accent={VIOLET}/>
 
-      {/* nav */}
-      <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
-        <motion.button
-          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-          onClick={() => navigate('/dashboard')}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTE, padding: 0, lineHeight: 0, display: 'flex', alignItems: 'center', gap: 8, transition: 'color 0.2s' }}
-          onMouseEnter={e => { e.currentTarget.style.color = BONE }}
-          onMouseLeave={e => { e.currentTarget.style.color = MUTE }}
-        >
+      <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
+        <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => navigate(-1)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: MUTE, display: 'flex', alignItems: 'center', gap: 8 }}>
           <ArrowLeft size={18}/>
-          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Dashboard</span>
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Back</span>
         </motion.button>
         <SonderNav3D markSize={32}/>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <motion.button
-            whileHover={{ borderColor: `${CYAN}55`, boxShadow: `0 0 20px ${CYAN}22`, scale: 1.04, transition: spring }}
-            whileTap={{ scale: 0.96 }}
-            onClick={() => setShare(true)}
-            style={{ background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 20, padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.2s' }}
-          >
-            <Share2 size={11} style={{ color: CYAN }}/>
-            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: CYAN }}>Export</span>
-          </motion.button>
-          <motion.button
-            whileHover={{ borderColor: `${CYAN}44`, scale: 1.04, transition: spring }}
-            whileTap={{ scale: 0.96 }}
-            style={{ background: 'none', border: `1px solid ${HAIRLINE}`, borderRadius: 20, padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.2s' }}
-          >
-            <Users size={11} style={{ color: CYAN }}/>
-            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: CYAN }}>You & Priya</span>
-          </motion.button>
-        </div>
+        <div style={{ width: 70 }}/>
       </nav>
 
-      {/* header */}
-      <div style={{ borderBottom: `1px solid ${HAIRLINE}`, padding: '40px 48px', position: 'relative', zIndex: 1, overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse 50% 150% at 80% 50%, ${CYAN}0D 0%, transparent 65%)`, pointerEvents: 'none' }}/>
-        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-          <div>
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, marginBottom: 8 }}>Shared itinerary</p>
-            <motion.h1
-              animate={{ filter: ['drop-shadow(0 0 14px rgba(212,182,134,0.16))', 'drop-shadow(0 0 40px rgba(212,182,134,0.40))', 'drop-shadow(0 0 14px rgba(212,182,134,0.16))'] }}
-              transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontSize: 52, color: BONE, lineHeight: 1, letterSpacing: '-0.02em' }}
-            >
-              Bali, Indonesia
-            </motion.h1>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE, marginBottom: 10 }}>Jun 14 – Jun 21 · 7 days</p>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
-              <img src="https://i.pravatar.cc/80?img=32" alt="" style={{ width: 28, height: 28, borderRadius: '50%', border: `1.5px solid rgba(212,182,134,0.28)`, boxShadow: '0 0 14px rgba(212,182,134,0.12)' }}/>
-              <img src="https://i.pravatar.cc/80?img=47" alt="" style={{ width: 28, height: 28, borderRadius: '50%', border: `1.5px solid rgba(212,182,134,0.28)`, marginLeft: -10, boxShadow: '0 0 14px rgba(212,182,134,0.12)' }}/>
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE }}>You & Priya M.</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <div style={{ flex: 1, maxWidth: 1200, margin: '0 auto', width: '100%', padding: '40px 48px 80px', display: 'grid', gridTemplateColumns: '1fr 360px', gap: 40 }}>
 
-      {/* tabs */}
-      <div style={{ borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.75)', backdropFilter: 'blur(16px)', position: 'relative', zIndex: 1 }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex' }}>
-          {DAYS.map((d, i) => (
-            <motion.button
-              key={d.day}
-              whileHover={activeDay !== i ? { color: BONE, transition: { duration: 0.15 } } : {}}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => setDay(i)}
-              style={{
-                padding: '18px 28px', background: activeDay === i ? `${CYAN}0F` : 'none',
-                border: 'none', cursor: 'pointer',
-                borderBottom: `2px solid ${activeDay === i ? CYAN : 'transparent'}`,
-                fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.14em',
-                color: activeDay === i ? CYAN : MUTE, whiteSpace: 'nowrap', transition: 'all 0.2s',
-                boxShadow: activeDay === i ? `inset 0 1px 0 ${CYAN}1A` : 'none',
-              }}
-            >
-              Day {d.day} — {d.theme}
-            </motion.button>
+        {/* LEFT — days + pending proposals */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 36 }}>
+          <div>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+              Shared itinerary · v{shared.version}
+            </p>
+            <h1 style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 48, lineHeight: 1.1, color: BONE, margin: '8px 0 4px' }}>
+              {itin?.destination?.city || 'Your trip'}
+            </h1>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE, margin: 0 }}>
+              Propose changes, agree or counter — both of you shape the trip.
+            </p>
+          </div>
+
+          {pendingChanges.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: ROSE, margin: 0 }}>
+                Pending · {pendingChanges.length}
+              </p>
+              {pendingChanges.map(c => (
+                <PendingProposalCard
+                  key={c.change_id}
+                  change={c}
+                  selfId={selfId}
+                  otherName={otherName}
+                  onAccept={acceptPending}
+                  onCounterClick={(ch) => { setCounterTarget(ch); setProposeOpen(false) }}
+                  submitting={submitting}
+                />
+              ))}
+            </div>
+          )}
+
+          {days.map(day => (
+            <div key={day.day_number} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 28, color: BONE, margin: 0 }}>
+                  Day {day.day_number}{day.theme ? <span style={{ color: MUTE, fontSize: 16 }}> — {day.theme}</span> : null}
+                </h2>
+                <button
+                  onClick={() => { setProposeDay(day.day_number); setProposeOpen(true); setCounterTarget(null) }}
+                  style={{
+                    background: 'none', border: `1px solid ${VIOLET}55`, borderRadius: 18,
+                    padding: '6px 12px', cursor: 'pointer', color: VIOLET,
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                    letterSpacing: '0.18em', textTransform: 'uppercase',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}
+                >
+                  <Plus size={11}/> Propose
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(day.activities || []).map((ia, i) => (
+                  <div key={ia?.activity?.activity_id || i} style={{
+                    padding: '12px 16px', borderRadius: 10,
+                    border: `1px solid ${HAIRLINE}`,
+                    background: 'rgba(232,212,168,0.025)',
+                    display: 'flex', alignItems: 'center', gap: 12,
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 500, color: BONE, margin: 0 }}>
+                        {ia?.activity?.name || '—'}
+                      </p>
+                      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE, margin: '2px 0 0' }}>
+                        {ia?.time || ''}
+                        {ia?.activity?.category && ia.activity.category !== 'proposed' ? <span> · {ia.activity.category}</span> : null}
+                        {ia?.activity?.category === 'proposed' ? <span style={{ color: GREEN }}> · added together</span> : null}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
+
+        {/* RIGHT — activity feed */}
+        <div style={{ position: 'sticky', top: 100, alignSelf: 'flex-start', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <ActivityFeed
+            log={shared.activity_log}
+            selfId={selfId}
+            otherName={otherName}
+            otherEvaluating={otherEvaluating}
+          />
+        </div>
       </div>
 
-      {/* content */}
-      <div style={{ flex: 1, maxWidth: 1100, margin: '0 auto', width: '100%', padding: '0 48px', position: 'relative', zIndex: 1 }}>
-        <AnimatePresence mode="wait">
-          <motion.div key={activeDay} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -14 }} transition={{ duration: 0.32, ease }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 0 }}>
-              <div style={{ borderRight: `1px solid ${HAIRLINE}`, padding: '52px 44px 52px 0', position: 'sticky', top: 68, alignSelf: 'start', overflow: 'hidden' }}>
-                <div style={{ position: 'absolute', top: 0, left: -44, right: 0, height: 280, background: `radial-gradient(ellipse 80% 60% at 30% 20%, ${CYAN}12 0%, transparent 65%)`, pointerEvents: 'none' }}/>
-                <div style={{ position: 'relative' }}>
-                  <motion.span
-                    animate={{ filter: [`drop-shadow(0 0 20px ${CYAN}22)`, `drop-shadow(0 0 60px ${CYAN}55)`, `drop-shadow(0 0 20px ${CYAN}22)`] }}
-                    transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-                    style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 140, lineHeight: 0.9, letterSpacing: '-0.04em', color: CYAN, opacity: 0.14, userSelect: 'none', display: 'block', marginBottom: -28 }}
-                  >
-                    {day.day}
-                  </motion.span>
-                  <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 30, color: BONE, lineHeight: 1.2, position: 'relative' }}>{day.theme}</h2>
-                </div>
-                <div style={{ marginTop: 36, display: 'flex', flexDirection: 'column', gap: 0 }}>
-                  {[{ label: 'Activities', value: String(day.activities.length) }, { label: 'Added by', value: 'You & Priya' }].map(({ label, value }) => (
-                    <div key={label} style={{ padding: '14px 0', borderTop: `1px solid ${HAIRLINE}` }}>
-                      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, marginBottom: 5 }}>{label}</p>
-                      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 15, fontWeight: 500, color: BONE }}>{value}</p>
-                    </div>
-                  ))}
-                </div>
-                <motion.button
-                  whileHover={{ borderColor: `${CYAN}44`, background: `${CYAN}0A`, boxShadow: `0 0 20px ${CYAN}18`, transition: { duration: 0.18 } }}
-                  whileTap={{ scale: 0.96 }}
-                  onClick={() => setAdd(true)}
-                  style={{ marginTop: 24, display: 'flex', alignItems: 'center', gap: 7, padding: '10px 16px', background: 'rgba(212,182,134,0.04)', border: `1px solid rgba(212,182,134,0.22)`, borderRadius: 10, cursor: 'pointer', transition: 'all 0.2s' }}
-                >
-                  <Plus size={12} style={{ color: CYAN }}/>
-                  <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: CYAN }}>Add activity</span>
-                </motion.button>
-              </div>
-              <motion.div variants={stagger} initial="hidden" animate="show" style={{ padding: '52px 0 52px 52px' }}>
-                {day.activities.map(act => (
-                  <motion.div key={act.id} variants={cardReveal}>
-                    <ActivityCard activity={act} time={act.time} whyThis={act.why} addedBy={act.addedBy} onFeedback={fb => setFb(prev => [...prev.filter(f => f.activity_id !== fb.activity_id), fb])}/>
-                  </motion.div>
-                ))}
-                {feedback.length > 0 && (
-                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                    <motion.button
-                      whileHover={{ y: -3, boxShadow: `0 0 64px ${CYAN}55, 0 0 128px ${CYAN}22`, transition: spring }}
-                      whileTap={{ scale: 0.97 }}
-                      style={{ padding: '16px 36px', background: `linear-gradient(135deg, ${CYAN} 0%, #0891B2 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff', boxShadow: `0 0 48px ${CYAN}44, 0 0 96px ${CYAN}11`, marginTop: 8 }}
-                    >
-                      Sync changes · {feedback.length}
-                    </motion.button>
-                  </motion.div>
-                )}
-              </motion.div>
-            </div>
+      {/* Propose / Counter modal */}
+      <AnimatePresence>
+        {(proposeOpen || counterTarget) && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 100,
+              background: 'rgba(10,8,5,0.78)', backdropFilter: 'blur(8px)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 32,
+            }}
+            onClick={() => { setProposeOpen(false); setCounterTarget(null) }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 12 }}
+              transition={spring}
+              onClick={e => e.stopPropagation()}
+            >
+              {counterTarget ? (
+                <ProposeForm
+                  mode="counter"
+                  defaultDay={counterTarget.day_number}
+                  dayCount={dayCount}
+                  onSubmit={submitCounter}
+                  onCancel={() => setCounterTarget(null)}
+                  submitting={submitting}
+                  error={error}
+                />
+              ) : (
+                <ProposeForm
+                  mode="propose"
+                  defaultDay={proposeDay}
+                  dayCount={dayCount}
+                  onSubmit={submitPropose}
+                  onCancel={() => setProposeOpen(false)}
+                  submitting={submitting}
+                  error={error}
+                />
+              )}
+            </motion.div>
           </motion.div>
-        </AnimatePresence>
-      </div>
-
-      {/* share sheet */}
-      <AnimatePresence>
-        {shareOpen && (
-          <>
-            <motion.div key="sb" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShare(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.60)', zIndex: 300, backdropFilter: 'blur(6px)' }}/>
-            <motion.div key="ss" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 32, stiffness: 280 }} style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 560, zIndex: 301, background: 'rgba(18,14,9,0.98)', borderRadius: '24px 24px 0 0', border: `1px solid rgba(232,212,168,0.12)`, borderBottom: 'none', padding: '12px 0 48px', backdropFilter: 'blur(24px)' }}>
-              <div style={{ width: 40, height: 3, borderRadius: 2, background: 'rgba(232,212,168,0.16)', margin: '0 auto 24px' }}/>
-              <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 28, color: BONE, textAlign: 'center', marginBottom: 32 }}>Export itinerary</p>
-              {[{ Icon: Mail, label: 'Send to both emails', sub: 'PDF sent to you and Priya' }, { Icon: Download, label: 'Download PDF', sub: 'Opens in your browser' }].map(({ Icon, label, sub }) => (
-                <motion.button
-                  key={label}
-                  whileHover={{ background: 'rgba(232,212,168,0.04)', transition: { duration: 0.18 } }}
-                  whileTap={{ scale: 0.99 }}
-                  onClick={() => setShare(false)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 18, width: '100%', padding: '20px 32px', background: 'none', border: 'none', cursor: 'pointer', borderTop: `1px solid rgba(232,212,168,0.07)` }}
-                >
-                  <div style={{ width: 44, height: 44, borderRadius: '50%', border: `1px solid ${CYAN}33`, background: `${CYAN}0A`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Icon size={16} style={{ color: CYAN }}/>
-                  </div>
-                  <div style={{ textAlign: 'left' }}>
-                    <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 14, color: BONE, marginBottom: 3 }}>{label}</p>
-                    <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: MUTE }}>{sub}</p>
-                  </div>
-                </motion.button>
-              ))}
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* add sheet */}
-      <AnimatePresence>
-        {addOpen && (
-          <>
-            <motion.div key="ab" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setAdd(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.60)', zIndex: 300, backdropFilter: 'blur(6px)' }}/>
-            <motion.div key="as" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 32, stiffness: 280 }} style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 560, zIndex: 301, background: 'rgba(18,14,9,0.98)', borderRadius: '24px 24px 0 0', border: `1px solid rgba(232,212,168,0.12)`, borderBottom: 'none', padding: '12px 36px 52px', backdropFilter: 'blur(24px)' }}>
-              <div style={{ width: 40, height: 3, borderRadius: 2, background: 'rgba(232,212,168,0.16)', margin: '0 auto 28px' }}/>
-              <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 28, color: BONE, marginBottom: 32 }}>Add to Day {day.day}</p>
-              <input
-                value={newActivity} onChange={e => setNew(e.target.value)}
-                placeholder="Place, activity, or idea…"
-                onFocus={e => { e.currentTarget.style.borderBottomColor = `${CYAN}66` }}
-                onBlur={e => { e.currentTarget.style.borderBottomColor = 'rgba(212,182,134,0.40)' }}
-                style={{ width: '100%', padding: '0 0 18px', background: 'none', border: 'none', borderBottom: `1px solid rgba(212,182,134,0.40)`, color: BONE, outline: 'none', fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 24, boxSizing: 'border-box', marginBottom: 36, transition: 'border-color 0.2s' }}
-              />
-              <motion.button
-                whileHover={newActivity.trim() ? { y: -2, boxShadow: `0 0 40px ${CYAN}44`, transition: spring } : {}}
-                whileTap={newActivity.trim() ? { scale: 0.97 } : {}}
-                onClick={() => { setAdd(false); setNew('') }}
-                style={{ width: '100%', padding: '17px 0', background: newActivity.trim() ? `linear-gradient(135deg, ${CYAN} 0%, #0891B2 100%)` : 'rgba(212,182,134,0.06)', border: 'none', borderRadius: 12, cursor: newActivity.trim() ? 'pointer' : 'default', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: newActivity.trim() ? '#fff' : MUTE, boxShadow: newActivity.trim() ? `0 0 40px ${CYAN}33` : 'none', transition: 'all 0.2s' }}
-              >
-                Add activity
-              </motion.button>
-            </motion.div>
-          </>
         )}
       </AnimatePresence>
     </div>

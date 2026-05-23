@@ -13,7 +13,8 @@
 #   shreyas/schemas/enums.py       → ApprovalStatus
 #   shreyas/schemas/cotraveller.py → CoTravellerProfile, CoTravellerMatch
 #   shreyas/schemas/chat.py        → ChatMessage, ChatSession, SharedItinerary,
-#                                     ChatStartResponse, ItineraryUpdateEvent
+#                                     ChatStartResponse, ItineraryUpdateEvent,
+#                                     ProposedChange, ActivityLogEntry
 #
 from jahnvi.schemas.enums        import *
 from jahnvi.schemas.user         import *

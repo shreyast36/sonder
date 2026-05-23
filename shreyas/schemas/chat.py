@@ -74,6 +74,50 @@ class ChatSession(BaseModel):
     live_weights:     dict[str, float] | None = None
 
 
+class ProposedChange(BaseModel):
+    """A single proposal in the negotiation queue.
+
+    `kind`:
+      - "add"    → new activity (title) on `day_number`
+      - "replace"→ swap an existing activity (replaces_activity_id) with `title`
+      - "move"   → keep an existing activity but on a different day
+
+    `status` flows:
+      proposed → accepted     (committed to itinerary)
+      proposed → countered    (closed by the counter)
+      proposed → withdrawn    (proposer pulled it back, rare in v1)
+
+    A counter is itself a new ProposedChange with `counter_to_id` pointing
+    at the change that triggered it. Walking the counter_to_id chain
+    gives the full negotiation history for a single thread.
+    """
+    change_id:            str
+    proposer_id:          str                 # user_id or profile_id
+    kind:                 str                 # "add" | "replace" | "move"
+    day_number:           int
+    title:                str                 # human-readable activity title
+    message:              str = ""            # 1-3 sentence rationale from the proposer
+    replaces_activity_id: Optional[str] = None
+    counter_to_id:        Optional[str] = None
+    status:               str = "proposed"    # "proposed" | "accepted" | "countered" | "withdrawn"
+    created_at:           str = ""
+
+
+class ActivityLogEntry(BaseModel):
+    """One line in the negotiation activity feed shown to both parties.
+
+    Drives the live "what is the other side doing" indicator without
+    needing a real WebSocket presence channel — every meaningful change
+    appends here and the frontend polls / WS-listens for new entries.
+    """
+    entry_id:    str
+    actor_id:    str                # user_id, profile_id, or "system"
+    kind:        str                # "proposed" | "accepted" | "countered" | "evaluating" | "joined"
+    title:       str = ""           # the activity title involved, if any
+    day_number:  Optional[int] = None
+    created_at:  str = ""
+
+
 class SharedItinerary(BaseModel):
     """
     A collaborative itinerary shared between two users after mutual approval.
@@ -82,6 +126,12 @@ class SharedItinerary(BaseModel):
     version is incremented on every write and used for optimistic locking:
     a write is only accepted if the client's version matches the current Firestore version.
     This prevents the last-write-wins silent overwrite when both users edit simultaneously.
+
+    Negotiation state lives in `proposed_changes` (the queue of in-flight
+    + historical proposals) and `activity_log` (the human-readable feed
+    rendered to both sides). The base `itinerary` is the committed state
+    — accepted changes are folded in by the propose/respond routes
+    before the change moves to `accepted` status.
 
     Example:
         SharedItinerary(
@@ -96,12 +146,14 @@ class SharedItinerary(BaseModel):
             version         = 4
         )
     """
-    itinerary_id:    str
-    user_ids:        list[str]
-    itinerary:       Itinerary
-    notes:           list[dict] = Field(default_factory=list)
-    last_updated_by: Optional[str] = None
-    version:         int = 0  # increment on every write; clients must send current version
+    itinerary_id:     str
+    user_ids:         list[str]
+    itinerary:        Itinerary
+    notes:            list[dict] = Field(default_factory=list)
+    last_updated_by:  Optional[str] = None
+    version:          int = 0  # increment on every write; clients must send current version
+    proposed_changes: list[ProposedChange]   = Field(default_factory=list)
+    activity_log:     list[ActivityLogEntry] = Field(default_factory=list)
 
 
 class ChatStartResponse(BaseModel):

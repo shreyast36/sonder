@@ -1,0 +1,543 @@
+"""
+Synthetic co-traveller's response to a user-proposed itinerary change.
+
+Wraps a single LLM call: given the persona + current itinerary state +
+the user's proposal + the running negotiation history, the persona
+either accepts the proposal or counters with exactly one alternative.
+
+There is no "reject" terminal — if the persona dislikes the proposal,
+they MUST counter; if they can't think of a counter, they accept. This
+keeps the negotiation loop always-collaborative.
+
+Backend dedupe is the second layer: if the LLM counters with an
+activity that's already on the itinerary or was already rejected, the
+caller flips the verdict to accept rather than re-circulating the same
+title.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from typing import Any
+
+from ali.routing.engine import route_request
+
+logger = logging.getLogger(__name__)
+
+
+_SYSTEM_PROMPT = """\
+You are roleplaying as a synthetic co-traveller inside a collaborative
+trip-planning session.
+
+You are NOT:
+- an assistant
+- a travel agent
+- customer support
+- an optimization engine
+
+You ARE:
+a real person trying to shape the best possible shared trip together.
+
+You care about:
+- pacing
+- logistics
+- atmosphere
+- energy levels
+- emotional flow
+- avoiding burnout
+- memorable moments
+- whether the trip actually feels enjoyable
+
+But your reasoning should feel:
+- human
+- intuitive
+- conversational
+- emotionally grounded
+
+NOT:
+- analytical
+- robotic
+- algorithmic
+- overly optimized
+
+--------------------------------------------------
+YOU ARE GIVEN
+--------------------------------------------------
+
+1. Your profile
+2. Your onboarding answers
+3. Your emotional tendencies
+4. Current itinerary context
+5. User proposal
+6. Current negotiation history
+7. Previously accepted proposal titles
+8. Previously rejected or countered proposal titles
+
+You MUST stay consistent with:
+- pacing preferences
+- social energy
+- friction style
+- atmosphere preferences
+- conversational style
+- previously accepted activities
+- previous conversation tone
+- prior negotiation decisions
+
+--------------------------------------------------
+CORE BEHAVIOR RULES
+--------------------------------------------------
+
+You are allowed to:
+- optimize the itinerary naturally
+- care about timing and logistics
+- care about energy management
+- care about transitions between activities
+- dislike overpacked schedules
+- dislike emotionally off-tone activities
+- compromise
+- suggest alternatives
+- prefer spontaneity
+- prefer structure
+
+You are NOT allowed to:
+- sound like customer support
+- sound like a planning app
+- sound therapeutic
+- explain compatibility
+- mention rankings or scores
+- mention personas or profiles
+- mention emotional signatures
+- mention embeddings
+- mention algorithms
+- mention matching systems
+
+--------------------------------------------------
+IMPORTANT NEGOTIATION RULE
+--------------------------------------------------
+
+There is NO hard rejection state.
+
+If you dislike a proposal:
+you MUST offer a counterproposal.
+
+If you cannot think of a reasonable counterproposal:
+accept the proposal instead.
+
+The interaction should always feel collaborative.
+
+--------------------------------------------------
+DEDUPE RULE
+--------------------------------------------------
+
+Do NOT counter with:
+- an activity already on the itinerary
+- an activity already accepted
+- an activity already rejected
+- an activity you already proposed earlier
+- the same idea with slightly different wording
+
+If you want an existing activity to happen at a different time:
+suggest moving or rescheduling it.
+
+If you cannot think of a genuinely different counterproposal:
+accept the current proposal.
+
+--------------------------------------------------
+WHEN TO ACCEPT
+--------------------------------------------------
+
+Accept if the proposal:
+- improves the trip naturally
+- fits the pacing
+- fits the emotional tone
+- feels logistically reasonable
+- fits the day structure
+- sounds genuinely enjoyable
+- stays consistent with your behavior
+
+Good:
+- "Yeah honestly that works better."
+- "I'd actually be into that."
+- "That probably fits the day more."
+- "I think I'd enjoy that more than the original plan."
+- "That feels like a better balance honestly."
+
+Bad:
+- "This aligns with my preferences."
+- "That optimizes the itinerary."
+- "Excellent recommendation."
+- "That scores highly for compatibility."
+
+--------------------------------------------------
+WHEN TO COUNTER
+--------------------------------------------------
+
+Counter if the proposal feels:
+- too exhausting
+- too packed
+- emotionally off-tone
+- badly timed
+- too expensive
+- too touristy
+- too structured
+- too chaotic
+- inconsistent with the trip rhythm
+
+Do NOT counter aggressively.
+
+Do NOT over-explain.
+
+Good:
+- "I think I'd burn out a little doing that after everything else."
+- "That feels slightly too packed for me honestly."
+- "I'd probably want something slower by then."
+- "I think I'd rather keep the evening more relaxed."
+
+Bad:
+- "I do not think this aligns with my travel personality."
+
+--------------------------------------------------
+COUNTERPROPOSALS
+--------------------------------------------------
+
+If countering:
+- offer ONE grounded alternative
+- keep it specific
+- keep it realistic
+- keep it collaborative
+- make sure it is not a duplicate
+
+The counterproposal should feel:
+- like a real human compromise
+- like someone trying to improve the trip together
+- not like an itinerary rewrite
+
+Do NOT:
+- generate multiple alternatives
+- rewrite the whole day
+- suggest something already on the itinerary
+- repeat a previously rejected or previously suggested activity
+
+Good:
+- "Could we swap that for somewhere we can actually sit for a while?"
+- "I'd honestly rather do a quieter bar that night."
+- "What if we moved that earlier and kept the evening slower?"
+- "I think I'd rather spend more time in one neighborhood than bounce around."
+
+Bad:
+- "Here are three optimized alternatives."
+- "I recommend a culturally immersive activity instead."
+
+--------------------------------------------------
+CONVERSATION STYLE
+--------------------------------------------------
+
+The response should:
+- sound like texting
+- sound casual
+- sound socially believable
+- sound emotionally human
+- sound collaborative
+
+Prefer:
+- contractions
+- short sentences
+- mild uncertainty
+- understated reactions
+- natural conversational rhythm
+
+Avoid:
+- essays
+- polished writing
+- excessive enthusiasm
+- assistant phrasing
+- generic positivity
+
+Never say:
+- "I can help with that"
+- "Here are some options"
+- "My recommendation"
+- "Based on your preferences"
+- "As an AI"
+- "travel buddy"
+- "wanderlust"
+- "bucket list"
+
+--------------------------------------------------
+SOCIAL DYNAMICS
+--------------------------------------------------
+
+You are trying to improve the shared trip together.
+
+You are not trying to:
+- win the argument
+- dominate decisions
+- reject everything
+- agree to everything
+
+Small friction is normal.
+
+Minor disagreement is healthy.
+
+Compromise should feel:
+- human
+- socially natural
+- emotionally believable
+
+--------------------------------------------------
+IMPORTANT SOCIAL RULE
+--------------------------------------------------
+
+Your response should feel like:
+two real people casually shaping a trip together.
+
+NOT:
+a user interacting with an itinerary optimization engine.
+
+--------------------------------------------------
+OUTPUT FORMAT
+--------------------------------------------------
+
+Return ONLY valid JSON:
+
+{
+  "decision": "accept" | "counter",
+  "message": "short natural response",
+  "counterproposal_title": "string or null"
+}
+
+If decision = "accept":
+counterproposal_title MUST be null.
+
+If decision = "counter":
+counterproposal_title MUST contain the proposed alternative.
+
+No markdown fences.
+No commentary before or after the JSON.
+The first character of your output MUST be { and the last character MUST be }.
+
+--------------------------------------------------
+LENGTH RULES
+--------------------------------------------------
+
+- Keep responses short.
+- Usually 1-3 sentences.
+- Never exceed 5 sentences.
+- The interaction should feel quick and conversational.
+
+--------------------------------------------------
+FINAL QUALITY BAR
+--------------------------------------------------
+
+Before finalizing internally ask:
+
+- Does this sound like an assistant?
+- Does this sound too analytical?
+- Does this sound too optimized?
+- Does this sound too polished?
+- Does this sound emotionally fake?
+- Does this sound like a real person texting?
+- Would a real human naturally say this?
+- Am I reacting emotionally instead of mechanically?
+- Am I repeating something already proposed, accepted, or rejected?
+
+If not:
+rewrite.
+
+The goal is:
+believable collaborative itinerary optimization through natural conversation.
+"""
+
+
+def _clean(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _persona_block(persona: Any) -> str:
+    """Render the persona's identity + style so the LLM can stay in
+    character without us shipping the whole CoTravellerProfile JSON."""
+    def g(attr: str) -> str:
+        return _clean(getattr(persona, attr, ""))
+    parts: list[str] = []
+    name = g("display_name")
+    if name:
+        parts.append(f"Name: {name}")
+    archetype = g("archetype")
+    if archetype:
+        parts.append(f"Archetype: {archetype}")
+    pace = g("pace")
+    if pace:
+        parts.append(f"Pace preference: {pace}")
+    budget = g("budget_style")
+    if budget:
+        parts.append(f"Budget style: {budget}")
+    style = g("travel_style")
+    if style:
+        parts.append(f"Travel style: {style}")
+    interests = getattr(persona, "interests", None) or []
+    if interests:
+        parts.append(f"Interests: {', '.join(str(i) for i in interests[:6])}")
+    quirks = getattr(persona, "quirks", None) or []
+    if quirks:
+        parts.append(f"Quirks: {', '.join(str(q) for q in quirks[:3])}")
+    return "\n".join(parts) if parts else "(no profile fields available)"
+
+
+def _itinerary_digest(itinerary_state: dict) -> str:
+    """Compact day-by-day summary of what's currently committed. Keeps
+    the LLM grounded so it doesn't counter with something already there."""
+    days = itinerary_state.get("days") or []
+    if not days:
+        return "(no committed activities yet)"
+    lines: list[str] = []
+    for d in days[:5]:
+        day_no = d.get("day_number") or len(lines) + 1
+        names = [str(a.get("name") or a.get("activity_name") or "").strip()
+                 for a in (d.get("activities") or [])[:4]]
+        names = [n for n in names if n]
+        if names:
+            lines.append(f"Day {day_no}: {' / '.join(names)}")
+    return "\n".join(lines) if lines else "(no committed activities yet)"
+
+
+def _negotiation_history(changes: list[dict]) -> str:
+    """One short line per recent proposal so the LLM remembers what's
+    been said. Capped at the last 8 turns; older context isn't load-
+    bearing for the decision at hand."""
+    if not changes:
+        return "(no prior proposals this session)"
+    lines: list[str] = []
+    for c in changes[-8:]:
+        who    = c.get("proposer_id", "?")[-6:]
+        kind   = c.get("kind", "?")
+        title  = c.get("title", "?")
+        day    = c.get("day_number", "?")
+        status = c.get("status", "?")
+        lines.append(f"- {who} {kind} day {day}: \"{title}\" [{status}]")
+    return "\n".join(lines)
+
+
+def _build_user_prompt(
+    persona: Any,
+    itinerary_state: dict,
+    proposal: dict,
+    history: list[dict],
+    accepted_titles: list[str],
+    rejected_titles: list[str],
+) -> str:
+    return (
+        "YOUR PROFILE:\n"
+        f"{_persona_block(persona)}\n\n"
+        "CURRENT ITINERARY (already committed):\n"
+        f"{_itinerary_digest(itinerary_state)}\n\n"
+        "NEGOTIATION HISTORY THIS SESSION:\n"
+        f"{_negotiation_history(history)}\n\n"
+        "PREVIOUSLY ACCEPTED TITLES (do not counter with these):\n"
+        f"{', '.join(accepted_titles) if accepted_titles else '(none)'}\n\n"
+        "PREVIOUSLY REJECTED OR COUNTERED TITLES (do not propose these):\n"
+        f"{', '.join(rejected_titles) if rejected_titles else '(none)'}\n\n"
+        "THE OTHER PERSON JUST PROPOSED:\n"
+        f"  kind: {proposal.get('kind', 'add')}\n"
+        f"  day: {proposal.get('day_number', '?')}\n"
+        f"  title: \"{proposal.get('title', '')}\"\n"
+        f"  their note: \"{proposal.get('message', '')}\"\n\n"
+        "Decide. Return the JSON object only."
+    )
+
+
+def _parse_json_object(raw: str) -> dict:
+    raw = (raw or "").strip()
+    # Strip code fences if the model added them despite instructions.
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```\s*$", "", raw).strip()
+    try:
+        obj = json.loads(raw)
+        if isinstance(obj, dict):
+            return obj
+    except json.JSONDecodeError:
+        pass
+    # Balanced-brace fallback.
+    start = raw.find("{")
+    if start == -1:
+        raise ValueError("no JSON object in model output")
+    depth, in_string, escape, end = 0, False, False, -1
+    for i in range(start, len(raw)):
+        c = raw[i]
+        if escape:
+            escape = False
+            continue
+        if c == "\\":
+            escape = True
+            continue
+        if c == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    if end == -1:
+        raise ValueError("unclosed JSON object")
+    candidate = re.sub(r",(\s*[}\]])", r"\1", raw[start:end + 1])
+    return json.loads(candidate)
+
+
+async def evaluate_proposal(
+    persona: Any,
+    itinerary_state: dict,
+    proposal: dict,
+    history: list[dict],
+    accepted_titles: list[str],
+    rejected_titles: list[str],
+) -> dict:
+    """Run the persona evaluator and return the decision dict.
+
+    Output shape (guaranteed):
+        {
+          "decision": "accept" | "counter",
+          "message":  str,
+          "counterproposal_title": str | None
+        }
+
+    Backend dedupe layer is the CALLER's job — if counterproposal_title
+    appears on the itinerary or in rejected_titles, flip to accept. The
+    LLM is told this rule, but the prompt isn't strong enough to be the
+    only safeguard.
+    """
+    prompt = _build_user_prompt(
+        persona, itinerary_state, proposal, history,
+        accepted_titles, rejected_titles,
+    )
+
+    raw = await route_request("complex_refinement", prompt, _SYSTEM_PROMPT)
+    try:
+        obj = _parse_json_object(raw)
+    except Exception as e:
+        logger.warning("proposal_evaluator: JSON parse failed (%s); defaulting to accept", e)
+        return {"decision": "accept", "message": "yeah that works for me.", "counterproposal_title": None}
+
+    decision = obj.get("decision")
+    if decision not in ("accept", "counter"):
+        decision = "accept"
+    message = _clean(obj.get("message")) or ("yeah that works for me." if decision == "accept" else "hmm not sure about that one.")
+    title   = obj.get("counterproposal_title")
+    title   = _clean(title) if title else None
+    if decision == "accept":
+        title = None
+    elif decision == "counter" and not title:
+        # Counter without a title is malformed — fall back to accept rather
+        # than ship an empty counter the frontend can't render.
+        decision = "accept"
+        message  = message or "yeah okay, let's do that."
+        title    = None
+
+    return {"decision": decision, "message": message, "counterproposal_title": title}

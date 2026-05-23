@@ -286,6 +286,24 @@ export async function unregisterPushSubscription(endpoint) {
   return post('/api/push/unsubscribe', { endpoint })
 }
 
+// ── Shared itinerary (collaborative negotiation) ───────────────────────────
+
+export async function getSharedItinerary(itineraryId) {
+  return get(`/api/shared/${encodeURIComponent(itineraryId)}`)
+}
+
+export async function proposeChange(itineraryId, { kind = 'add', dayNumber, title, message = '', version }) {
+  return post(`/api/shared/${encodeURIComponent(itineraryId)}/propose`, {
+    kind, day_number: dayNumber, title, message, version,
+  })
+}
+
+export async function respondToChange(itineraryId, { changeId, decision, title = null, message = '', version }) {
+  return post(`/api/shared/${encodeURIComponent(itineraryId)}/respond`, {
+    change_id: changeId, decision, title, message, version,
+  })
+}
+
 // ── Voice (ElevenLabs TTS) ─────────────────────────────────────────────────
 
 // Synthesize one chat message into a Firebase-hosted MP3 URL. Same text
