@@ -40,6 +40,7 @@ from mushahid.realtime.firestore import (
     get_user_profile,
 )
 from mushahid.utils.sanitize import sanitize_user_input
+from shreyas.cotraveller.chat import manager as ws_manager
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -228,6 +229,14 @@ async def request_to_join(itinerary_id: str, body: JoinRequestBody, uid: str = D
         "created_at":       _now_iso(),
     }
     await write_join_request(req)
+    # Push to the trip owner's global notification socket so the
+    # incoming-requests panel on their dashboard surfaces this
+    # without a refresh. Failure is logged and ignored — the poll-
+    # on-mount path is the fallback.
+    try:
+        await ws_manager.notify_user(itin.user_id, {"type": "join_request_new", "request": req})
+    except Exception as e:
+        logger.debug("notify_user(join_request_new) failed: %s", e)
     return {"request": req, "duplicated": False}
 
 
@@ -274,5 +283,13 @@ async def respond_join_request(request_id: str, body: RespondJoinRequest, uid: s
                 await write_itinerary(updated)
         except Exception as e:
             logger.warning("respond_join_request: failed to append requester to itinerary: %s", e)
+
+    # Push the resolution to the requester's notification socket so
+    # their Discover card flips badge state in real time.
+    try:
+        await ws_manager.notify_user(req["requester_id"],
+                                     {"type": "join_request_resolved", "request": req})
+    except Exception as e:
+        logger.debug("notify_user(join_request_resolved) failed: %s", e)
 
     return {"request": req}

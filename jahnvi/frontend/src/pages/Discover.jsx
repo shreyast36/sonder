@@ -267,6 +267,24 @@ function CommentThread({ postId, selfUid, initialCount }) {
     finally { setPosting(false) }
   }
 
+  // Real-time push: when someone else comments on a post we're the
+  // author of (i.e. NotificationProvider re-broadcasts a comment_new
+  // event), append it inline so the thread doesn't need a re-fetch.
+  // Filtered by post_id since the listener is attached on every card.
+  useEffect(() => {
+    function onNewComment(e) {
+      const d = e.detail
+      if (!d || d.post_id !== postId || !d.comment) return
+      setComments(prev => prev.some(c => c.comment_id === d.comment.comment_id)
+        ? prev
+        : [...prev, d.comment])
+      // Auto-open the thread so the author sees the new reply.
+      setOpen(true)
+    }
+    window.addEventListener('sonder:comment:new', onNewComment)
+    return () => window.removeEventListener('sonder:comment:new', onNewComment)
+  }, [postId])
+
   return (
     <div style={{ marginTop: 8 }}>
       <button
@@ -506,39 +524,72 @@ export default function Discover() {
     }, { replace: true })
   }, [setParams])
 
-  // Hydrate the active tab on mount + when switched.
+  // Hydrate the active tab on mount + when switched. The Feed tab
+  // also polls every 6s while visible — short enough to feel real-time
+  // for new posts without a per-user broadcast channel.
   useEffect(() => {
     if (!user) return
     let cancelled = false
+    let pollId = null
     if (tab === 'trips') {
       setTripsLoading(true); setTripsError(null)
-      ;(async () => {
+      const fetchTrips = async () => {
         try {
           const res = await listOpenTrips(40)
           if (cancelled) return
           setTrips(res?.trips || [])
+          setTripsError(null)
         } catch (e) {
           if (!cancelled) setTripsError(e?.message || 'Could not load trips')
         } finally {
           if (!cancelled) setTripsLoading(false)
         }
-      })()
+      }
+      fetchTrips()
+      pollId = setInterval(fetchTrips, 10000)
     } else {
       setFeedLoading(true); setFeedError(null)
-      ;(async () => {
+      const fetchFeed = async () => {
         try {
           const res = await listFeed({ limit: 30 })
           if (cancelled) return
-          setPosts(res?.posts || [])
+          setPosts(prev => {
+            const next = res?.posts || []
+            // Preserve scroll: if nothing new at the top, keep refs stable.
+            if (next.length && prev.length && next[0]?.post_id === prev[0]?.post_id) return prev
+            return next
+          })
+          setFeedError(null)
         } catch (e) {
           if (!cancelled) setFeedError(e?.message || 'Could not load feed')
         } finally {
           if (!cancelled) setFeedLoading(false)
         }
-      })()
+      }
+      fetchFeed()
+      pollId = setInterval(fetchFeed, 6000)
     }
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      if (pollId) clearInterval(pollId)
+    }
   }, [tab, user?.uid])
+
+  // Real-time push: when one of MY join-requests gets resolved by the
+  // trip owner, patch the matching trip card's status badge.
+  useEffect(() => {
+    function onResolved(e) {
+      const req = e.detail
+      if (!req?.itinerary_id) return
+      setTrips(prev => prev.map(t =>
+        t.itinerary_id === req.itinerary_id
+          ? { ...t, your_request_status: req.status }
+          : t,
+      ))
+    }
+    window.addEventListener('sonder:join_request:resolved', onResolved)
+    return () => window.removeEventListener('sonder:join_request:resolved', onResolved)
+  }, [])
 
   async function submitJoin(message) {
     if (!joinTarget) return

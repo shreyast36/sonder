@@ -41,6 +41,25 @@ export default function NotificationProvider({ children }) {
   const dismiss = useCallback(() => setBanner(null), [])
 
   const handleEvent = useCallback((data) => {
+    // Real-time fan-out for the new social surfaces. Each event type
+    // gets re-dispatched as a window CustomEvent so the relevant page
+    // (Dashboard's incoming-requests panel, Discover's Open Trips
+    // tab, the Feed's comment threads) can listen independently
+    // without coupling to this provider.
+    if (data?.type === 'join_request_new' && data.request) {
+      window.dispatchEvent(new CustomEvent('sonder:join_request:new', { detail: data.request }))
+      return
+    }
+    if (data?.type === 'join_request_resolved' && data.request) {
+      window.dispatchEvent(new CustomEvent('sonder:join_request:resolved', { detail: data.request }))
+      return
+    }
+    if (data?.type === 'comment_new' && data.comment) {
+      window.dispatchEvent(new CustomEvent('sonder:comment:new', {
+        detail: { post_id: data.post_id, comment: data.comment },
+      }))
+      return
+    }
     if (data?.type !== 'chat_notification') return
     const { session_id, sender_name, sender_is_seed, preview } = data
     // Suppress if the user is already on the chat page for this session —

@@ -421,7 +421,7 @@ export default function Dashboard() {
   }, [user?.uid, storedItinerary?.itinerary_id])
 
   // Pull incoming join-requests on this user's open trips. One fetch
-  // per session — the panel updates locally on approve/deny.
+  // on mount; the WS listener below appends in real-time on new ones.
   useEffect(() => {
     if (!user) return
     let cancelled = false
@@ -436,6 +436,24 @@ export default function Dashboard() {
       }
     })()
     return () => { cancelled = true }
+  }, [user?.uid])
+
+  // Real-time push: when the backend fires `join_request_new` for this
+  // user (because someone just requested to join one of their open
+  // trips), NotificationProvider dispatches a CustomEvent we listen for
+  // here and append to local state. Dedup by request_id so a brief
+  // race between the WS push and a mount-fetch can't double-render.
+  useEffect(() => {
+    if (!user) return
+    function onNewRequest(e) {
+      const req = e.detail
+      if (!req || req.status !== 'proposed') return
+      setIncoming(prev => prev.some(r => r.request_id === req.request_id)
+        ? prev
+        : [req, ...prev])
+    }
+    window.addEventListener('sonder:join_request:new', onNewRequest)
+    return () => window.removeEventListener('sonder:join_request:new', onNewRequest)
   }, [user?.uid])
 
   async function decideIncoming(requestId, decision) {

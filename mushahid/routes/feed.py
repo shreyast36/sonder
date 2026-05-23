@@ -32,6 +32,7 @@ from mushahid.realtime.firestore import (
     write_social_comment, write_social_post,
 )
 from mushahid.utils.sanitize import sanitize_user_input
+from shreyas.cotraveller.chat import manager as ws_manager
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -161,4 +162,15 @@ async def add_comment(post_id: str, body: CommentCreateRequest, uid: str = Depen
     }
     await write_social_comment(post_id, comment)
     await increment_post_comment_count(post_id, delta=1)
+    # Push to the post author's notification socket so their feed
+    # surfaces the comment in real time. Skip self-notifies (author
+    # commenting on their own post sees it from the local state).
+    if post.get("author_id") and post["author_id"] != uid:
+        try:
+            await ws_manager.notify_user(
+                post["author_id"],
+                {"type": "comment_new", "post_id": post_id, "comment": comment},
+            )
+        except Exception as e:
+            logger.debug("notify_user(comment_new) failed: %s", e)
     return {"comment": comment}
