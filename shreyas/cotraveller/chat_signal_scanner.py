@@ -119,6 +119,60 @@ def _build_keyword_map() -> dict[re.Pattern, list[str]]:
 _KEYWORD_MAP: dict[re.Pattern, list[str]] = _build_keyword_map()
 
 
+# ── Sarcasm detection ─────────────────────────────────────────────────────
+
+
+# High-confidence sarcasm markers. Lexical sarcasm detection is fundamentally
+# weak (models with fine-tuning still struggle), so we only catch the
+# handful of conventions that are almost never used sincerely. When any of
+# these fire, the entire message is treated as negated and no positive
+# keyword boosts apply for that turn.
+#
+# Excluded on purpose:
+#   - All-caps emphasis ("I LOVE crowds") → too many false positives from
+#     legitimate excitement, especially in casual chat
+#   - Standalone "sure" / "totally" / "of course" → too often sincere
+#   - Multiple "!!!" with positive words → also too ambiguous
+#
+# Included:
+#   - "/s" suffix       — universal internet convention for sarcasm
+#   - "said no one ever" — meme phrase, never sincere
+#   - "yeah right" / "yeah sure" — almost always dismissive sarcasm
+#   - Eye-roll / unamused / upside-down face emoji
+#   - "love how" + negative-leaning context (handled as sentence pattern below)
+_SARCASM_MARKERS = re.compile(
+    r"(?:"
+    r"/s(?:\s|$|[.!?])|"
+    r"\bsaid\s+no\s+one\s+ever\b|"
+    r"\byeah\s+(?:right|sure)\b|"
+    r"\boh\s+(?:great|wonderful|fantastic|joy|perfect)\b|"
+    r"🙄|😒|🙃"
+    r")",
+    re.IGNORECASE,
+)
+
+# "Love how X" pattern — almost always sarcastic when X follows. E.g.
+# "love how my flight got delayed three times". The pattern only fires
+# at the START of a clause to avoid catching "I love how welcoming this
+# place is" which is sincere.
+_SARCASTIC_FRAME = re.compile(
+    r"(?:^|[.!?]\s+)(?:i\s+)?(?:just\s+)?love\s+how\b",
+    re.IGNORECASE,
+)
+
+
+def _is_sarcastic_message(text: str) -> bool:
+    """High-confidence whole-message sarcasm detection. Returns True only
+    when one of the unambiguous lexical conventions fires."""
+    if not text:
+        return False
+    if _SARCASM_MARKERS.search(text):
+        return True
+    if _SARCASTIC_FRAME.search(text):
+        return True
+    return False
+
+
 # ── Negation handling ─────────────────────────────────────────────────────
 
 
@@ -179,10 +233,22 @@ def fired_features(text: str, allowed: set[str]) -> list[str]:
     """Return the unique cotraveller-policy features the text implies
     should gain weight, restricted to features the policy actually uses.
 
-    Negated keywords ("not into nightlife", "don't want luxury") are
-    skipped — the boost only fires for affirmative mentions.
+    Two suppression passes run before keyword matching:
+
+    1. Sarcasm: if a high-confidence sarcasm marker is present anywhere
+       in the message (/s, "said no one ever", "yeah right", eye-roll
+       emoji, "love how" clause-opener), the entire message is treated
+       as un-boostable. No false-positive boosts from sentences whose
+       polarity is the opposite of their literal content.
+
+    2. Negation zones: keyword matches inside a "not / no / don't /
+       hate / never / sick of / ..." zone are skipped per-keyword. Zone
+       extends 5 words or to the next clause break.
     """
     if not text:
+        return []
+    if _is_sarcastic_message(text):
+        logger.debug("chat_signal_scanner: sarcasm detected, suppressing all boosts: %r", text[:80])
         return []
     zones = _negation_zones(text)
     out: list[str] = []
