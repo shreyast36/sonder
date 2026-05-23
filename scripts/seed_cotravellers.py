@@ -7,8 +7,10 @@ Spec locked across 6 design questions:
                           vocab) writes the synthetic's "answers". Those
                           answers go through the SAME persona-infer LLM
                           path real users hit. Tags inferred symmetrically.
-  2. Diversity matrix  — 16 cities × 7 age buckets × 2 genders = 224 slots.
-                          Stable profile_id per slot so re-runs overwrite.
+  2. Diversity matrix  — 16 cities × 3 age buckets × 2 genders = 96 slots.
+                          Age range 20-50, matching the portrait prompt's
+                          "early 20s to early 40s" age rule. Stable
+                          profile_id per slot so re-runs overwrite.
   3. Image params      — gpt-image-1 medium quality, photoreal, 1024×1024.
                           appearance_descriptor + visual_cue from LLM-A
                           drive prompt diversity. Anti-stereotype clause
@@ -42,14 +44,14 @@ CLI:
     python -m scripts.seed_cotravellers --resume
     python -m scripts.seed_cotravellers --purge
 
-Cost estimate (all 224, no --dry-run):
-    LLM-A persona     224 × ~$0.005 = ~$1.10  (small LLM call per slot)
-    Real persona-infer 224 × ~$0.005 = ~$1.10  (same tier)
-    Emotional sig      224 × ~$0.003 = ~$0.70
-    gpt-image-1 medium 224 × $0.042  = ~$9.40
-    OpenAI embeds      224 × ~negligible
+Cost estimate (all 96, no --dry-run):
+    LLM-A persona      96 × ~$0.005 = ~$0.50  (small LLM call per slot)
+    Real persona-infer 96 × ~$0.005 = ~$0.50  (same tier)
+    Emotional sig      96 × ~$0.003 = ~$0.30
+    gpt-image-1 medium 96 × $0.042  = ~$4.00
+    OpenAI embeds      96 × ~negligible
                                        ───────
-                       Total          ~$12-14
+                       Total          ~$5-6
 """
 
 import argparse
@@ -113,9 +115,12 @@ CITIES: list[str] = [
     "Seoul, South Korea",
 ]
 
-# 7 buckets, 20–90 in 10-year steps. User-defined.
+# 3 buckets, 20–50 in 10-year steps. Trimmed from the original 7 (20-90) after
+# the first seed run came back skewing elderly/passive. The portrait prompt
+# also explicitly bans elderly facial structure — keeping the matrix and prompt
+# aligned avoids the model compromising on age targets it can't satisfy.
 AGE_BUCKETS: list[tuple[int, int]] = [
-    (20, 30), (30, 40), (40, 50), (50, 60), (60, 70), (70, 80), (80, 90),
+    (20, 30), (30, 40), (40, 50),
 ]
 
 # 50/50 split, hard-locked. User-defined.
@@ -211,8 +216,32 @@ Rules:
 - quirks: 1-2 short third-person quirks ("can't function without morning
   coffee", "always ends up in markets", "allergic to crowded beaches").
 - visual_cue: a short phrase the image generator will use for the
-  portrait setting, e.g. "leaning against a market stall, late afternoon
-  light" or "at a tiny cafe table near the harbour, overcast".
+  candid-snapshot setting. The image is a casual smartphone photo, NOT
+  a portrait or travel-magazine shot. Cue must be a mundane everyday
+  moment where the person happens to be near a camera.
+  EXAMPLES OF THE RIGHT REGISTER (do NOT pick these verbatim — invent
+  a different mundane moment tailored to THIS specific persona's city,
+  age, and quirks):
+        "waiting outside the metro entrance, looking at her phone",
+        "standing in line at a convenience store, slightly distracted",
+        "leaning on a railing on an ordinary street, mid-conversation",
+        "sitting at a cluttered desk at work, paused mid-task",
+        "in a crowded transit station, half-turned away".
+  Treat the examples as showing the *register* (mundane, candid,
+  unposed, no props), not the content. Each persona should get its
+  own freshly-invented ordinary moment — bus stops, laundromats,
+  pharmacy queues, apartment stairwells, parking lots, office
+  hallways, sidewalk corners, etc. Vary the setting, the body
+  position, what they're looking at, and what they're doing.
+  BAD (avoid all of these — they break the candid feel):
+        "golden hour", "serene morning light", "dappled sunlight",
+        "under a cherry blossom tree", "on a temple step", "reading a
+        worn paperback", "rooftop bar", "scenic overlook", "looking
+        off into the distance", "contemplative", any cafe, any holding
+        of a book/map/journal/camera/postcard, any iconic landmark.
+  No props in their hands except possibly an ordinary phone. The cue
+  should sound like something a friend would say describing a candid
+  photo, not a travel ad.
 - appearance_descriptor: 1-3 words for visual reference only (e.g.
   "Indian", "Nigerian", "Brazilian of Italian descent"). Treat this as
   appearance information for image generation, not demographic
@@ -462,30 +491,308 @@ async def persona_infer(persona: dict, sem: asyncio.Semaphore) -> dict | None:
 # ── Stage 3 — gpt-image-1 portrait ────────────────────────────────────────
 
 
-# Anti-stereotype + diversity-aware prompt clause (constraint set
-# locked with the user during spec).
-_IMAGE_PROMPT_GUARDRAILS = (
-    "Photoreal portrait, candid, medium-distance composition, natural light. "
-    "Important constraints: do not stereotype clothing, props, skin tone, or setting "
-    "based on the appearance descriptor. Do not infer religion, caste, tribe, or "
-    "political identity. Use natural, ordinary portrait context — what a real "
-    "person looks like on a normal day in this city. Ground the image in the "
-    "persona's city and lifestyle, not tourist clichés (no famous landmarks "
-    "behind them, no postcard backdrops, no costume-of-the-region props). "
-    "Mid-distance composition with the face visible but the setting also "
-    "present. Warm honest tones, mid-quality realism, not magazine-cover."
-)
+# Casual-snapshot prompt template. The first prompt (cinematic-portrait
+# framing + "photoreal" hedge) produced waxy, posed, stock-photo-grade
+# output. This template aggressively pushes gpt-image-1 away from its
+# tourism-ad / fashion-editorial defaults and toward
+# Hinge/Bumble-candid texture.
+_PORTRAIT_PROMPT_TEMPLATE = """\
+You are generating a casual smartphone-style profile photo for a synthetic
+co-traveller in a modern social travel app.
+
+The goal is NOT to create:
+- a cinematic portrait
+- a fashion editorial
+- an influencer photo
+- a tourism campaign
+- a luxury lifestyle image
+- an "AI-generated traveler"
+- a hyper-attractive dating-app model
+- a perfect portrait
+
+The goal IS to create:
+a socially believable young adult
+who feels like a real person someone could actually meet.
+
+--------------------------------------------------
+CORE VISUAL TARGET
+--------------------------------------------------
+
+The image should resemble:
+- a quick iPhone photo
+- a casual candid
+- a real social profile picture
+- an Instagram story screenshot
+- a slightly messy friend photo
+- a naturally uploaded social/dating app photo
+
+The person should feel:
+- socially active
+- contemporary
+- casually confident
+- emotionally natural
+- grounded
+- believable
+
+NOT:
+- posed
+- inspirational
+- overly aesthetic
+- cinematic
+- model-like
+- hyper-curated
+
+--------------------------------------------------
+AGE + SOCIAL ENERGY RULES
+--------------------------------------------------
+
+The subject MUST visibly appear:
+between their early 20s and early 40s unless otherwise specified.
+
+Do NOT age the subject upward.
+
+Avoid:
+- elderly facial structure
+- retirement-photo energy
+- professor/headshot energy
+- documentary-style aging emphasis
+- excessive wrinkle emphasis
+- passive expressions
+- isolated energy
+- vacant expressions
+
+The subject should feel:
+- socially engaged
+- currently active in life
+- emotionally present
+- naturally energetic
+
+The image should look like:
+someone who would realistically use a modern social travel app.
+
+--------------------------------------------------
+EXPRESSION RULES
+--------------------------------------------------
+
+The subject should appear:
+- naturally warm
+- lightly expressive
+- socially approachable
+- emotionally relaxed
+
+Favor:
+- small natural smiles
+- half-smiles
+- mid-laugh expressions
+- subtle amusement
+- relaxed conversational expressions
+- candid warmth
+
+Avoid:
+- blank expressions
+- vacant stares
+- overly serious expressions
+- emotionally flat faces
+- exaggerated grins
+- influencer smiles
+- forced teeth-showing poses
+- corporate headshot smiles
+
+The smile should feel:
+- spontaneous
+- slightly imperfect
+- socially real
+
+Like:
+someone reacting to a friend nearby,
+not posing for a professional portrait.
+
+--------------------------------------------------
+STRICT NEGATIVE CONSTRAINTS
+--------------------------------------------------
+
+DO NOT generate:
+- cinematic lighting
+- golden-hour glow
+- dramatic shadows
+- teal/orange color grading
+- HDR processing
+- editorial composition
+- centered symmetrical framing
+- shallow depth-of-field blur
+- studio photography
+- fashion photography
+- influencer aesthetics
+- model poses
+- "looking into the distance"
+- contemplative traveler poses
+- wanderlust aesthetics
+- inspirational travel energy
+- hyper-perfect skin
+- waxy skin
+- painterly rendering
+- digital painting textures
+- concept-art aesthetics
+- luxury travel imagery
+- iconic landmarks
+- scenic temples
+- rooftop bars
+- postcard scenery
+- curated cafés
+- travel props
+- journals
+- maps
+- cameras
+- luggage posed intentionally
+
+DO NOT make the image feel like:
+"this person represents travel."
+
+The person is simply existing naturally.
+
+--------------------------------------------------
+POSITIVE REALISM CONSTRAINTS
+--------------------------------------------------
+
+Prioritize:
+- natural skin texture
+- realistic facial proportions
+- slight asymmetry
+- imperfect framing
+- slight camera grain
+- ordinary clothing
+- candid body language
+- relaxed posture
+- uneven lighting
+- subtle background clutter
+- socially believable expressions
+- environmental randomness
+- natural movement
+- slight awkwardness
+
+The image should feel:
+- mid-conversation
+- mid-movement
+- lightly distracted
+- casually human
+- socially alive
+
+--------------------------------------------------
+BACKGROUND RULES
+--------------------------------------------------
+
+The background should feel incidental, not curated.
+
+Good:
+- crosswalk
+- outside a café
+- blurry transit station
+- convenience store lighting
+- apartment entrance
+- slightly cluttered street
+- hallway
+- food counter
+- waiting outside somewhere
+- sitting with friends
+- urban texture
+- everyday environments
+
+Bad:
+- postcard scenery
+- dramatic skylines
+- cinematic alleys
+- tourism imagery
+- inspirational landscapes
+- luxury interiors
+- aesthetic travel scenery
+
+--------------------------------------------------
+POSE + COMPOSITION RULES
+--------------------------------------------------
+
+Avoid direct centered portrait framing.
+
+Good:
+- off-center framing
+- partial body crop
+- slight movement blur
+- imperfect timing
+- casual posture
+- caught mid-laugh
+- distracted expression
+- slight half-smile
+- adjusting clothing
+- interacting with surroundings
+- socially natural positioning
+
+Bad:
+- intense eye contact
+- dramatic side profile
+- crossed-arm pose
+- "main character" framing
+- symmetrical composition
+- fashion posture
+- model confidence pose
+
+--------------------------------------------------
+PERSON DETAILS
+--------------------------------------------------
+
+Age: {age}
+
+Gender presentation:
+{gender}
+
+Home city:
+{city}
+
+Appearance descriptor:
+{appearance_descriptor}
+
+Behavioral moment:
+{visual_cue}
+
+--------------------------------------------------
+IMPORTANT REALISM RULE
+--------------------------------------------------
+
+The image should NOT be visually impressive.
+
+It should feel:
+socially real.
+
+A real person should plausibly upload this casually.
+
+--------------------------------------------------
+FINAL QUALITY BAR
+--------------------------------------------------
+
+Before finalizing internally ask:
+
+- Does this look too old?
+- Does this look passive or isolated?
+- Does this look staged?
+- Does this look too aesthetic?
+- Does this look like AI-generated "traveler content"?
+- Does this look over-composed?
+- Would a socially active real person casually upload this?
+
+If yes:
+reduce polish and increase social realism.
+
+The final image should feel like:
+a believable human snapshot,
+not an AI portrait.
+"""
 
 
 def _portrait_prompt(persona: dict, slot: dict) -> str:
-    appearance = persona.get("appearance_descriptor") or "person"
-    visual_cue = persona.get("visual_cue") or "in a quiet ordinary corner of the city"
-    age = persona.get("age", 30)
-    gender = slot["gender"]
-    city = slot["city"]
-    return (
-        f"Portrait of a {age}-year-old {gender}, {appearance}, in {city}. "
-        f"{visual_cue}. {_IMAGE_PROMPT_GUARDRAILS}"
+    return _PORTRAIT_PROMPT_TEMPLATE.format(
+        age=persona.get("age", 30),
+        gender=slot["gender"],
+        city=slot["city"],
+        appearance_descriptor=persona.get("appearance_descriptor") or "person",
+        visual_cue=persona.get("visual_cue") or "doing something ordinary in the city",
     )
 
 
