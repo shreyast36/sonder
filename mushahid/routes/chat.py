@@ -267,38 +267,141 @@ async def get_user_presence(session_id: str, user_id: str, uid: str = Depends(ve
     return {"user_id": user_id, "online": online, "last_seen": doc.get("last_seen")}
 
 
-@router.post("/chat/approve")
-async def approve_match(session_id: str, _uid: str = Depends(verify_token)):
-    await _assert_participant(session_id, _uid)
-    from mushahid.monitoring import capture, EVENT_MATCH_APPROVED
-    capture(_uid, EVENT_MATCH_APPROVED, {"session_id": session_id})
+def _derived_status(user_dec: ApprovalStatus, profile_dec: ApprovalStatus) -> ApprovalStatus:
+    """Overall session status from the two per-side decisions:
+    - either side denied → denied (terminal, deal off)
+    - both approved → approved (matched)
+    - else → pending (someone still deciding)
+    """
+    if user_dec == ApprovalStatus.denied or profile_dec == ApprovalStatus.denied:
+        return ApprovalStatus.denied
+    if user_dec == ApprovalStatus.approved and profile_dec == ApprovalStatus.approved:
+        return ApprovalStatus.approved
+    return ApprovalStatus.pending
+
+
+async def _apply_decision(session_id: str, *, side: str, decision: ApprovalStatus) -> ChatSession | None:
+    """Mutate the session's decision for one side and recompute the overall
+    approval_status. Persists to Firestore and updates the in-memory mirror.
+    `side` is "user" or "profile". Returns the updated ChatSession or None
+    if the session wasn't found."""
+    sess_meta = _sessions.get(session_id)
+    if sess_meta:
+        current: ChatSession = sess_meta["session"]
+    else:
+        stored = await get_chat_session(session_id)
+        if not stored:
+            return None
+        current = ChatSession(**{k: v for k, v in stored.items() if k != "messages"})
+
+    user_dec    = current.user_decision
+    profile_dec = current.profile_decision
+    if side == "user":
+        user_dec = decision
+    else:
+        profile_dec = decision
+
+    updated = current.model_copy(update={
+        "user_decision":    user_dec,
+        "profile_decision": profile_dec,
+        "approval_status":  _derived_status(user_dec, profile_dec),
+    })
+    if sess_meta:
+        sess_meta["session"] = updated
+    else:
+        _sessions[session_id] = {"session": updated, "messages": []}
     try:
-        from shreyas.cotraveller.approval import approve_match as _approve
-        status = _approve(session_id, _uid)
-        return {"status": status.value}
-    except (NotImplementedError, Exception):
-        if session_id in _sessions:
-            _sessions[session_id]["session"] = _sessions[session_id]["session"].model_copy(
-                update={"approval_status": ApprovalStatus.approved}
-            )
-        return {"status": "approved"}
+        await write_chat_session(updated)
+    except Exception as e:
+        logger.warning("approval write_chat_session failed for %s: %s", session_id, e)
+    return updated
+
+
+async def _schedule_persona_decision(session_id: str, profile_id: str) -> None:
+    """Simulate the synthetic persona's reciprocal decision. A short
+    randomised delay sells the "they're reviewing" UI state; the verdict
+    is gated on whether the candidate's compatibility cleared a reasonable
+    bar. Falls back to "approved" when match data is missing — better
+    than leaving the user stuck on a permanent pending screen."""
+    try:
+        await asyncio.sleep(random.uniform(2.4, 5.0))
+
+        verdict = ApprovalStatus.approved
+        try:
+            from shreyas.retrieval.search import get_cotraveller_by_id
+            cand = await get_cotraveller_by_id(profile_id)
+            score = getattr(cand, "match_score", None) if cand else None
+            # If retrieval doesn't expose a per-candidate score, default
+            # to approved. Personas surfaced by ranking are already a
+            # filtered-up shortlist.
+            if isinstance(score, (int, float)) and score < 0.55:
+                verdict = ApprovalStatus.denied
+        except Exception:
+            pass
+
+        updated = await _apply_decision(session_id, side="profile", decision=verdict)
+        if updated is None:
+            return
+        # Push the decision via the existing chat WS so the approval page
+        # (if it's listening) flips state in real time. Polling fallback
+        # picks it up if no socket is connected.
+        try:
+            await manager.broadcast_to_session(session_id, {
+                "type":             "decision_update",
+                "user_decision":    updated.user_decision.value,
+                "profile_decision": updated.profile_decision.value,
+                "approval_status":  updated.approval_status.value,
+            })
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning("persona decision task failed for session=%s: %s", session_id, e)
+
+
+class DecisionRequest(BaseModel):
+    session_id: str
+
+
+@router.post("/chat/approve")
+async def approve_match(body: DecisionRequest, uid: str = Depends(verify_token)):
+    session_id = body.session_id
+    await _assert_participant(session_id, uid)
+    from mushahid.monitoring import capture, EVENT_MATCH_APPROVED
+    capture(uid, EVENT_MATCH_APPROVED, {"session_id": session_id})
+
+    updated = await _apply_decision(session_id, side="user", decision=ApprovalStatus.approved)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Kick off the persona's reciprocal decision in the background so the
+    # response returns immediately (frontend goes into "waiting for them"
+    # state, then polls / listens for the decision_update event).
+    asyncio.create_task(_schedule_persona_decision(session_id, updated.profile_id))
+    return {
+        "user_decision":    updated.user_decision.value,
+        "profile_decision": updated.profile_decision.value,
+        "approval_status":  updated.approval_status.value,
+    }
 
 
 @router.post("/chat/deny")
-async def deny_match(session_id: str, _uid: str = Depends(verify_token)):
-    await _assert_participant(session_id, _uid)
+async def deny_match(body: DecisionRequest, uid: str = Depends(verify_token)):
+    session_id = body.session_id
+    await _assert_participant(session_id, uid)
     from mushahid.monitoring import capture, EVENT_MATCH_DENIED
-    capture(_uid, EVENT_MATCH_DENIED, {"session_id": session_id})
-    try:
-        from shreyas.cotraveller.approval import deny_match as _deny
-        status = _deny(session_id, _uid)
-        return {"status": status.value}
-    except (NotImplementedError, Exception):
-        if session_id in _sessions:
-            _sessions[session_id]["session"] = _sessions[session_id]["session"].model_copy(
-                update={"approval_status": ApprovalStatus.denied}
-            )
-        return {"status": "denied"}
+    capture(uid, EVENT_MATCH_DENIED, {"session_id": session_id})
+
+    # User denied — the match is closed regardless of the persona's verdict.
+    # Stamp the profile side as denied too so the session is terminal.
+    updated = await _apply_decision(session_id, side="user", decision=ApprovalStatus.denied)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    updated = await _apply_decision(session_id, side="profile", decision=ApprovalStatus.denied)
+    return {
+        "user_decision":    updated.user_decision.value if updated else "denied",
+        "profile_decision": updated.profile_decision.value if updated else "denied",
+        "approval_status":  "denied",
+    }
 
 
 async def _push_chat_notification(

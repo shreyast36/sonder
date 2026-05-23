@@ -50,6 +50,12 @@ class ChatSession(BaseModel):
     # instead of the user's actual planned trip. Optional only for back-
     # compat with sessions created before this field existed.
     itinerary_id:    str | None = None
+    # Per-side decisions. The overall approval_status is derived from
+    # these (both approved → approved; either denied → denied; else
+    # pending). Tracking each side independently is what lets the UI
+    # show "you've decided, waiting for them" progress states.
+    user_decision:    ApprovalStatus = ApprovalStatus.pending
+    profile_decision: ApprovalStatus = ApprovalStatus.pending
 
 
 class SharedItinerary(BaseModel):
