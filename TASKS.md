@@ -32,9 +32,9 @@ Each section lists one person's title, their ownership boundaries, and every tas
 
 ### Candidate Selection — Ranking
 
-- [ ] `shreyas/ranking/filters.py` — hard constraint filters applied before scoring (budget, dates, avoid_list, must_haves)
-- [ ] `shreyas/ranking/destination_ranker.py` — `score_destination()`, `rank_destinations()` — multi-signal scoring (vector similarity 60%, budget fit 20%, persona tag match 20%)
-- [ ] `shreyas/ranking/activity_ranker.py` — `score_activity()`, `rank_activities()`
+- [x] `shreyas/ranking/filters.py` — hard constraint filters applied before scoring (budget, dates, avoid_list, must_haves)
+- [x] `shreyas/ranking/destination_ranker.py` — `score_destination()`, `rank_destinations()` — multi-signal scoring (vector similarity 60%, budget fit 20%, persona tag match 20%)
+- [x] `shreyas/ranking/activity_ranker.py` — `score_activity()`, `rank_activities()`
 
 ### Co-Traveller Matching Algorithms
 
