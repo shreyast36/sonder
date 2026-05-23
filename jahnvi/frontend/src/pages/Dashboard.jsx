@@ -417,14 +417,16 @@ export default function Dashboard() {
     refresh()
     const reloadLocal = () => setStoredItinerary(loadStoredItinerary())
     const onStorage = (e) => { if (e.key === 'sonder_last_itinerary') reloadLocal() }
-    const onFocus = () => { reloadLocal(); refresh() }
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      reloadLocal()
+      refresh()
+    }
     window.addEventListener('storage', onStorage)
-    window.addEventListener('focus', onFocus)
-    document.addEventListener('visibilitychange', onFocus)
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       window.removeEventListener('storage', onStorage)
-      window.removeEventListener('focus', onFocus)
-      document.removeEventListener('visibilitychange', onFocus)
+      document.removeEventListener('visibilitychange', onVisible)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid])
