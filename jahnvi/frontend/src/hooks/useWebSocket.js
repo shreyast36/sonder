@@ -60,6 +60,15 @@ export function useWebSocket(sessionId) {
         setPresence(prev => ({ ...prev, [data.user_id]: !!data.online }))
       } else if (data.type === 'message') {
         setMessages(prev => [...prev, data])
+      } else if (data.type === 'message_edited' && data.message_id) {
+        // The persona's reply was repaired by the async validator after
+        // the initial broadcast. Swap the message text in place so the
+        // bubble updates without a re-fetch.
+        setMessages(prev => prev.map(m =>
+          m.message_id === data.message_id
+            ? { ...m, content: data.content }
+            : m,
+        ))
       }
     })
 

@@ -528,7 +528,11 @@ async def append_chat_message(session_id: str, message: dict) -> None:
         session_data.setdefault("messages", []).append(message)
         _store[f"chat:{session_id}"] = session_data
         return
-    msg_id = str(uuid.uuid4())
+    # Use the caller's message_id as the Firestore doc id when it's
+    # present so update_chat_message_content can find the doc by key.
+    # Falls back to a fresh uuid for legacy messages without a
+    # message_id field.
+    msg_id = (message.get("message_id") or "").strip() or str(uuid.uuid4())
     await asyncio.to_thread(
         lambda: get_db()
             .collection("chat_sessions")
@@ -537,6 +541,48 @@ async def append_chat_message(session_id: str, message: dict) -> None:
             .document(msg_id)
             .set(message)
     )
+
+
+async def update_chat_message_content(session_id: str, message_id: str, content: str) -> bool:
+    """Update an existing chat message's `content` field in place. Used
+    by the async validator path that swaps the persona's reply text
+    after the initial broadcast. Returns True on success."""
+    if not session_id or not message_id:
+        return False
+    if LOCAL_MODE:
+        session_data = _store.get(f"chat:{session_id}", {})
+        msgs = session_data.get("messages") or []
+        for m in msgs:
+            if isinstance(m, dict) and m.get("message_id") == message_id:
+                m["content"] = content
+                return True
+        return False
+    # Firestore path: first try the message_id-keyed doc (the new
+    # write convention). If that doesn't exist (legacy uuid-keyed
+    # docs), query by message_id field and update the match.
+    try:
+        ref = get_db().collection("chat_sessions").document(session_id) \
+                      .collection("messages").document(message_id)
+        snap = await asyncio.to_thread(ref.get)
+        if getattr(snap, "exists", False):
+            await asyncio.to_thread(lambda: ref.set({"content": content}, merge=True))
+            return True
+        # Fallback: query.
+        docs = await asyncio.to_thread(
+            lambda: list(
+                get_db().collection("chat_sessions").document(session_id)
+                        .collection("messages")
+                        .where("message_id", "==", message_id)
+                        .limit(1).stream()
+            )
+        )
+        if docs:
+            await asyncio.to_thread(lambda: docs[0].reference.set({"content": content}, merge=True))
+            return True
+        return False
+    except Exception as e:
+        logger.warning("update_chat_message_content failed for %s/%s: %s", session_id, message_id, e)
+        return False
 
 
 # ── Discover surface: open trips + join requests + social feed ────────────

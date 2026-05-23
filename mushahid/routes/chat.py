@@ -11,7 +11,7 @@ from mushahid.auth import verify_token, verify_token_string
 from mushahid.utils.sanitize import sanitize_user_input
 from mushahid.realtime.firestore import (
     write_chat_session, append_chat_message, get_chat_session,
-    list_chat_messages, get_presence,
+    list_chat_messages, get_presence, update_chat_message_content,
 )
 from shreyas.cotraveller.chat import manager
 from shreyas.cotraveller.presence import set_online, set_offline, is_online
@@ -576,6 +576,99 @@ async def _typing_keepalive(session_id: str, profile_id: str) -> None:
         return
 
 
+async def _validate_async(
+    *,
+    session_id:       str,
+    session_meta:     dict,
+    message_id:       str,
+    reply_text:       str,
+    candidate,
+    history:          list[dict],
+    last_message:     str,
+    trip_destination: str | None,
+    profile_id:       str,
+) -> None:
+    """Fire-and-forget validator pass that runs AFTER the unvalidated
+    reply has already been broadcast. If the validator produces a
+    different (repaired) output, the persisted message is patched and
+    a `message_edited` event is broadcast so the frontend swaps the
+    bubble text in place — user sees the message instantly and watches
+    it quietly self-correct a couple seconds later when needed.
+
+    No CHAT_VALIDATOR_ENABLED gate here because the user-facing
+    latency is already gone — only SMALL_VALIDATOR_PROVIDER governs
+    whether the validator runs at all. Failures are logged and
+    swallowed; the original broadcast stands."""
+    try:
+        from shared.config import SMALL_VALIDATOR_PROVIDER as _VALIDATOR_PROVIDER
+        if not _VALIDATOR_PROVIDER:
+            return
+        from mushahid.validation.critic import validate_and_repair_chat_reply_wired
+
+        profile_json = candidate.model_dump_json() if hasattr(candidate, "model_dump_json") else json.dumps({
+            "display_name": getattr(candidate, "display_name", ""),
+            "archetype":    getattr(candidate, "archetype", ""),
+            "location":     getattr(candidate, "location", ""),
+        })
+        # Render the transcript the same way the persona prompt did so
+        # the validator's contradiction check sees what the model saw.
+        history_lines: list[str] = []
+        for m in (history or [])[-_CHAT_HISTORY_TURN_CAP:]:
+            text = (m.get("content") or "").strip()
+            if not text:
+                continue
+            speaker = "ME" if m.get("sender_id") == profile_id else "THEM"
+            history_lines.append(f"{speaker}: {text}")
+        history_str = "\n".join(history_lines)
+        fallback_city = trip_destination or getattr(candidate, "preferred_destination", None) or None
+
+        validated_reply, telemetry = await validate_and_repair_chat_reply_wired(
+            profile_json=profile_json,
+            history=history_str,
+            last_message=last_message,
+            reply=reply_text,
+            city=fallback_city,
+        )
+
+        if validated_reply and validated_reply != reply_text:
+            logger.info("chat reply validator repaired session=%s message=%s", session_id, message_id)
+            # Patch the persisted message + broadcast the edit so any
+            # connected client swaps the bubble in place.
+            await update_chat_message_content(session_id, message_id, validated_reply)
+            try:
+                await manager.broadcast_to_session(session_id, {
+                    "type":       "message_edited",
+                    "message_id": message_id,
+                    "content":    validated_reply,
+                })
+            except Exception as e:
+                logger.debug("message_edited broadcast failed: %s", e)
+
+        if telemetry:
+            props = telemetry.get("properties", {}) if isinstance(telemetry, dict) else {}
+            logger.info(
+                "chat_validator session=%s passed_first_try=%s repairs=%s anomalies=%s latency_ms=%s",
+                session_id,
+                props.get("validator_passed_first_try"),
+                props.get("repair_count"),
+                props.get("detected_anomalies"),
+                props.get("total_latency_ms"),
+            )
+            try:
+                from mushahid.monitoring import capture, EVENT_CHAT_VALIDATOR_EXECUTION
+                capture(session_meta.get("user_id") or "", EVENT_CHAT_VALIDATOR_EXECUTION, {
+                    "session_id": session_id,
+                    "profile_id": profile_id,
+                    **props,
+                })
+            except Exception:
+                pass
+    except Exception as e:
+        # Validator is a quality gate, not a correctness gate — never
+        # rethrow. The original broadcast is the source of truth.
+        logger.warning("async chat validator failed for %s: %s", session_id, e)
+
+
 async def _send_synthetic_reply(
     session_id: str,
     session_meta: dict,
@@ -683,82 +776,6 @@ async def _send_synthetic_reply(
         if not reply_text:
             return
 
-        # Run the validator + repair orchestrator. Catches assistant-voice
-        # leaks, semantic drift, repetitive token loops, memory contradictions
-        # against earlier chat turns, and unsafe content. Gracefully skipped
-        # when SMALL_VALIDATOR_PROVIDER isn't configured (preserves the
-        # pre-validator behaviour for envs that haven't set it up yet).
-        try:
-            # Gate the validator behind a dedicated flag: it adds 2-3s
-            # per chat turn (full LLM repair loop) which pushed total
-            # turn time over the 5s budget. Off by default; ops can
-            # opt back in by setting CHAT_VALIDATOR_ENABLED=true in
-            # addition to SMALL_VALIDATOR_PROVIDER once the latency
-            # budget can absorb it.
-            import os as _os
-            from shared.config import SMALL_VALIDATOR_PROVIDER as _VALIDATOR_PROVIDER
-            _CHAT_VALIDATOR_ON = (_os.getenv("CHAT_VALIDATOR_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
-            if _VALIDATOR_PROVIDER and _CHAT_VALIDATOR_ON:
-                from mushahid.validation.critic import validate_and_repair_chat_reply_wired
-                profile_json = candidate.model_dump_json() if hasattr(candidate, "model_dump_json") else json.dumps({
-                    "display_name": getattr(candidate, "display_name", ""),
-                    "archetype":    getattr(candidate, "archetype", ""),
-                    "location":     getattr(candidate, "location", ""),
-                })
-                # Render the transcript the same way the LLM persona prompt
-                # rendered it — keeps the validator's contradiction check
-                # consistent with what the model actually saw.
-                history_lines: list[str] = []
-                for m in history[-40:]:
-                    text = (m.get("content") or "").strip()
-                    if not text:
-                        continue
-                    speaker = "ME" if m.get("sender_id") == profile_id else "THEM"
-                    history_lines.append(f"{speaker}: {text}")
-                history_str = "\n".join(history_lines)
-                # Prefer the user's actual trip destination so validator repairs
-                # don't reintroduce the persona's own preferred_destination.
-                fallback_city = trip_destination or getattr(candidate, "preferred_destination", None) or None
-
-                validated_reply, telemetry = await validate_and_repair_chat_reply_wired(
-                    profile_json=profile_json,
-                    history=history_str,
-                    last_message=last_message,
-                    reply=reply_text,
-                    city=fallback_city,
-                )
-                if validated_reply and validated_reply != reply_text:
-                    logger.info(
-                        "chat reply validator changed output for session %s — "
-                        "repaired or fell back",
-                        session_id,
-                    )
-                if telemetry:
-                    # Compact log line + PostHog event so we can compute
-                    # validator pass rate, repair rate, and anomaly histogram
-                    # across all chat sessions in dashboards.
-                    props = telemetry.get("properties", {}) if isinstance(telemetry, dict) else {}
-                    logger.info(
-                        "chat_validator session=%s passed_first_try=%s repairs=%s anomalies=%s latency_ms=%s",
-                        session_id,
-                        props.get("validator_passed_first_try"),
-                        props.get("repair_count"),
-                        props.get("detected_anomalies"),
-                        props.get("total_latency_ms"),
-                    )
-                    from mushahid.monitoring import capture, EVENT_CHAT_VALIDATOR_EXECUTION
-                    capture(session_meta.get("user_id") or "", EVENT_CHAT_VALIDATOR_EXECUTION, {
-                        "session_id":        session_id,
-                        "profile_id":        profile_id,
-                        **props,
-                    })
-                reply_text = validated_reply or reply_text
-        except Exception as e:
-            # Validator is a quality gate, not a correctness gate — never
-            # block the user-facing flow on it. Fall through with the raw
-            # LLM reply.
-            logger.warning("chat reply validator pipeline failed open for %s: %s", session_id, e)
-
         # Hold typing for a beat after the LLM finishes so the reply doesn't
         # appear instantaneously with the indicator still showing.
         await asyncio.sleep(random.uniform(*_REPLY_AFTER_REPLY_S))
@@ -774,6 +791,26 @@ async def _send_synthetic_reply(
         }
         await append_chat_message(session_id, outgoing)
         await manager.broadcast_to_session(session_id, outgoing)
+
+        # Fire the quality validator AFTER the broadcast so the user
+        # sees the reply at LLM-latency, not LLM-latency + validator-
+        # latency. If the validator produces a different (repaired)
+        # output, _validate_async writes the new content over the
+        # persisted message and broadcasts a `message_edited` event
+        # the frontend swaps in place. Net effect: snappy first
+        # render + late self-correction when needed, instead of
+        # paying the validator cost on every turn.
+        asyncio.create_task(_validate_async(
+            session_id=session_id,
+            session_meta=session_meta,
+            message_id=outgoing["message_id"],
+            reply_text=reply_text,
+            candidate=candidate,
+            history=recent_history,
+            last_message=last_message,
+            trip_destination=trip_destination,
+            profile_id=profile_id,
+        ))
 
         # Notify the human via their global channel so they get a banner /
         # OS notification when they navigated away from the chat page.
