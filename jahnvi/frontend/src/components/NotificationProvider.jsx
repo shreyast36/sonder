@@ -60,6 +60,18 @@ export default function NotificationProvider({ children }) {
       }))
       return
     }
+    if (data?.type === 'discover_trip_open' && data.trip) {
+      window.dispatchEvent(new CustomEvent('sonder:discover:trip_open', { detail: data.trip }))
+      return
+    }
+    if (data?.type === 'discover_trip_close' && data.itinerary_id) {
+      window.dispatchEvent(new CustomEvent('sonder:discover:trip_close', { detail: { itinerary_id: data.itinerary_id } }))
+      return
+    }
+    if (data?.type === 'discover_post_new' && data.post) {
+      window.dispatchEvent(new CustomEvent('sonder:discover:post_new', { detail: data.post }))
+      return
+    }
     if (data?.type !== 'chat_notification') return
     const { session_id, sender_name, sender_is_seed, preview } = data
     // Suppress if the user is already on the chat page for this session —

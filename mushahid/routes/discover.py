@@ -89,13 +89,12 @@ async def list_discover_trips(
     limit: int = Query(default=40, ge=1, le=100),
     uid:   str = Depends(verify_token),
 ):
-    """Feed of trips other users have flagged is_open_to_join. Owner's
-    own trips are excluded — you can't request to join your own. Each
-    card carries `your_request_status` so the frontend can render the
-    right state ('Request to join' vs 'Requested' vs 'Approved' vs 'Denied')."""
+    """Feed of trips flagged is_open_to_join, viewer's own included so
+    they can confirm their toggle landed. Each card carries
+    `your_request_status` (for trips owned by others) or `is_yours=True`
+    (for the viewer's own trip) so the frontend can render the right
+    state."""
     trips = await list_open_trips(limit=limit)
-    # Skip trips owned by the viewer.
-    trips = [t for t in trips if t.get("user_id") != uid]
 
     # Pre-fetch the viewer's prior join-requests so each card knows its
     # status without an N+1 lookup later.
@@ -114,29 +113,41 @@ async def list_discover_trips(
 
     cards: list[dict] = []
     for t in trips:
-        owner_id = t.get("user_id")
-        owner_name, owner_avatar = await _profile_summary(owner_id) if owner_id else ("Traveller", None)
-        dest = t.get("destination") or {}
-        # ItineraryDay carries trip_date; we surface the trip window
-        # from the first/last day so the feed shows real dates.
-        days = t.get("days") or []
-        start_date = (days[0].get("trip_date") if days else None)
-        end_date   = (days[-1].get("trip_date") if days else None)
-        cards.append({
-            "itinerary_id":         t.get("itinerary_id"),
-            "owner_id":             owner_id,
-            "owner_name":           owner_name,
-            "owner_avatar":         owner_avatar,
-            "destination_city":     dest.get("city") or "",
-            "destination_country":  dest.get("country") or "",
-            "start_date":           start_date,
-            "end_date":             end_date,
-            "join_capacity":        int(t.get("join_capacity") or 1),
-            "confirmed_companions": len(t.get("co_traveller_ids") or []),
-            "note":                 t.get("open_join_note") or "",
-            "your_request_status":  status_by_trip.get(t.get("itinerary_id")),
-        })
+        cards.append(await _trip_card(t, viewer_uid=uid,
+                                      status_by_trip=status_by_trip))
     return {"trips": cards}
+
+
+async def _trip_card(
+    t: dict, *, viewer_uid: str, status_by_trip: dict[str, str] | None = None,
+) -> dict:
+    """Shape one Itinerary doc into the card the Discover frontend
+    renders. Shared between the list endpoint and the open/close
+    broadcasts so the wire format stays in sync."""
+    owner_id = t.get("user_id")
+    owner_name, owner_avatar = (
+        await _profile_summary(owner_id) if owner_id else ("Traveller", None)
+    )
+    dest = t.get("destination") or {}
+    days = t.get("days") or []
+    start_date = (days[0].get("trip_date") if days else None)
+    end_date   = (days[-1].get("trip_date") if days else None)
+    tid = t.get("itinerary_id")
+    return {
+        "itinerary_id":         tid,
+        "owner_id":             owner_id,
+        "owner_name":           owner_name,
+        "owner_avatar":         owner_avatar,
+        "destination_city":     dest.get("city") or "",
+        "destination_country":  dest.get("country") or "",
+        "start_date":           start_date,
+        "end_date":             end_date,
+        "join_capacity":        int(t.get("join_capacity") or 1),
+        "confirmed_companions": len(t.get("co_traveller_ids") or []),
+        "note":                 t.get("open_join_note") or "",
+        "is_yours":             owner_id == viewer_uid,
+        "your_request_status":  (status_by_trip or {}).get(tid) if owner_id != viewer_uid else None,
+    }
 
 
 @router.post("/itineraries/{itinerary_id}/open")
@@ -174,6 +185,27 @@ async def open_itinerary(itinerary_id: str, body: OpenTripRequest, uid: str = De
                 )
     except Exception as e:
         logger.warning("open_itinerary note persist failed: %s", e)
+
+    # Fan out to every connected user so Discover lights up in real
+    # time — they don't need to wait for the 10s poll. The viewer
+    # themselves is excluded; their UI already knows it just opened.
+    try:
+        fresh = await get_itinerary(itinerary_id)
+        if fresh is not None:
+            card = await _trip_card(
+                fresh.model_dump(mode="json") if hasattr(fresh, "model_dump") else dict(fresh),
+                viewer_uid="",  # broadcast card is rendered by recipients, not the opener
+            )
+            # `is_yours` is recipient-relative; recompute on the client.
+            card.pop("is_yours", None)
+            card["owner_uid"] = uid
+            await ws_manager.broadcast_global(
+                {"type": "discover_trip_open", "trip": card},
+                exclude_user=uid,
+            )
+    except Exception as e:
+        logger.debug("broadcast_global(discover_trip_open) failed: %s", e)
+
     return {"itinerary_id": itinerary_id, "is_open_to_join": True, "join_capacity": body.join_capacity}
 
 
@@ -188,6 +220,15 @@ async def close_itinerary(itinerary_id: str, uid: str = Depends(verify_token)):
     ok = await set_itinerary_open(itinerary_id, is_open=False, join_capacity=itin.join_capacity)
     if not ok:
         raise HTTPException(status_code=502, detail="Failed to update itinerary state")
+
+    try:
+        await ws_manager.broadcast_global(
+            {"type": "discover_trip_close", "itinerary_id": itinerary_id},
+            exclude_user=uid,
+        )
+    except Exception as e:
+        logger.debug("broadcast_global(discover_trip_close) failed: %s", e)
+
     return {"itinerary_id": itinerary_id, "is_open_to_join": False}
 
 

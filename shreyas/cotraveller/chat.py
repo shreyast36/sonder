@@ -118,6 +118,18 @@ class ConnectionManager:
         for ws in list(self.user_channels.get(user_id, [])):
             await self.send_to_socket(ws, event)
 
+    async def broadcast_global(self, event: dict, *, exclude_user: str | None = None) -> None:
+        """Fan an event out to every connected notification channel.
+        Used for app-wide signals like a new open trip or a new social
+        post, where every signed-in user should see the update in real
+        time. Local in-memory only — production will need Redis pub/sub
+        across containers (same caveat as broadcast_to_session)."""
+        for user_id, sockets in list(self.user_channels.items()):
+            if exclude_user and user_id == exclude_user:
+                continue
+            for ws in list(sockets):
+                await self.send_to_socket(ws, event)
+
     def user_has_open_session(self, user_id: str, session_id: str) -> bool:
         """True if the user is currently connected to this chat session room
         — used to suppress notifications for the page they're actively on."""

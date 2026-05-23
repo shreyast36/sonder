@@ -47,6 +47,7 @@ function formatDateRange(start, end) {
 
 function OpenTripCard({ trip, index, onRequestJoin }) {
   const status = trip.your_request_status   // null | "proposed" | "approved" | "denied" | "withdrawn"
+  const isYours = !!trip.is_yours
   const dateRange = formatDateRange(trip.start_date, trip.end_date)
 
   return (
@@ -115,7 +116,12 @@ function OpenTripCard({ trip, index, onRequestJoin }) {
               {trip.confirmed_companions} / {trip.join_capacity} {trip.join_capacity === 1 ? 'companion slot' : 'companion slots'}
             </span>
           </div>
-          {status === null && (
+          {isYours && (
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: GOLD, padding: '6px 12px', borderRadius: 14, background: 'rgba(212,182,134,0.06)', border: `1px solid ${GOLD}55` }}>
+              Your trip · live
+            </span>
+          )}
+          {!isYours && status === null && (
             <motion.button
               whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
               onClick={() => onRequestJoin(trip)}
@@ -590,6 +596,44 @@ export default function Discover() {
     window.addEventListener('sonder:join_request:resolved', onResolved)
     return () => window.removeEventListener('sonder:join_request:resolved', onResolved)
   }, [])
+
+  // Real-time push: any user opening a trip prepends a new card so the
+  // feed feels alive without waiting for the 10s poll. Closes drop the
+  // card immediately. New social posts behave the same on the feed tab.
+  useEffect(() => {
+    function onTripOpen(e) {
+      const trip = e.detail
+      if (!trip?.itinerary_id) return
+      // `is_yours` is recipient-relative — the broadcast carries
+      // owner_uid; render perspective is the viewer.
+      const card = { ...trip, is_yours: trip.owner_uid === selfUid }
+      setTrips(prev => {
+        if (prev.some(t => t.itinerary_id === card.itinerary_id)) return prev
+        return [card, ...prev]
+      })
+    }
+    function onTripClose(e) {
+      const id = e.detail?.itinerary_id
+      if (!id) return
+      setTrips(prev => prev.filter(t => t.itinerary_id !== id))
+    }
+    function onPostNew(e) {
+      const post = e.detail
+      if (!post?.post_id) return
+      setPosts(prev => {
+        if (prev.some(p => p.post_id === post.post_id)) return prev
+        return [post, ...prev]
+      })
+    }
+    window.addEventListener('sonder:discover:trip_open',  onTripOpen)
+    window.addEventListener('sonder:discover:trip_close', onTripClose)
+    window.addEventListener('sonder:discover:post_new',   onPostNew)
+    return () => {
+      window.removeEventListener('sonder:discover:trip_open',  onTripOpen)
+      window.removeEventListener('sonder:discover:trip_close', onTripClose)
+      window.removeEventListener('sonder:discover:post_new',   onPostNew)
+    }
+  }, [selfUid])
 
   async function submitJoin(message) {
     if (!joinTarget) return

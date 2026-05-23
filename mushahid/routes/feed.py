@@ -103,6 +103,16 @@ async def create_post(body: PostCreateRequest, uid: str = Depends(verify_token))
         "created_at":     _now_iso(),
     }
     await write_social_post(post)
+    # Push to every connected user so the Discover feed surfaces new
+    # posts in real time without waiting on the 6s poll. The author is
+    # excluded; their local state already has the post.
+    try:
+        await ws_manager.broadcast_global(
+            {"type": "discover_post_new", "post": post},
+            exclude_user=uid,
+        )
+    except Exception as e:
+        logger.debug("broadcast_global(discover_post_new) failed: %s", e)
     return {"post": post}
 
 
