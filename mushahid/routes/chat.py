@@ -317,12 +317,15 @@ async def _send_synthetic_reply(
             logger.warning("synthetic reply: no profile in Pinecone for %s", profile_id)
             return
 
-        # Resolve the trip destination from the linked itinerary so the
-        # persona's reply stays anchored to where the user is actually
-        # going. Without this the model defaults to the persona's own
-        # preferred_destination — e.g. a Paris persona talking about
-        # Lisbon when the user matched for a Japan trip.
+        # Resolve trip destination + an itinerary digest so the persona's
+        # reply stays anchored to (a) where the user is actually going and
+        # (b) the specific activities planned. Without these the model
+        # defaults to the persona's own preferred_destination / volunteers
+        # their home city. The digest also gives the persona concrete
+        # things to ask about ("how are you feeling about the Tsukiji
+        # market stop?") instead of generic small talk.
         trip_destination: str | None = None
+        itinerary_digest: str | None = None
         itinerary_id = session_meta.get("itinerary_id")
         if itinerary_id:
             try:
@@ -335,6 +338,26 @@ async def _send_synthetic_reply(
                     trip_destination = f"{city}, {country}"
                 elif city:
                     trip_destination = city
+
+                # Build a compact day-by-day activity digest (one short line
+                # per activity, max ~3 activities per day, max 5 days) so the
+                # persona has concrete itinerary content to reference without
+                # blowing the prompt budget.
+                if itin and getattr(itin, "days", None):
+                    digest_lines: list[str] = []
+                    for day in itin.days[:5]:
+                        day_no = getattr(day, "day_number", None) or len(digest_lines) + 1
+                        activities = getattr(day, "activities", []) or []
+                        names: list[str] = []
+                        for act in activities[:3]:
+                            name = getattr(act, "name", None) or getattr(act, "activity_name", "") or ""
+                            name = (name or "").strip()
+                            if name:
+                                names.append(name)
+                        if names:
+                            digest_lines.append(f"Day {day_no}: {' / '.join(names)}")
+                    if digest_lines:
+                        itinerary_digest = "\n".join(digest_lines)
             except Exception as e:
                 logger.warning("synthetic reply: failed to load itinerary %s for destination: %s",
                                itinerary_id, e)
@@ -355,7 +378,11 @@ async def _send_synthetic_reply(
         keepalive = asyncio.create_task(_typing_keepalive(session_id, profile_id))
 
         history = await list_chat_messages(session_id)
-        reply_text = await generate_chat_reply(candidate, last_message, history, trip_destination=trip_destination)
+        reply_text = await generate_chat_reply(
+            candidate, last_message, history,
+            trip_destination=trip_destination,
+            itinerary_digest=itinerary_digest,
+        )
         if not reply_text:
             return
 
