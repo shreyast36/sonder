@@ -674,6 +674,37 @@ V1 has `include_retrieval_in_sum: False` because `pinecone_passthrough` is in `f
 
 **Cross-candidate live updates via chat signal scanner.** The match-score isn't frozen at retrieval time — `_apply_chat_signals` runs after every user message, calls `scan_and_apply` over the message text, updates the session's `live_weights`, and re-runs `score_compatibility(viewer, candidate)` with those weights spliced into `ranker_weights["cotraveller"]`. The refreshed `match_score` is what the persona's reciprocal-approval threshold reads at decision time.
 
+### Persona generation — deliberate information starvation
+
+The core architectural decision behind every persona-generating LLM call (both real-user inference at `/persona-infer` and synthetic-persona seeding in `scripts/seed_cotravellers.py`) is **the LLM never sees the full picture**. Each generation step gets only the slice of context relevant to its narrow task. The reasoning: an LLM with the answer key in front of it writes to that key. An LLM that has to guess writes something honest.
+
+**Real-user `/persona-infer`** (`mushahid/routes/persona.py`)
+
+The module docstring states the rule plainly: `"The LLM never sees Pinecone, never plans a trip."` Concretely:
+
+- The persona LLM gets ONLY the persona signals — radio answers (rendered as human-readable labels via `label_for()`, never raw snake_case keys), `small_thing` free text, travel-style chips, pace, who-with. It never sees the user's destination, dates, budget, prior trips, candidate matches, ranker weights, or other users' personas.
+- **Closed dimension vocabulary** — the prompt embeds the full `PUSH_DIMENSIONS` + `PULL_DIMENSIONS` keyword lists as the ONLY allowed labels. `"Never invent a label that isn't in this list."` Pool separation is enforced both in the prompt (`"never put a PULL id into top_push"`) and in `_redistribute_pools` post-hoc as the structural safety net.
+- **Three pipelines run in parallel**, each blind to the others' outputs:
+  1. **Embedder** (`embed_persona`) — produces the durable `user_vector`. Sees the persona text, never the LLM's labels or reveal copy.
+  2. **GoEmotions classifier** — scores 27 emotion glosses. Sees the user text, never the LLM output.
+  3. **Persona LLM** (`route_request_structured` with Anthropic tool-use for enum-constrained dimension IDs) — produces `top_push` / `top_interests` / `descriptor` / `paragraph` / `bullets`. Sees the answers, never the embedding vector or the goemotions distribution.
+- **Validator runs AFTER** as a separate stage, given ONLY the LLM output — no user context at all. So even if the LLM leaks something, the validator can't be biased by knowing what to look for. Checks: schema · allowed-dim · echo (LLM repeating the user's exact words back) · tone · scope.
+- **Outputs are merged downstream, not co-prompted upstream** — `compatibility_signals` is assembled from the three parallel streams. None of the three generators ever sees another's result. This is what keeps the signal independent.
+
+**Synthetic persona seeding** (`scripts/seed_cotravellers.py`) uses a two-stage blind-writer design that mirrors the real-user path:
+
+- **Stage 1 — LLM-A (blind persona writer)**. The system prompt has a `CRITICAL: This system prompt MUST NOT mention:` comment block listing PUSH/PULL labels, emotional_signature taxonomy, top_push/top_interests vocabulary, matching feature names. Quote from the file: `"The blindness is the whole point of the two-stage design — it prevents the writer from 'knowing the answer key' while constructing the character."` LLM-A only knows: city, age bucket, gender, the 4 persona question option keys to pick from. It writes the character — name, voice_anchor, small_thing, quirks, visual_cue — as a person, not as a profile.
+- **Stage 2 — Inference via the same machinery real users hit**. The written persona is then fed through `infer_emotional_signature` (parallel) AND the same persona-infer LLM (which assigns dimension labels). So the synthetic persona gets the same blind label assignment a real user would — the writer doesn't pre-pick the labels.
+- This is what keeps the synthetic pool honest: the diversity matrix (city × age × gender) shapes the slot, the writer fills it in character, and the inferrer-as-separate-stage assigns the matching primitives. No single LLM call has both the persona AND its own classification.
+
+**Why this matters**: if you let the persona LLM see ranker weights, it writes to the weights. If you let it see other users' personas, it averages toward them. If you tell it which dimension you want it to pick, it picks that dimension regardless of the user. Information-starvation is the only way to keep the persona authentic rather than a function of what the system would prefer the user to be.
+
+**Same pattern shows up elsewhere:**
+
+- The chat-reply persona prompt (`_build_persona_system`) hides the trip's matching score, the ranker's feature breakdown, the user's full chat history beyond the cap, and the persona's own `match_score`. Persona just talks; scorers just score.
+- The proposal evaluator gets the persona + the user's profile + the current itinerary + recent history — but never the match score, the ranker weights, or what counter-titles other personas have suggested elsewhere.
+- The shared-itinerary validator gets the proposed change + the itinerary state, never the negotiation history's emotional arc.
+
 ### Persona inference — five oblique questions
 
 Five questions designed to surface latent travel psychology without ever naming the dimensions:
