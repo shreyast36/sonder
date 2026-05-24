@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import uuid
 from datetime import datetime, timezone
 
@@ -948,4 +949,124 @@ async def finalize(itinerary_id: str, body: FinalizeRequest, uid: str = Depends(
             tag=f"sonder-shared-final-{itinerary_id}",
         ))
 
+    # Auto-emit a trip-recap post on the user's behalf so the moment
+    # gets celebrated on /feed. Fire-and-forget; finalize stays fast.
+    asyncio.create_task(_emit_finalize_recap_post(
+        author_uid=uid, itinerary=shared.itinerary,
+    ))
+
     return {"shared": shared.model_dump(mode="json")}
+
+
+# ── Trip-recap auto-post on finalize ─────────────────────────────────────
+
+
+# Copy templates intentionally avoid any "X & you" / "we / us" framing.
+# Goal is punchy, declarative, slightly hype — like a friend texting a
+# group chat after finally booking the thing. No companion-naming so
+# solo + paired finalizes read the same way.
+_RECAP_TEMPLATES = [
+    "{city}. {days} days. Locked in.",
+    "It's official: {city}, {date_range}.",
+    "{date_range}: heading to {city}. Itinerary final.",
+    "Trip secured: {city}, {days} days starting {start_pretty}.",
+    "{city} in {start_month} — finalized. Time to pack.",
+    "{city}, {days} days. The plan is real.",
+    "Booking the calendar block: {city}, {date_range}.",
+    "Lining it up: {days} days in {city} from {start_pretty}.",
+    "{city}. Confirmed. {date_range}.",
+    "{country_or_city} run, {days} days. Locked.",
+]
+
+
+def _pretty_date(d) -> str:
+    try:
+        return d.strftime("%b %-d") if d else ""
+    except Exception:
+        # Windows %-d / Linux compat fallback
+        try:
+            return d.strftime("%b %d").replace(" 0", " ") if d else ""
+        except Exception:
+            return str(d) if d else ""
+
+
+def _pick_recap_text(city: str, country: str, start_date, end_date, day_count: int) -> str:
+    """Render one of the templates with the trip details. Falls back to a
+    single safe line when dates are missing. Picks deterministically per
+    (city, start_date) so re-finalizes don't shuffle the copy on you."""
+    start_pretty = _pretty_date(start_date)
+    end_pretty   = _pretty_date(end_date)
+    date_range = f"{start_pretty} – {end_pretty}" if (start_pretty and end_pretty) else (start_pretty or "")
+    start_month = start_date.strftime("%B") if start_date else ""
+    country_or_city = country or city
+
+    if not city:
+        return "New trip locked in. Plans incoming."
+
+    seed = f"{city}|{start_pretty}"
+    rng = random.Random(seed)
+    tmpl = rng.choice(_RECAP_TEMPLATES)
+    try:
+        return tmpl.format(
+            city=city, country=country, country_or_city=country_or_city,
+            days=day_count or "a few", date_range=date_range or f"{day_count} days",
+            start_pretty=start_pretty or "soon", start_month=start_month or "soon",
+        )
+    except Exception:
+        return f"{city}, {day_count} days. Locked in."
+
+
+async def _emit_finalize_recap_post(author_uid: str, itinerary: Itinerary) -> None:
+    """Mint a feed post celebrating a freshly-finalized trip. Author is
+    the user who hit finalize. Image pulled from Pixabay using the
+    destination as the query. Broadcast as a normal discover_post_new
+    so it pops into every connected user's Pulse feed instantly."""
+    try:
+        from mushahid.realtime.firestore import write_social_post, get_user_profile
+        from shreyas.cotraveller.chat import manager as ws_manager
+        from shared.pixabay import fetch_image_url
+
+        dest = getattr(itinerary, "destination", None)
+        city    = (getattr(dest, "city", "") or "").strip() if dest else ""
+        country = (getattr(dest, "country", "") or "").strip() if dest else ""
+        days = list(itinerary.days or [])
+        day_count = len(days)
+        start_date = getattr(days[0], "trip_date", None) if days else None
+        end_date   = getattr(days[-1], "trip_date", None) if days else None
+
+        text = _pick_recap_text(city, country, start_date, end_date, day_count)
+
+        # Author profile — denormalised onto the post so the feed
+        # reader doesn't N+1 join.
+        prof = await get_user_profile(author_uid) or {}
+        name   = prof.get("display_name") or "Traveller"
+        avatar = prof.get("avatar_url")
+
+        image_query = " ".join(p for p in [city, country] if p)
+        image_url = None
+        if image_query:
+            try:
+                image_url = await fetch_image_url(image_query)
+            except Exception as e:
+                logger.debug("recap post: pixabay lookup failed: %s", e)
+
+        post = {
+            "post_id":        _new_id("post"),
+            "author_id":      author_uid,
+            "author_name":    name,
+            "author_avatar":  avatar,
+            "text":           text,
+            "linked_trip_id": itinerary.itinerary_id,
+            "image_url":      image_url,
+            "comment_count":  0,
+            "created_at":     _now_iso(),
+            "is_trip_recap":  True,
+        }
+        await write_social_post(post)
+        try:
+            await ws_manager.broadcast_global({"type": "discover_post_new", "post": post})
+        except Exception as e:
+            logger.debug("recap post: broadcast failed: %s", e)
+        logger.info("trip recap posted for %s (%s)", city or "trip", author_uid[-6:])
+    except Exception as e:
+        logger.warning("_emit_finalize_recap_post failed: %s", e)
