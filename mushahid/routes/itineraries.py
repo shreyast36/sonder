@@ -399,6 +399,7 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
                 itinerary, user_profile, feedback_for_loop,
                 seed_validation,
                 activity_feedback=structured_targets,
+                target_day_numbers=verdict.get("target_day_numbers") or [],
             ),
             timeout=75.0,
         )

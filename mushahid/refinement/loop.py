@@ -8,7 +8,7 @@ from mushahid.realtime.sse import format_event
 from mushahid.realtime.firestore import write_itinerary, update_user_profile
 from mushahid.validation.critic import validate_large_output
 from mushahid.validation.rules import run_all_checks
-from ali.generation.itinerary_generator import generate_refined_itinerary
+from ali.generation.itinerary_generator import generate_refined_itinerary, generate_refined_days
 from ali.generation.output_parser import parse_itinerary
 from ali.vector.embeddings import build_refined_query, embed_text
 
@@ -19,6 +19,7 @@ async def run_single_revision(
     feedback: str,
     seed_validation: ValidationResult,
     activity_feedback: list[ActivityFeedback] | None = None,
+    target_day_numbers: list[int] | None = None,
 ) -> tuple[Itinerary, ValidationResult]:
     """One-pass user-initiated revision.
 
@@ -27,15 +28,10 @@ async def run_single_revision(
         The user asked for this change — we apply it and surface validator
         verdict back to them, instead of burning 2-3 more minutes silently
         trying to satisfy the critic.
-      - Skips the best-effort re-embed (the loop wraps it in try/except: pass
-        anyway, and embedding updates can happen out-of-band on next save).
-
-    Tier note: we always use `complex_refinement` (large model). The small
-    tier caps output at 512-1024 tokens — fine for chat replies, but a
-    full itinerary JSON is 3-8k tokens and gets truncated, causing
-    parse_itinerary to throw. If we want a fast path, it needs to be a
-    targeted day-level patch (separate codepath), not a full regen on a
-    short-token model.
+      - When `target_day_numbers` is provided (classifier identified specific
+        days), uses a day-scoped prompt and generates only those days, then
+        stitches them back. This keeps output tokens small (~1-4k instead of
+        10-16k) and reliably fits within the 75s timeout.
 
     Raises on regen/parse failure so the caller can surface a real error
     instead of silently returning the unchanged original.
@@ -43,6 +39,8 @@ async def run_single_revision(
     Returns (revised_itinerary, validation_result). The caller persists +
     enriches with history bookkeeping.
     """
+    import json
+
     # Merge per-activity feedback into the feedback string (same as the loop).
     if activity_feedback:
         act_lines = "; ".join(
@@ -57,20 +55,60 @@ async def run_single_revision(
             seed_validation.improvement_suggestions
         )
 
-    # Single regen pass. Errors propagate — caller turns them into a 502
-    # so the user sees "revision failed" instead of an unchanged screen.
+    # Choose targeted day-level regen vs. full itinerary regen.
+    use_targeted = bool(target_day_numbers)
+
     chunks: list[str] = []
-    async for chunk in generate_refined_itinerary(
-        itinerary, combined_feedback, seed_validation,
-        task_type="complex_refinement",
-    ):
-        chunks.append(chunk)
-    raw = "".join(chunks)
-    revised = parse_itinerary(
-        raw, user_profile,
-        destination=itinerary.destination,
-        activities=[ia.activity for day in itinerary.days for ia in day.activities],
-    )
+    if use_targeted:
+        # Fast path: generate only the targeted days, then stitch back.
+        async for chunk in generate_refined_days(
+            itinerary, target_day_numbers, combined_feedback, seed_validation,
+        ):
+            chunks.append(chunk)
+        raw = "".join(chunks)
+
+        # Parse the LLM output as a JSON array of day objects.
+        known_activities = {ia.activity.name: ia.activity for day in itinerary.days for ia in day.activities}
+        try:
+            # Strip markdown fences if present.
+            raw_stripped = raw.strip()
+            if raw_stripped.startswith("```"):
+                raw_stripped = raw_stripped.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            revised_days_data = json.loads(raw_stripped)
+            if isinstance(revised_days_data, dict) and "days" in revised_days_data:
+                revised_days_data = revised_days_data["days"]
+            if not isinstance(revised_days_data, list):
+                raise ValueError("Expected a JSON array of days")
+        except Exception as e:
+            raise ValueError(f"Failed to parse targeted day revision output: {e}") from e
+
+        # Build a map of revised days by day_number, then replace in original.
+        from shared.schemas import ItineraryDay, ItineraryActivity, Activity
+        revised_day_map: dict[int, ItineraryDay] = {}
+        for day_data in revised_days_data:
+            try:
+                revised_day_map[day_data["day_number"]] = ItineraryDay.model_validate(day_data)
+            except Exception:
+                pass  # keep original day if parse fails
+
+        new_days = [
+            revised_day_map.get(day.day_number, day)
+            for day in itinerary.days
+        ]
+        revised = itinerary.model_copy(update={"days": new_days})
+    else:
+        # Full itinerary regen (fallback for global/broad scope changes).
+        async for chunk in generate_refined_itinerary(
+            itinerary, combined_feedback, seed_validation,
+            task_type="complex_refinement",
+        ):
+            chunks.append(chunk)
+        raw = "".join(chunks)
+        revised = parse_itinerary(
+            raw, user_profile,
+            destination=itinerary.destination,
+            activities=[ia.activity for day in itinerary.days for ia in day.activities],
+        )
 
     # Preserve the original itinerary_id so the route's bookkeeping
     # (history append, current-trip pointer, dedupe) keeps targeting the
