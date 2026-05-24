@@ -946,6 +946,11 @@ async def notifications_websocket(websocket: WebSocket):
     try:
         auth_msg = await asyncio.wait_for(_receive_json_checked(websocket), timeout=10.0)
         uid = verify_token_string(auth_msg.get("token", ""))
+    except WebSocketDisconnect:
+        # Client disconnected before sending auth — connection is already closed,
+        # so we must NOT call websocket.close() again (would raise AttributeError
+        # from websockets.legacy.protocol.close on transfer_data_task).
+        return
     except Exception:
         await websocket.close(code=4001, reason="Authentication failed")
         return
