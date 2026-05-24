@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import {
   MapPin, Users, Send, Loader2, Trash2, MessageCircle,
-  Sparkles, Plus, Check, Radio, X, Heart, Compass,
+  Sparkles, Plus, Check, Radio, X, Compass,
 } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import {
@@ -245,12 +245,11 @@ function OpenTripCard({ trip, onRequestJoin }) {
 // at the top of the feed. Avatar with a ring (gold = yours, violet =
 // requestable). Click → open the join modal (same flow as the big card).
 
-function TripStoryChip({ trip, onRequestJoin }) {
+function TripStoryChip({ trip, onOpen }) {
   const isYours = !!trip.is_yours
   const status = trip.your_request_status
   const accent = isYours ? GOLD : VIOLET
   const where = trip.destination_city || 'Somewhere'
-  const interactive = !isYours && status === null
 
   return (
     <motion.button
@@ -259,20 +258,20 @@ function TripStoryChip({ trip, onRequestJoin }) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.92 }}
       transition={{ duration: 0.35, ease }}
-      whileHover={interactive ? { y: -3 } : {}}
-      whileTap={interactive ? { scale: 0.97 } : {}}
-      onClick={() => interactive && onRequestJoin?.(trip)}
+      whileHover={{ y: -3 }}
+      whileTap={{ scale: 0.97 }}
+      onClick={() => onOpen?.(trip)}
       style={{
         flex: '0 0 auto', width: 88,
         background: 'transparent', border: 'none', padding: 0,
-        cursor: interactive ? 'pointer' : 'default',
+        cursor: 'pointer',
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
       }}
     >
       {/* avatar + gradient ring */}
       <div style={{ position: 'relative', width: 72, height: 72 }}>
         <motion.div
-          animate={interactive ? { rotate: 360 } : {}}
+          animate={{ rotate: 360 }}
           transition={{ duration: 14, repeat: Infinity, ease: 'linear' }}
           style={{
             position: 'absolute', inset: -2, borderRadius: '50%',
@@ -329,42 +328,155 @@ function TripStoryChip({ trip, onRequestJoin }) {
 }
 
 
-// ── Reactions row (visual-only for now) ─────────────────────────────────
+// ── Reactions row (multi-emoji) ─────────────────────────────────────────
 //
-// Single-toggle "resonate" reaction. State lives client-side until we
-// wire a backend endpoint. Saves a heart-shaped feel-of-engagement
-// without committing to a like-graph schema yet.
+// Five emoji picker, IG / Slack register. Client-side toggle for now —
+// each emoji has its own active flag + count. Persisted in localStorage
+// keyed by post_id so reactions survive a refresh on the same browser
+// (backend reaction graph is the obvious V2; this gets the feel right
+// without the schema commitment).
+
+const EMOJIS = ['❤️', '🔥', '✨', '😂', '👏']
 
 function ReactionsRow({ postId }) {
-  const [reacted, setReacted] = useState(false)
-  const [count, setCount] = useState(0)
+  const storageKey = `sonder:react:${postId}`
+  const [counts, setCounts] = useState(() => {
+    try {
+      const raw = localStorage.getItem(storageKey)
+      if (raw) return JSON.parse(raw)
+    } catch { /* noop */ }
+    // Seed each post with small randomised baseline counts so the row
+    // never reads dead — driven by post_id so it's deterministic per
+    // post and survives refresh.
+    const seed = (postId || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+    return EMOJIS.reduce((acc, e, i) => {
+      acc[e] = ((seed * (i + 1)) % 7)
+      return acc
+    }, {})
+  })
+  const [mine, setMine] = useState(() => {
+    try {
+      const raw = localStorage.getItem(storageKey + ':mine')
+      if (raw) return JSON.parse(raw)
+    } catch { /* noop */ }
+    return {}
+  })
+
+  function toggle(emoji) {
+    const isMine = !!mine[emoji]
+    const nextMine = { ...mine, [emoji]: !isMine }
+    const nextCounts = { ...counts, [emoji]: Math.max(0, (counts[emoji] || 0) + (isMine ? -1 : 1)) }
+    setMine(nextMine)
+    setCounts(nextCounts)
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(nextCounts))
+      localStorage.setItem(storageKey + ':mine', JSON.stringify(nextMine))
+    } catch { /* noop */ }
+  }
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 4 }}>
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          setReacted(r => {
-            setCount(c => c + (r ? -1 : 1))
-            return !r
-          })
-        }}
-        style={{
-          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          color: reacted ? ROSE : MUTE,
-          transition: 'color 0.18s',
-        }}
-      >
-        <motion.span animate={reacted ? { scale: [1, 1.35, 1] } : { scale: 1 }} transition={{ duration: 0.3 }}>
-          <Heart size={14} strokeWidth={reacted ? 0 : 1.7} fill={reacted ? ROSE : 'none'}/>
-        </motion.span>
-        {count > 0 && (
-          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, fontWeight: 500, color: reacted ? ROSE : MUTE }}>
-            {count}
-          </span>
-        )}
-      </button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+      {EMOJIS.map(e => {
+        const active = !!mine[e]
+        const count = counts[e] || 0
+        return (
+          <motion.button
+            key={e}
+            whileHover={{ scale: 1.15 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={(ev) => { ev.stopPropagation(); toggle(e) }}
+            style={{
+              background: active ? 'rgba(244,63,94,0.12)' : 'transparent',
+              border: active ? `1px solid ${ROSE}55` : `1px solid transparent`,
+              padding: '4px 9px', borderRadius: 999, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              fontSize: 14, lineHeight: 1,
+              transition: 'background 0.15s, border-color 0.15s',
+            }}
+          >
+            <span style={{ fontSize: 14 }}>{e}</span>
+            {count > 0 && (
+              <span style={{
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 10.5, fontWeight: 500,
+                color: active ? ROSE : MUTE,
+              }}>{count}</span>
+            )}
+          </motion.button>
+        )
+      })}
     </div>
+  )
+}
+
+
+// ── Skeleton card (loading placeholder so the grid is never blank) ──────
+
+function SkeletonPostCard({ delay = 0 }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      transition={{ duration: 0.3, delay }}
+      style={{
+        borderRadius: 18, overflow: 'hidden',
+        background: 'linear-gradient(170deg, rgba(22,18,12,0.6) 0%, rgba(10,9,7,0.8) 100%)',
+        border: `1px solid ${HAIRLINE}`,
+      }}
+    >
+      <motion.div
+        animate={{ opacity: [0.3, 0.6, 0.3] }}
+        transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay }}
+        style={{ width: '100%', aspectRatio: '16 / 10', background: 'rgba(212,182,134,0.04)' }}
+      />
+      <div style={{ padding: '14px 22px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <motion.div
+            animate={{ opacity: [0.3, 0.6, 0.3] }}
+            transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay }}
+            style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(212,182,134,0.06)' }}
+          />
+          <motion.div
+            animate={{ opacity: [0.3, 0.6, 0.3] }}
+            transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: delay + 0.1 }}
+            style={{ height: 12, width: 120, borderRadius: 4, background: 'rgba(212,182,134,0.06)' }}
+          />
+        </div>
+        <motion.div
+          animate={{ opacity: [0.3, 0.6, 0.3] }}
+          transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: delay + 0.15 }}
+          style={{ height: 10, width: '85%', borderRadius: 4, background: 'rgba(212,182,134,0.06)' }}
+        />
+        <motion.div
+          animate={{ opacity: [0.3, 0.6, 0.3] }}
+          transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: delay + 0.2 }}
+          style={{ height: 10, width: '60%', borderRadius: 4, background: 'rgba(212,182,134,0.06)' }}
+        />
+      </div>
+    </motion.div>
+  )
+}
+
+function SkeletonStoryChip({ delay = 0 }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      transition={{ duration: 0.3, delay }}
+      style={{ flex: '0 0 auto', width: 88, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}
+    >
+      <motion.div
+        animate={{ opacity: [0.3, 0.6, 0.3] }}
+        transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay }}
+        style={{
+          width: 72, height: 72, borderRadius: '50%',
+          background: 'rgba(212,182,134,0.06)',
+          border: `1.5px solid rgba(212,182,134,0.12)`,
+        }}
+      />
+      <motion.div
+        animate={{ opacity: [0.3, 0.6, 0.3] }}
+        transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay: delay + 0.1 }}
+        style={{ height: 8, width: 58, borderRadius: 4, background: 'rgba(212,182,134,0.06)' }}
+      />
+    </motion.div>
   )
 }
 
@@ -1178,10 +1290,11 @@ export default function DashboardPulse({ selfUid }) {
         }}
       />
 
-      {/* ──────── Centered feed column (max ~640px) ──────── */}
+      {/* ──────── Wider feed container (~1080px) — uses horizontal
+                   space on desktop; collapses to single column on mobile ──────── */}
       <div style={{
-        maxWidth: 640, margin: '0 auto', width: '100%',
-        display: 'flex', flexDirection: 'column', gap: 24,
+        maxWidth: 1080, margin: '0 auto', width: '100%',
+        display: 'flex', flexDirection: 'column', gap: 28,
       }}>
 
         {/* Compact hero — kept small so the feed itself dominates */}
@@ -1224,48 +1337,28 @@ export default function DashboardPulse({ selfUid }) {
               Open invitations
             </p>
           </div>
-          {loadingTrips && tripsToShow.length === 0 ? (
-            <div style={{ padding: '8px 0', display: 'flex', alignItems: 'center', gap: 10, color: MUTE }}>
-              <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.3, ease: 'linear', repeat: Infinity }}>
-                <Loader2 size={13} style={{ color: VIOLET }}/>
-              </motion.span>
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10.5, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
-                Listening…
-              </span>
-            </div>
-          ) : tripsToShow.length === 0 ? (
-            <div style={{
-              padding: '20px 18px', borderRadius: 14, border: `1px dashed ${HAIRLINE}`,
-              display: 'flex', alignItems: 'center', gap: 12,
-            }}>
-              <MapPin size={16} style={{ color: VIOLET, opacity: 0.6, flexShrink: 0 }}/>
-              <div>
-                <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 16, color: BONE, margin: 0 }}>
-                  Quiet for now.
-                </p>
-                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 11, color: MUTE, margin: '2px 0 0' }}>
-                  Open your own trip from the dashboard — your card lands here first.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div style={{
-              display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8,
-              scrollbarWidth: 'thin',
-              maskImage: 'linear-gradient(90deg, black 95%, transparent 100%)',
-              WebkitMaskImage: 'linear-gradient(90deg, black 95%, transparent 100%)',
-            }}>
-              <AnimatePresence initial={false}>
-                {tripsToShow.map(t => (
-                  <TripStoryChip
-                    key={t.itinerary_id}
-                    trip={t}
-                    onRequestJoin={openJoinModal}
-                  />
-                ))}
-              </AnimatePresence>
-            </div>
-          )}
+          <div style={{
+            display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8,
+            scrollbarWidth: 'thin',
+            maskImage: 'linear-gradient(90deg, black 95%, transparent 100%)',
+            WebkitMaskImage: 'linear-gradient(90deg, black 95%, transparent 100%)',
+          }}>
+            <AnimatePresence initial={false}>
+              {tripsToShow.map(t => (
+                <TripStoryChip
+                  key={t.itinerary_id}
+                  trip={t}
+                  onOpen={openJoinModal}
+                />
+              ))}
+            </AnimatePresence>
+            {/* Pad with skeleton chips until we have at least 6 visible
+                rings — keeps the row from looking empty / sparse on
+                cold load or low-density days. */}
+            {tripsToShow.length < 6 && Array.from({ length: 6 - tripsToShow.length }).map((_, i) => (
+              <SkeletonStoryChip key={`sk-${i}`} delay={i * 0.05}/>
+            ))}
+          </div>
         </div>
 
         {/* ──── FEED — composer + posts ──── */}
@@ -1276,28 +1369,29 @@ export default function DashboardPulse({ selfUid }) {
               The room
             </p>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <Composer onCreated={(p) => setPosts(prev => [p, ...prev].slice(0, PULSE_MAX))}/>
-            {loadingFeed && postsToShow.length === 0 && (
-              <div style={{ padding: '20px 0', display: 'flex', alignItems: 'center', gap: 10, color: MUTE }}>
-                <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.3, ease: 'linear', repeat: Infinity }}>
-                  <Loader2 size={14} style={{ color: GOLD }}/>
-                </motion.span>
-                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
-                  Catching the room…
-                </span>
-              </div>
-            )}
-            {!loadingFeed && postsToShow.length === 0 && (
-              <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 17, color: MUTE, margin: '8px 4px' }}>
-                Be the first voice in the room.
-              </p>
-            )}
+          {/* Composer spans full width above the post grid */}
+          <Composer onCreated={(p) => setPosts(prev => [p, ...prev].slice(0, PULSE_MAX))}/>
+
+          {/* 2-column post grid on desktop. CSS Grid with auto-fit and
+              minmax(320, 1fr) means it collapses to 1 col on narrow
+              screens automatically. */}
+          <div style={{
+            marginTop: 18,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gap: 18, alignItems: 'start',
+          }}>
             <AnimatePresence initial={false}>
               {postsToShow.map(p => (
                 <PostCard key={p.post_id} post={p} selfUid={selfUid} onDelete={deleteOne}/>
               ))}
             </AnimatePresence>
+            {/* Always render skeletons to pad the grid to at least 4
+                cards — the room never reads 'empty' while polls / synth
+                agents catch up. Real cards push them out as they land. */}
+            {Array.from({ length: Math.max(0, 4 - postsToShow.length) }).map((_, i) => (
+              <SkeletonPostCard key={`sk-${i}`} delay={i * 0.08}/>
+            ))}
           </div>
         </div>
       </div>

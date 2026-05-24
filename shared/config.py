@@ -121,8 +121,10 @@ SYNTHETIC_AGENTS_ENABLED       = os.getenv("SYNTHETIC_AGENTS_ENABLED", "true").l
 SYNTHETIC_AGENTS_MIN_INTERVAL  = int(os.getenv("SYNTHETIC_AGENTS_MIN_INTERVAL", "8"))
 SYNTHETIC_AGENTS_MAX_INTERVAL  = int(os.getenv("SYNTHETIC_AGENTS_MAX_INTERVAL", "25"))
 # How many actions to fire in parallel on cold-start so the feed isn't
-# empty when the first real user lands. 0 = don't seed.
-SYNTHETIC_AGENTS_SEED_COUNT    = int(os.getenv("SYNTHETIC_AGENTS_SEED_COUNT", "6"))
+# empty when the first real user lands. Bumped from 6 → 20 so a fresh
+# deploy + first /pulse load always sees a populated room rather than
+# the post-empty 'be the first voice' state.
+SYNTHETIC_AGENTS_SEED_COUNT    = int(os.getenv("SYNTHETIC_AGENTS_SEED_COUNT", "20"))
 
 # Currency conversion — optional; falls back to static rates in shared/currency.py if unset
 EXCHANGE_RATE_API_KEY = os.getenv("EXCHANGE_RATE_API_KEY")
