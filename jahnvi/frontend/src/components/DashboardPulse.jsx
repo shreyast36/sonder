@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import {
   MapPin, Users, Send, Loader2, Trash2, MessageCircle,
-  Sparkles, Plus, Check, Radio, X,
+  Sparkles, Plus, Check, Radio, X, Heart, Compass,
 } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import {
@@ -238,6 +238,136 @@ function OpenTripCard({ trip, onRequestJoin }) {
     </motion.div>
   )
 }
+
+// ── Story-style trip chip (used in the horizontal trips strip) ──────────
+//
+// Compact card variant of OpenTripCard for the IG-stories-row treatment
+// at the top of the feed. Avatar with a ring (gold = yours, violet =
+// requestable). Click → open the join modal (same flow as the big card).
+
+function TripStoryChip({ trip, onRequestJoin }) {
+  const isYours = !!trip.is_yours
+  const status = trip.your_request_status
+  const accent = isYours ? GOLD : VIOLET
+  const where = trip.destination_city || 'Somewhere'
+  const interactive = !isYours && status === null
+
+  return (
+    <motion.button
+      layout
+      initial={{ opacity: 0, y: 6, scale: 0.92 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.92 }}
+      transition={{ duration: 0.35, ease }}
+      whileHover={interactive ? { y: -3 } : {}}
+      whileTap={interactive ? { scale: 0.97 } : {}}
+      onClick={() => interactive && onRequestJoin?.(trip)}
+      style={{
+        flex: '0 0 auto', width: 88,
+        background: 'transparent', border: 'none', padding: 0,
+        cursor: interactive ? 'pointer' : 'default',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+      }}
+    >
+      {/* avatar + gradient ring */}
+      <div style={{ position: 'relative', width: 72, height: 72 }}>
+        <motion.div
+          animate={interactive ? { rotate: 360 } : {}}
+          transition={{ duration: 14, repeat: Infinity, ease: 'linear' }}
+          style={{
+            position: 'absolute', inset: -2, borderRadius: '50%',
+            background: `conic-gradient(from 0deg, ${accent}, ${accent}55, transparent 60%, ${accent}aa)`,
+            filter: 'blur(3px)',
+            opacity: 0.85,
+          }}
+        />
+        <div style={{
+          position: 'relative',
+          width: 72, height: 72, borderRadius: '50%', overflow: 'hidden',
+          background: 'linear-gradient(160deg, rgba(20,15,10,1) 0%, rgba(8,8,7,1) 100%)',
+          border: `2px solid ${accent}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {trip.owner_avatar
+            ? <img src={trip.owner_avatar} alt={trip.owner_name}
+                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+            : <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 26, color: accent }}>
+                {initials(trip.owner_name)}
+              </span>}
+        </div>
+        {/* corner badge */}
+        <div style={{
+          position: 'absolute', bottom: -2, right: -2,
+          width: 22, height: 22, borderRadius: '50%',
+          background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: `1.5px solid ${accent}`,
+        }}>
+          {isYours
+            ? <Radio size={10} style={{ color: accent }}/>
+            : status === 'approved' ? <Check size={11} style={{ color: GREEN }}/>
+            : <MapPin size={10} style={{ color: accent }}/>}
+        </div>
+      </div>
+      <div style={{ textAlign: 'center', minWidth: 0, width: '100%' }}>
+        <p style={{
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 10.5, fontWeight: 500,
+          color: BONE, margin: 0, letterSpacing: '0.02em',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {where}
+        </p>
+        <p style={{
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: MUTE,
+          margin: '2px 0 0', letterSpacing: '0.04em',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {isYours ? 'your trip' : trip.owner_name}
+        </p>
+      </div>
+    </motion.button>
+  )
+}
+
+
+// ── Reactions row (visual-only for now) ─────────────────────────────────
+//
+// Single-toggle "resonate" reaction. State lives client-side until we
+// wire a backend endpoint. Saves a heart-shaped feel-of-engagement
+// without committing to a like-graph schema yet.
+
+function ReactionsRow({ postId }) {
+  const [reacted, setReacted] = useState(false)
+  const [count, setCount] = useState(0)
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 4 }}>
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          setReacted(r => {
+            setCount(c => c + (r ? -1 : 1))
+            return !r
+          })
+        }}
+        style={{
+          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          color: reacted ? ROSE : MUTE,
+          transition: 'color 0.18s',
+        }}
+      >
+        <motion.span animate={reacted ? { scale: [1, 1.35, 1] } : { scale: 1 }} transition={{ duration: 0.3 }}>
+          <Heart size={14} strokeWidth={reacted ? 0 : 1.7} fill={reacted ? ROSE : 'none'}/>
+        </motion.span>
+        {count > 0 && (
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, fontWeight: 500, color: reacted ? ROSE : MUTE }}>
+            {count}
+          </span>
+        )}
+      </button>
+    </div>
+  )
+}
+
 
 // ── Trip detail + instant-verdict modal ─────────────────────────────────
 
@@ -651,80 +781,127 @@ function CommentThread({ postId, selfUid, initialCount }) {
 
 function PostCard({ post, selfUid, onDelete }) {
   const isMine = post.author_id === selfUid
+  const isRecap = !!post.is_trip_recap
+  const hasImage = !!post.image_url
+  const accent = isRecap ? GREEN : (isMine ? GOLD : 'rgba(232,212,168,0.20)')
+
   return (
-    <motion.div
+    <motion.article
       layout
       initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
       transition={{ duration: 0.4, ease }}
+      whileHover={{ y: -2 }}
       style={{
-        padding: 1, borderRadius: 16,
-        background: `linear-gradient(150deg, ${GOLD}22 0%, rgba(232,212,168,0.04) 40%, rgba(8,8,7,0) 75%, ${GOLD}14 100%)`,
+        padding: 0, borderRadius: 18, overflow: 'hidden',
+        background: 'linear-gradient(170deg, rgba(22,18,12,0.99) 0%, rgba(10,9,7,1) 100%)',
+        border: `1px solid ${HAIRLINE}`,
+        boxShadow: '0 8px 28px rgba(0,0,0,0.4)',
+        transition: 'box-shadow 0.2s',
       }}
     >
-      <div style={{
-        padding: '18px 22px', borderRadius: 15,
-        background: 'linear-gradient(160deg, rgba(22,18,12,0.98) 0%, rgba(10,9,7,1) 100%)',
-        display: 'flex', flexDirection: 'column', gap: 11,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+      {/* HERO IMAGE — full-bleed, sets the post's visual identity */}
+      {hasImage && (
+        <div style={{
+          position: 'relative', width: '100%', aspectRatio: '16 / 10',
+          background: 'rgba(8,8,7,0.5)', overflow: 'hidden',
+        }}>
+          <img
+            src={post.image_url}
+            alt=""
+            loading="lazy"
+            style={{
+              width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+            }}
+            onError={(e) => { e.currentTarget.parentElement.style.display = 'none' }}
+          />
+          {/* gradient overlay at top so the avatar pill sits on legible bg */}
           <div style={{
-            width: 34, height: 34, borderRadius: '50%', overflow: 'hidden',
-            background: 'rgba(212,182,134,0.06)', flexShrink: 0,
-            border: `1px solid ${GOLD}44`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            {post.author_avatar
-              ? <img src={post.author_avatar} alt={post.author_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-              : <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 14, color: GOLD }}>
-                  {initials(post.author_name)}
-                </span>}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12.5, fontWeight: 500, color: isMine ? GOLD : BONE }}>
-                {post.author_name}
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            background: 'linear-gradient(180deg, rgba(8,8,7,0.55) 0%, transparent 30%, transparent 75%, rgba(8,8,7,0.85) 100%)',
+          }}/>
+          {/* recap badge floats over the image */}
+          {isRecap && (
+            <div style={{
+              position: 'absolute', top: 14, right: 14,
+              padding: '6px 12px', borderRadius: 999,
+              background: 'rgba(8,8,7,0.75)', backdropFilter: 'blur(12px)',
+              border: `1px solid ${GREEN}66`,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}>
+              <Compass size={10} style={{ color: GREEN }}/>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: GREEN, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 600 }}>
+                Trip locked
               </span>
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: DIM }}>{timeAgo(post.created_at)}</span>
             </div>
-          </div>
-          {isMine && (
-            <button
-              onClick={() => onDelete?.(post)}
-              title="Delete"
-              style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: DIM, display: 'flex' }}
-            >
-              <Trash2 size={11}/>
-            </button>
           )}
         </div>
-        <p style={{
-          fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13.5,
-          color: BONE, margin: 0, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+      )}
+
+      {/* AUTHOR ROW */}
+      <div style={{
+        padding: hasImage ? '14px 22px 0' : '20px 22px 0',
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: '50%', overflow: 'hidden',
+          background: 'rgba(212,182,134,0.06)', flexShrink: 0,
+          border: `1px solid ${accent}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          {post.text}
-        </p>
-        {post.image_url && (
-          <div style={{
-            marginTop: 4, borderRadius: 12, overflow: 'hidden',
-            border: `1px solid ${HAIRLINE}`,
-            background: 'rgba(8,8,7,0.5)',
-            position: 'relative', aspectRatio: '16 / 10',
-          }}>
-            <img
-              src={post.image_url}
-              alt=""
-              loading="lazy"
-              style={{
-                width: '100%', height: '100%', objectFit: 'cover',
-                display: 'block',
-              }}
-              onError={(e) => { e.currentTarget.parentElement.style.display = 'none' }}
-            />
+          {post.author_avatar
+            ? <img src={post.author_avatar} alt={post.author_name}
+                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+            : <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 15, color: GOLD }}>
+                {initials(post.author_name)}
+              </span>}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <span style={{
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 500,
+              color: isMine ? GOLD : BONE,
+            }}>
+              {post.author_name}
+            </span>
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10.5, color: DIM }}>
+              · {timeAgo(post.created_at)}
+            </span>
           </div>
+        </div>
+        {isMine && (
+          <button
+            onClick={() => onDelete?.(post)}
+            title="Delete post"
+            style={{
+              background: 'none', border: 'none', padding: 4, cursor: 'pointer',
+              color: DIM, display: 'flex', borderRadius: 6,
+            }}
+          >
+            <Trash2 size={13}/>
+          </button>
         )}
+      </div>
+
+      {/* POST TEXT — serif italic for recap posts (feels like a poster
+          line), sans for everyday voice */}
+      <p style={{
+        padding: '12px 22px 4px',
+        fontFamily: isRecap ? '"Cormorant Garamond",serif' : '"Inter Tight",sans-serif',
+        fontStyle: isRecap ? 'italic' : 'normal',
+        fontWeight: isRecap ? 400 : 300,
+        fontSize: isRecap ? 22 : 14,
+        color: BONE, margin: 0, lineHeight: isRecap ? 1.3 : 1.6,
+        whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+      }}>
+        {post.text}
+      </p>
+
+      {/* REACTIONS + COMMENTS */}
+      <div style={{ padding: '4px 22px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <ReactionsRow postId={post.post_id}/>
         <CommentThread postId={post.post_id} selfUid={selfUid} initialCount={post.comment_count || 0}/>
       </div>
-    </motion.div>
+    </motion.article>
   )
 }
 
@@ -974,10 +1151,8 @@ export default function DashboardPulse({ selfUid }) {
 
   return (
     <section style={{
-      gridColumn: '1 / -1',   // span both Dashboard columns
-      padding: '64px 44px 52px',
-      borderTop: `1px solid ${HAIRLINE}`,
-      background: `linear-gradient(180deg, transparent 0%, rgba(212,182,134,0.025) 50%, transparent 100%)`,
+      gridColumn: '1 / -1',   // span both Dashboard columns (when embedded)
+      padding: '40px 24px 80px',
       position: 'relative',
       scrollMarginTop: 80,
     }} data-pulse-anchor>
@@ -1003,128 +1178,107 @@ export default function DashboardPulse({ selfUid }) {
         }}
       />
 
-      {/* hero header */}
-      <div style={{ marginBottom: 52, position: 'relative', textAlign: 'center' }}>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 16,
-          padding: '6px 14px', borderRadius: 999,
-          background: `linear-gradient(135deg, ${VIOLET}14 0%, ${GOLD}10 100%)`,
-          border: `1px solid ${VIOLET}33`,
-          boxShadow: `0 4px 16px ${VIOLET}22`,
-        }}>
-          <motion.span
-            animate={{ scale: [1, 1.4, 1], opacity: [0.6, 1, 0.6] }}
-            transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
-            style={{ width: 7, height: 7, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 10px #10B981' }}
-          />
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.34em', textTransform: 'uppercase', color: BONE, margin: 0, fontWeight: 500 }}>
-            Sonder Pulse · live now
-          </p>
-          <motion.span
-            animate={{ opacity: [0.3, 1, 0.3] }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-          >
-            <Sparkles size={11} style={{ color: GOLD }}/>
-          </motion.span>
-        </div>
-        <motion.h2
-          animate={{ filter: [`drop-shadow(0 0 20px ${VIOLET}22)`, `drop-shadow(0 0 44px ${VIOLET}55)`, `drop-shadow(0 0 20px ${VIOLET}22)`] }}
-          transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-          style={{
+      {/* ──────── Centered feed column (max ~640px) ──────── */}
+      <div style={{
+        maxWidth: 640, margin: '0 auto', width: '100%',
+        display: 'flex', flexDirection: 'column', gap: 24,
+      }}>
+
+        {/* Compact hero — kept small so the feed itself dominates */}
+        <div style={{ textAlign: 'left' }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '5px 12px', borderRadius: 999,
+            background: `linear-gradient(135deg, ${VIOLET}14 0%, ${GOLD}10 100%)`,
+            border: `1px solid ${VIOLET}33`,
+          }}>
+            <motion.span
+              animate={{ scale: [1, 1.4, 1], opacity: [0.6, 1, 0.6] }}
+              transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+              style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 8px #10B981' }}
+            />
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: BONE, margin: 0, fontWeight: 500 }}>
+              Sonder Pulse · live
+            </p>
+          </div>
+          <h2 style={{
             fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
-            fontSize: 52, color: BONE, lineHeight: 1.02, margin: 0,
-            letterSpacing: '-0.02em',
-          }}
-        >
-          Who's moving where, right now.
-        </motion.h2>
-        <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 16, color: 'rgba(244,237,224,0.62)', margin: '16px 0 0', maxWidth: 580, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.55 }}>
-          Trips opening for company. Half-formed plans. Recommendations from
-          travellers whose rhythm might match yours.
-        </p>
-        {/* live counts strip */}
-        <div style={{
-          marginTop: 22,
-          display: 'inline-flex', alignItems: 'center', gap: 24,
-          padding: '10px 22px', borderRadius: 999,
-          background: 'rgba(8,8,7,0.55)', backdropFilter: 'blur(20px)',
-          border: `1px solid ${HAIRLINE}`,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            <MapPin size={11} style={{ color: VIOLET }}/>
-            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: BONE, fontWeight: 500 }}>
-              {trips.length}
-            </span>
-            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: MUTE, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
-              {trips.length === 1 ? 'open trip' : 'open trips'}
-            </span>
-          </div>
-          <span style={{ width: 1, height: 14, background: HAIRLINE }}/>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            <MessageCircle size={11} style={{ color: GOLD }}/>
-            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: BONE, fontWeight: 500 }}>
-              {posts.length}
-            </span>
-            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: MUTE, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
-              voices in the room
-            </span>
-          </div>
+            fontSize: 34, color: BONE, lineHeight: 1.1, margin: '12px 0 0',
+            letterSpacing: '-0.015em',
+          }}>
+            The room, right now.
+          </h2>
+          <p style={{
+            fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13,
+            color: MUTE, margin: '6px 0 0', lineHeight: 1.55,
+          }}>
+            {posts.length} {posts.length === 1 ? 'voice' : 'voices'} · {trips.length} {trips.length === 1 ? 'trip open' : 'trips open'} for company
+          </p>
         </div>
-      </div>
 
-      <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 36, alignItems: 'start' }}>
-
-        {/* LEFT — open trips */}
+        {/* ──── HORIZONTAL TRIPS STRIP (IG-stories register) ──── */}
         <div>
-          <SectionHeader
-            eyebrow="Trips you could join"
-            title="Open invitations"
-            accent={VIOLET}
-          />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {loadingTrips && (
-              <div style={{ padding: '20px 0', display: 'flex', alignItems: 'center', gap: 10, color: MUTE }}>
-                <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.3, ease: 'linear', repeat: Infinity }}>
-                  <Loader2 size={14} style={{ color: VIOLET }}/>
-                </motion.span>
-                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
-                  Listening for trips…
-                </span>
-              </div>
-            )}
-            {!loadingTrips && tripsToShow.length === 0 && (
-              <div style={{ padding: '32px 24px', borderRadius: 14, border: `1px dashed ${HAIRLINE}`, textAlign: 'center' }}>
-                <MapPin size={18} style={{ color: VIOLET, opacity: 0.6, marginBottom: 8 }}/>
-                <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 18, color: BONE, margin: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <Compass size={11} style={{ color: VIOLET }}/>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+              Open invitations
+            </p>
+          </div>
+          {loadingTrips && tripsToShow.length === 0 ? (
+            <div style={{ padding: '8px 0', display: 'flex', alignItems: 'center', gap: 10, color: MUTE }}>
+              <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.3, ease: 'linear', repeat: Infinity }}>
+                <Loader2 size={13} style={{ color: VIOLET }}/>
+              </motion.span>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10.5, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
+                Listening…
+              </span>
+            </div>
+          ) : tripsToShow.length === 0 ? (
+            <div style={{
+              padding: '20px 18px', borderRadius: 14, border: `1px dashed ${HAIRLINE}`,
+              display: 'flex', alignItems: 'center', gap: 12,
+            }}>
+              <MapPin size={16} style={{ color: VIOLET, opacity: 0.6, flexShrink: 0 }}/>
+              <div>
+                <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 16, color: BONE, margin: 0 }}>
                   Quiet for now.
                 </p>
-                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 11.5, color: MUTE, margin: '6px 0 0', lineHeight: 1.55 }}>
-                  Open your own trip to companions — your card will appear here first.
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 11, color: MUTE, margin: '2px 0 0' }}>
+                  Open your own trip from the dashboard — your card lands here first.
                 </p>
               </div>
-            )}
-            <AnimatePresence initial={false}>
-              {tripsToShow.map(t => (
-                <OpenTripCard
-                  key={t.itinerary_id}
-                  trip={t}
-                  onRequestJoin={openJoinModal}
-                />
-              ))}
-            </AnimatePresence>
-          </div>
+            </div>
+          ) : (
+            <div style={{
+              display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8,
+              scrollbarWidth: 'thin',
+              maskImage: 'linear-gradient(90deg, black 95%, transparent 100%)',
+              WebkitMaskImage: 'linear-gradient(90deg, black 95%, transparent 100%)',
+            }}>
+              <AnimatePresence initial={false}>
+                {tripsToShow.map(t => (
+                  <TripStoryChip
+                    key={t.itinerary_id}
+                    trip={t}
+                    onRequestJoin={openJoinModal}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
 
-        {/* RIGHT — feed */}
+        {/* ──── FEED — composer + posts ──── */}
         <div>
-          <SectionHeader
-            eyebrow="What travellers are saying"
-            title="The room"
-            accent={GOLD}
-          />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <MessageCircle size={11} style={{ color: GOLD }}/>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+              The room
+            </p>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <Composer onCreated={(p) => setPosts(prev => [p, ...prev].slice(0, PULSE_MAX))}/>
-            {loadingFeed && (
+            {loadingFeed && postsToShow.length === 0 && (
               <div style={{ padding: '20px 0', display: 'flex', alignItems: 'center', gap: 10, color: MUTE }}>
                 <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.3, ease: 'linear', repeat: Infinity }}>
                   <Loader2 size={14} style={{ color: GOLD }}/>
