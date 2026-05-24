@@ -331,7 +331,11 @@ async def _emit_outreach_chat(persona) -> bool:
         if days and getattr(days[0], "trip_date", None) and getattr(days[-1], "trip_date", None):
             window = f"{days[0].trip_date} → {days[-1].trip_date}"
 
-        opener = await generate_outreach_opener(persona, city, country, window)
+        target_name = (target.get("display_name") or "").strip()
+        opener = await generate_outreach_opener(
+            persona, city, country, window,
+            target_display_name=target_name,
+        )
         if not opener:
             continue
 

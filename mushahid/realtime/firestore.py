@@ -396,6 +396,7 @@ async def list_outreach_eligible_users(limit: int = 50) -> list[dict]:
                 "current_itinerary_id": current,
                 "who":                  who,
                 "group_size":           constraints.get("group_size", 1),
+                "display_name":         val.get("display_name") or "",
             })
             if len(out) >= limit:
                 break
@@ -424,6 +425,7 @@ async def list_outreach_eligible_users(limit: int = 50) -> list[dict]:
                 "current_itinerary_id": current,
                 "who":                  constraints.get("who_travelling_with"),
                 "group_size":           constraints.get("group_size", 1),
+                "display_name":         data.get("display_name") or "",
             })
         return out
     except Exception as e:
