@@ -324,30 +324,32 @@ async def request_to_join(itinerary_id: str, body: JoinRequestBody, uid: str = D
 
 
 def _push_join_new(owner_uid: str, req: dict, itin) -> None:
-    """Fire-and-forget web push to the trip owner — reaches them when
-    the tab is closed. Falls through silently if web push isn't
-    configured or the user has no push subscriptions."""
+    """Push + email the trip owner that someone wants to join. Reaches
+    them with tab closed (push) or later in inbox (email). All channels
+    fire-and-forget; failure of one never blocks the others."""
     if not owner_uid:
         return
-    from mushahid.realtime.web_push import send_web_push
+    from mushahid.realtime.notify import notify_event
+    import asyncio as _asyncio
     requester = req.get("requester_name") or "Someone"
     where     = getattr(getattr(itin, "destination", None), "city", "") or "your trip"
-    import asyncio as _asyncio
-    _asyncio.create_task(send_web_push(owner_uid, {
-        "title": f"{requester} wants in",
-        "body":  f"They asked to join {where}. Open Sonder to decide.",
-        "url":   "/dashboard",
-        "tag":   f"sonder-join-{req.get('request_id')}",
-    }))
+    _asyncio.create_task(notify_event(
+        recipient_uid=owner_uid, kind="join_request",
+        title=f"{requester} wants in",
+        body=f"They asked to join {where}. Open Sonder to decide.",
+        link_path="/dashboard",
+        tag=f"sonder-join-{req.get('request_id')}",
+    ))
 
 
 def _push_join_resolved(requester_uid: str, req: dict, itin) -> None:
-    """Web push the verdict back to the requester. Important for the
-    synthetic-trip flow where the resolution is instant and the user
+    """Push + email the verdict back to the requester. Important for
+    the synthetic-trip flow where resolution is instant and the user
     might not be looking at the modal anymore."""
     if not requester_uid:
         return
-    from mushahid.realtime.web_push import send_web_push
+    from mushahid.realtime.notify import notify_event
+    import asyncio as _asyncio
     where    = getattr(getattr(itin, "destination", None), "city", "") or "the trip"
     status   = req.get("status")
     approved = status == "approved"
@@ -356,13 +358,13 @@ def _push_join_resolved(requester_uid: str, req: dict, itin) -> None:
         if approved else
         f"Not this time. {where} passed on your request — plenty more opening up right now."
     )
-    import asyncio as _asyncio
-    _asyncio.create_task(send_web_push(requester_uid, {
-        "title": "You're in" if approved else "Not this time",
-        "body":  body,
-        "url":   f"/shared/{itin.itinerary_id}" if approved else "/dashboard",
-        "tag":   f"sonder-join-{req.get('request_id')}",
-    }))
+    _asyncio.create_task(notify_event(
+        recipient_uid=requester_uid, kind="join_verdict",
+        title=("You're in" if approved else "Not this time"),
+        body=body,
+        link_path=(f"/shared/{itin.itinerary_id}" if approved else "/dashboard"),
+        tag=f"sonder-join-{req.get('request_id')}",
+    ))
 
 
 async def _synthetic_owner_snapshot(itinerary_id: str) -> dict | None:

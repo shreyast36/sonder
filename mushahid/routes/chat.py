@@ -648,6 +648,17 @@ async def _push_chat_notification(
         "tag":   f"sonder-chat-{session_id}",
     }))
 
+    # Email fallback for users who missed the in-app + push channels.
+    # 5-min per-(uid, kind) cool-down inside notify._send_email_async so
+    # a 20-message thread doesn't dump 20 emails on someone.
+    from mushahid.realtime.notify import _send_email_async
+    asyncio.create_task(_send_email_async(
+        recipient_uid=recipient_user_id, kind="chat_msg",
+        title=f"{sender_name} messaged you",
+        body=short_preview,
+        link_path=f"/chat/{session_id}",
+    ))
+
 
 async def _typing_keepalive(session_id: str, profile_id: str) -> None:
     """Re-emit typing every 2s. The frontend clears its indicator after 3.5s,

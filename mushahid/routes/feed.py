@@ -183,19 +183,20 @@ async def add_comment(post_id: str, body: CommentCreateRequest, uid: str = Depen
             )
         except Exception as e:
             logger.debug("notify_user(comment_new) failed: %s", e)
-        # Web push so the post author hears about the reply even with
-        # the tab closed.
+        # Push + email so the post author hears about the reply even
+        # with the tab closed / next time they open mail.
         try:
-            from mushahid.realtime.web_push import send_web_push
+            from mushahid.realtime.notify import notify_event
             commenter = comment.get("author_name") or "Someone"
             preview   = (comment.get("text") or "").strip()[:140]
             import asyncio as _asyncio
-            _asyncio.create_task(send_web_push(post["author_id"], {
-                "title": f"{commenter} replied",
-                "body":  preview,
-                "url":   "/dashboard",
-                "tag":   f"sonder-comment-{post_id}",
-            }))
+            _asyncio.create_task(notify_event(
+                recipient_uid=post["author_id"], kind="comment",
+                title=f"{commenter} replied to your post",
+                body=preview,
+                link_path="/dashboard",
+                tag=f"sonder-comment-{post_id}",
+            ))
         except Exception as e:
-            logger.debug("send_web_push(comment) failed: %s", e)
+            logger.debug("notify_event(comment) failed: %s", e)
     return {"comment": comment}

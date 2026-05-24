@@ -61,6 +61,27 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
+async def _display_name_for(uid: str) -> str:
+    """Best-effort display name for notification copy. Falls back to
+    'Someone' so notifications never read awkwardly with a raw uid."""
+    try:
+        from mushahid.realtime.firestore import get_user_profile
+        from shreyas.retrieval.search import get_cotraveller_by_id
+        # Try real user first, then synthetic persona.
+        p = await get_user_profile(uid)
+        if p and p.get("display_name"):
+            return p["display_name"]
+        try:
+            c = await get_cotraveller_by_id(uid)
+            if c and getattr(c, "display_name", None):
+                return c.display_name
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return "Someone"
+
+
 def _assert_participant(shared: SharedItinerary, uid: str) -> None:
     if uid not in (shared.user_ids or []):
         raise HTTPException(status_code=403, detail="Not a participant in this itinerary")
@@ -444,6 +465,22 @@ async def propose(itinerary_id: str, body: ProposeRequest, uid: str = Depends(ve
         "change_id": user_change.change_id, "actor_id": uid,
     })
 
+    # Notify the OTHER side (the persona or human co-traveller) that
+    # there's a proposal waiting for them. Persona-side syntheic
+    # doesn't have an email — _send_email_async no-ops on uids that
+    # don't have a Firebase user record. Real human co-travellers get
+    # the OS push + email.
+    if profile_id and profile_id != uid:
+        from mushahid.realtime.notify import notify_event
+        proposer_name = await _display_name_for(uid)
+        asyncio.create_task(notify_event(
+            recipient_uid=profile_id, kind="shared_proposal",
+            title=f"{proposer_name} proposed a change",
+            body=f"On day {body.day_number}: {title or body.kind}",
+            link_path=f"/shared/{itinerary_id}",
+            tag=f"sonder-shared-{itinerary_id}",
+        ))
+
     # Evaluation runs off the request path — frontend already sees the
     # user's proposal and the "evaluating" entry, polls/WS picks up the
     # verdict when the background task writes it back.
@@ -639,6 +676,21 @@ async def respond(itinerary_id: str, body: RespondRequest, uid: str = Depends(ve
         "change_id": body.change_id,
         "actor_id":  uid,
     })
+
+    # Push + email the OTHER side that you responded to their change.
+    other_uid = next((u for u in (shared.user_ids or []) if u != uid), None)
+    if other_uid:
+        from mushahid.realtime.notify import notify_event
+        responder = await _display_name_for(uid)
+        verdict = "accepted your change" if body.decision == "accept" else "countered your change"
+        asyncio.create_task(notify_event(
+            recipient_uid=other_uid, kind="shared_response",
+            title=f"{responder} {verdict}",
+            body=f"On day {target.day_number}: {target.title}",
+            link_path=f"/shared/{itinerary_id}",
+            tag=f"sonder-shared-{itinerary_id}",
+        ))
+
     return {"shared": shared.model_dump(mode="json")}
 
 
@@ -880,4 +932,20 @@ async def finalize(itinerary_id: str, body: FinalizeRequest, uid: str = Depends(
     _broadcast_async(session.session_id if session else None, {
         "type": "shared_finalized", "version": shared.version, "actor_id": uid,
     })
+
+    # Notify every other participant that the trip is locked in.
+    finalizer = await _display_name_for(uid)
+    dest = getattr(shared.itinerary.destination, "city", "") if shared.itinerary and shared.itinerary.destination else ""
+    from mushahid.realtime.notify import notify_event
+    for other_uid in (shared.user_ids or []):
+        if other_uid == uid:
+            continue
+        asyncio.create_task(notify_event(
+            recipient_uid=other_uid, kind="shared_finalized",
+            title=f"{finalizer} locked in the trip",
+            body=f"Your {dest or 'shared'} itinerary is final. Time to pack.",
+            link_path=f"/shared/{itinerary_id}",
+            tag=f"sonder-shared-final-{itinerary_id}",
+        ))
+
     return {"shared": shared.model_dump(mode="json")}
