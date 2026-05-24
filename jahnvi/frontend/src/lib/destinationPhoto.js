@@ -1,22 +1,56 @@
 /**
- * Pull a representative photo for a destination via Wikipedia's REST API.
+ * Pull a representative photo for a destination.
  *
- *   https://en.wikipedia.org/api/rest_v1/page/summary/{title}
+ * Order of attempts:
+ *   1. Wikipedia REST API (`page/summary/{title}`) — free, no key, fast,
+ *      but its infobox image is often a map / location diagram / coat
+ *      of arms (especially for regions like "Patagonia" or country-level
+ *      queries). We reject anything that looks map-shaped before
+ *      accepting it.
+ *   2. Backend `/api/destination-photo?city=&country=` — wraps Pixabay
+ *      server-side so the API key stays out of the bundle. Returns a
+ *      real travel photo for almost every query that has any presence
+ *      on Pixabay.
  *
- * Free, no API key, permissive CORS. The infobox image surfaced via
- * `originalimage.source` is reliably good for most cities and travel
- * regions. Caches per-destination in localStorage so we don't hammer
- * Wikipedia on every dashboard load, with negative caching for places
- * that don't have an article so we don't retry forever.
- *
- * Tries `City, Country` first (handles ambiguity like Cairo / Springfield),
- * falls back to bare `City`.
+ * Caches the final URL per-destination in localStorage (14d TTL) with
+ * negative caching so places with nothing usable don't get retried on
+ * every page load.
  */
 
 import { useEffect, useState } from 'react'
 
-const CACHE_KEY = 'sonder_dest_photos_v1'
+// Bumped to v2 so existing users with cached Wikipedia maps (the bug we
+// just fixed) refetch fresh on first load instead of waiting 14 days.
+const CACHE_KEY = 'sonder_dest_photos_v2'
 const TTL_MS    = 1000 * 60 * 60 * 24 * 14  // 14 days
+
+// URL substrings that signal "this is a map / location diagram / flag /
+// coat of arms, NOT a destination photo". Wikipedia uses these patterns
+// consistently across its infobox images so a simple lowercased
+// substring match catches the vast majority of false positives.
+const MAP_URL_HINTS = [
+  'map',          // 'Patagonia_in_Argentina.svg', 'Location_map_*'
+  'karte',        // German Wikipedia ports
+  'location',     // 'Argentina_-_Location.svg'
+  'locator',      // '*_locator_*'
+  'satellite',    // satellite imagery — usually featureless from far up
+  'topographic',
+  'orthographic',
+  'globe',
+  'flag_of',
+  'coat_of_arms',
+  'coatofarms',
+  'seal_of',
+]
+
+function _looksLikeMap(url) {
+  if (!url) return true
+  const lower = url.toLowerCase()
+  // Wikipedia infobox SVGs are almost always maps, flags, or diagrams.
+  // Real destination photos are .jpg/.jpeg/.png/.webp.
+  if (lower.endsWith('.svg')) return true
+  return MAP_URL_HINTS.some(h => lower.includes(h))
+}
 
 function _read() {
   try { return JSON.parse(localStorage.getItem(CACHE_KEY) || '{}') } catch { return {} }
@@ -28,14 +62,31 @@ function _key(city, country) {
   return `${(city || '').trim().toLowerCase()}|${(country || '').trim().toLowerCase()}`
 }
 
-async function _tryTitle(title) {
+async function _tryWikiTitle(title) {
   const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}?redirect=true`
   const resp = await fetch(url, { headers: { Accept: 'application/json' } })
   if (!resp.ok) return null
   const data = await resp.json()
-  // disambiguation pages don't have a useful image
   if (data?.type === 'disambiguation') return null
-  return data?.originalimage?.source || data?.thumbnail?.source || null
+  const candidate = data?.originalimage?.source || data?.thumbnail?.source || null
+  // Reject maps / location diagrams / flags before returning. Falling
+  // through to the next title (and ultimately to Pixabay) is better
+  // than putting a map on the hero card.
+  if (_looksLikeMap(candidate)) return null
+  return candidate
+}
+
+async function _tryPixabay(city, country) {
+  const params = new URLSearchParams({ city })
+  if (country) params.set('country', country)
+  try {
+    const resp = await fetch(`/api/destination-photo?${params.toString()}`)
+    if (!resp.ok) return null
+    const data = await resp.json()
+    return data?.url || null
+  } catch {
+    return null
+  }
 }
 
 export async function fetchDestinationPhoto(city, country) {
@@ -45,14 +96,21 @@ export async function fetchDestinationPhoto(city, country) {
   const hit = cache[key]
   if (hit && Date.now() - (hit.ts || 0) < TTL_MS) return hit.url || null
 
-  const candidates = country ? [`${city}, ${country}`, city] : [city]
+  // 1. Try Wikipedia (most specific title first), rejecting maps.
+  const wikiCandidates = country ? [`${city}, ${country}`, city] : [city]
   let found = null
-  for (const t of candidates) {
+  for (const t of wikiCandidates) {
     try {
-      const u = await _tryTitle(t)
+      const u = await _tryWikiTitle(t)
       if (u) { found = u; break }
     } catch { /* try next */ }
   }
+
+  // 2. Pixabay fallback when Wikipedia gave us nothing usable.
+  if (!found) {
+    found = await _tryPixabay(city, country)
+  }
+
   cache[key] = { url: found, ts: Date.now() }
   _write(cache)
   return found
