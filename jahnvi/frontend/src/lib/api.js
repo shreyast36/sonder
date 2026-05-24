@@ -281,6 +281,13 @@ export async function setCurrentItinerary(itineraryId) {
   return post('/api/itineraries/set-current', { itinerary_id: itineraryId })
 }
 
+// Hard-delete an itinerary AND its attached docs (shared itinerary twin,
+// companion prefs, journal entries). Chats are preserved server-side
+// since they're records of conversations with people, not the trip.
+export async function deleteItinerary(itineraryId) {
+  return _del(`/api/itineraries/${encodeURIComponent(itineraryId)}`)
+}
+
 // ── Journal ────────────────────────────────────────────────────────────────
 
 export async function listTripJournal(itineraryId) {

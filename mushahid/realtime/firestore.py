@@ -153,6 +153,73 @@ async def write_itinerary(itinerary: Itinerary) -> None:
         logger.warning("write_itinerary failed (Firestore unavailable?): %s", e)
 
 
+async def delete_itinerary_and_related(itinerary_id: str) -> dict:
+    """Hard-delete an itinerary and every doc bound to it.
+
+    Cleans up: the itinerary doc, its shared-itinerary twin (if any),
+    its companion_prefs doc, and every journal entry tagged to it.
+    Returns a count breakdown so the caller can log / surface what
+    was removed. Caller is responsible for purging the user_profile
+    pointer (saved_itinerary_ids / current_itinerary_id) since that
+    requires the uid, which this helper doesn't take.
+
+    Chats are intentionally NOT deleted — they're conversations with
+    people, not trip data, and the persona's side of the history is
+    independent of which trip was the anchor.
+    """
+    removed = {"itinerary": 0, "shared_itinerary": 0, "companion_prefs": 0, "journal_entries": 0}
+    if LOCAL_MODE:
+        if _store.pop(f"itinerary:{itinerary_id}", None) is not None:
+            removed["itinerary"] = 1
+        if _store.pop(f"shared:{itinerary_id}", None) is not None:
+            removed["shared_itinerary"] = 1
+        if _store.pop(f"companion_prefs:{itinerary_id}", None) is not None:
+            removed["companion_prefs"] = 1
+        j_keys = [k for k, v in _store.items()
+                  if k.startswith("journal:") and v.get("itinerary_id") == itinerary_id]
+        for k in j_keys:
+            _store.pop(k, None)
+        removed["journal_entries"] = len(j_keys)
+        return removed
+
+    db = get_db()
+    # Itinerary doc.
+    try:
+        await asyncio.to_thread(lambda: db.collection("itineraries").document(itinerary_id).delete())
+        removed["itinerary"] = 1
+    except Exception as e:
+        logger.warning("delete itinerary doc failed: %s", e)
+    # Shared-itinerary twin (best-effort — most trips won't have one).
+    try:
+        await asyncio.to_thread(lambda: db.collection("shared_itineraries").document(itinerary_id).delete())
+        removed["shared_itinerary"] = 1
+    except Exception as e:
+        logger.debug("delete shared itinerary doc failed (likely none existed): %s", e)
+    # Companion prefs.
+    try:
+        await asyncio.to_thread(lambda: db.collection("companion_prefs").document(itinerary_id).delete())
+        removed["companion_prefs"] = 1
+    except Exception as e:
+        logger.debug("delete companion_prefs failed: %s", e)
+    # Journal entries — query then bulk delete.
+    try:
+        docs = await asyncio.to_thread(
+            lambda: list(db.collection("journal_entries")
+                           .where("itinerary_id", "==", itinerary_id)
+                           .stream())
+        )
+        for d in docs:
+            try:
+                await asyncio.to_thread(lambda r=d.reference: r.delete())
+                removed["journal_entries"] += 1
+            except Exception as e:
+                logger.warning("delete journal entry %s failed: %s", d.id, e)
+    except Exception as e:
+        logger.warning("query journal entries for delete failed: %s", e)
+
+    return removed
+
+
 async def get_itinerary(itinerary_id: str) -> Itinerary | None:
     from pydantic import ValidationError as PydanticValidationError
     if LOCAL_MODE:

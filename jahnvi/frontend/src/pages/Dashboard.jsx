@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, Plus } from 'lucide-react'
+import { ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
 import MatchCard from '../components/MatchCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
-import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest } from '../lib/api'
+import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, deleteItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
 import NavTabs from '../components/NavTabs'
 import { storage } from '../lib/firebase'
@@ -250,7 +250,7 @@ function LiveTravellersStrip({ onJump }) {
   )
 }
 
-function PastTripsRow({ trips, onSelect, switching }) {
+function PastTripsRow({ trips, onSelect, switching, onDelete, deletingId }) {
   if (!trips || trips.length === 0) return null
   return (
     <div style={{ marginTop: 36 }}>
@@ -266,13 +266,16 @@ function PastTripsRow({ trips, onSelect, switching }) {
         {trips.map((t, i) => {
           const isCurrent = !!t.is_current
           const accent = isCurrent ? '#F59E0B' : 'rgba(245,158,11,0.30)'
+          const deleting = deletingId === t.itinerary_id
+          // Card itself is a div now — delete button is a nested clickable
+          // and we don't want nested <button>s. Switch action is its own
+          // click handler at the card-body level, with stopPropagation on
+          // the trash icon so deleting doesn't double as switching.
           return (
-            <motion.button
+            <motion.div
               key={t.itinerary_id}
-              whileHover={!switching && !isCurrent ? { y: -3, borderColor: accent } : {}}
-              whileTap={!switching && !isCurrent ? { scale: 0.98 } : {}}
-              onClick={() => !isCurrent && onSelect(t.itinerary_id)}
-              disabled={switching || isCurrent}
+              whileHover={!switching && !deleting && !isCurrent ? { y: -3, borderColor: accent } : {}}
+              whileTap={!switching && !deleting && !isCurrent ? { scale: 0.98 } : {}}
               initial={{ opacity: 0, x: 18 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.4, delay: 0.05 + i * 0.06, ease }}
@@ -281,11 +284,19 @@ function PastTripsRow({ trips, onSelect, switching }) {
                 flex: '0 0 auto', width: 200, padding: '18px 18px 16px',
                 background: isCurrent ? 'rgba(245,158,11,0.06)' : 'rgba(232,212,168,0.04)',
                 border: `1px solid ${isCurrent ? 'rgba(245,158,11,0.40)' : HAIRLINE}`,
-                borderRadius: 14, cursor: isCurrent ? 'default' : (switching ? 'wait' : 'pointer'),
+                borderRadius: 14,
+                cursor: isCurrent || switching || deleting ? 'default' : 'pointer',
                 transition: 'all 0.25s', textAlign: 'left',
-                opacity: switching && !isCurrent ? 0.5 : 1,
+                opacity: (switching && !isCurrent) || deleting ? 0.5 : 1,
               }}
+              onClick={() => {
+                if (isCurrent || switching || deleting) return
+                onSelect?.(t.itinerary_id)
+              }}
+              role={!isCurrent ? 'button' : undefined}
+              aria-disabled={switching || deleting}
             >
+              {/* Current-trip badge */}
               {isCurrent && (
                 <span style={{
                   position: 'absolute', top: 10, right: 10,
@@ -297,6 +308,45 @@ function PastTripsRow({ trips, onSelect, switching }) {
                   Current
                 </span>
               )}
+
+              {/* Delete affordance — bottom-right corner, low-key until hover.
+                  Tints rose on hover so the destructive action telegraphs itself. */}
+              {onDelete && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDelete(t.itinerary_id, t.city) }}
+                  disabled={deleting}
+                  title={deleting ? 'Deleting…' : 'Delete this trip and its data'}
+                  aria-label="Delete trip"
+                  style={{
+                    position: 'absolute', bottom: 10, right: 10,
+                    width: 26, height: 26, padding: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'rgba(248,113,113,0.04)',
+                    border: '1px solid rgba(248,113,113,0.20)',
+                    borderRadius: 8,
+                    cursor: deleting ? 'wait' : 'pointer',
+                    color: 'rgba(248,113,113,0.65)',
+                    transition: 'all 0.2s',
+                    opacity: deleting ? 0.5 : 0.7,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (deleting) return
+                    e.currentTarget.style.background = 'rgba(248,113,113,0.14)'
+                    e.currentTarget.style.borderColor = 'rgba(248,113,113,0.55)'
+                    e.currentTarget.style.color = '#F87171'
+                    e.currentTarget.style.opacity = '1'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(248,113,113,0.04)'
+                    e.currentTarget.style.borderColor = 'rgba(248,113,113,0.20)'
+                    e.currentTarget.style.color = 'rgba(248,113,113,0.65)'
+                    e.currentTarget.style.opacity = '0.7'
+                  }}
+                >
+                  <Trash2 size={12}/>
+                </button>
+              )}
+
               <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: '0 0 6px' }}>
                 Destination
               </p>
@@ -309,7 +359,7 @@ function PastTripsRow({ trips, onSelect, switching }) {
                 </p>
               )}
               <div style={{ height: 1, background: HAIRLINE, margin: '10px 0' }}/>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingRight: onDelete ? 32 : 0 }}>
                 <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE }}>
                   {t.day_count ? `${t.day_count} day${t.day_count === 1 ? '' : 's'}` : '—'}
                 </span>
@@ -317,7 +367,7 @@ function PastTripsRow({ trips, onSelect, switching }) {
                   {_fmtTripDate(t.trip_start) || ''}
                 </span>
               </div>
-            </motion.button>
+            </motion.div>
           )
         })}
       </div>
@@ -509,6 +559,8 @@ export default function Dashboard() {
   const [incomingBusy, setIncomingBusy] = useState({})   // request_id → bool
   const [pastTrips, setPastTrips] = useState([])
   const [switchingTrip, setSwitchingTrip] = useState(false)
+  const [deletingId, setDeletingId] = useState(null)
+  const [deleteError, setDeleteError] = useState(null)
 
   const refresh = async () => {
     // Track the current itinerary in a local so the past-trips fallback
@@ -572,6 +624,43 @@ export default function Dashboard() {
       console.error('set current failed:', err)
     } finally {
       setSwitchingTrip(false)
+    }
+  }
+
+  async function handleDeleteTrip(itineraryId, city) {
+    if (deletingId) return
+    // Browser-native confirm is fine here — destructive, infrequent
+    // action; not worth a custom modal for v1.
+    const ok = window.confirm(
+      `Delete your trip to ${city || 'this destination'}?\n\n` +
+      `This removes the itinerary, journal entries, companion preferences, ` +
+      `and any shared-itinerary state for this trip. Your chats with people ` +
+      `you matched with are preserved. This cannot be undone.`
+    )
+    if (!ok) return
+    setDeletingId(itineraryId); setDeleteError(null)
+    // Optimistic: drop the card immediately, restore on error.
+    const snapshot = pastTrips
+    setPastTrips(prev => prev.filter(t => t.itinerary_id !== itineraryId))
+    try {
+      await deleteItinerary(itineraryId)
+      // Refresh so the current-trip pointer flips correctly if we just
+      // deleted the active trip, and stored-itinerary state clears.
+      await refresh()
+      // If we deleted the active trip, the dashboard hero card reads
+      // from storedItinerary — clear it so the empty state renders.
+      const wasCurrent = snapshot.find(t => t.itinerary_id === itineraryId)?.is_current
+      if (wasCurrent) {
+        setStoredItinerary(null)
+        try { localStorage.removeItem('sonder_last_itinerary') } catch { /* noop */ }
+      }
+    } catch (err) {
+      console.error('delete itinerary failed:', err)
+      setDeleteError(err?.message || 'Could not delete trip')
+      setPastTrips(snapshot)   // restore on error
+      setTimeout(() => setDeleteError(null), 4000)
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -1402,7 +1491,17 @@ export default function Dashboard() {
               trips={pastTrips}
               onSelect={handleSwitchTrip}
               switching={switchingTrip}
+              onDelete={handleDeleteTrip}
+              deletingId={deletingId}
             />
+            {deleteError && (
+              <p style={{
+                marginTop: 10, fontFamily: '"Inter Tight",sans-serif',
+                fontSize: 11, color: '#F87171',
+              }}>
+                {deleteError}
+              </p>
+            )}
           </motion.section>
 
         {/* Sonder Pulse lives at /pulse now — keeps this view focused

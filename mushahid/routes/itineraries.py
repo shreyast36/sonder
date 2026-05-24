@@ -17,6 +17,7 @@ from mushahid.auth import verify_token
 from mushahid.realtime.firestore import (
     get_itinerary, get_user_profile, update_user_profile, write_itinerary,
     get_companion_prefs, write_companion_prefs,
+    delete_itinerary_and_related,
 )
 from mushahid.utils.sanitize import sanitize_user_input
 from shared.config import LOCAL_MODE
@@ -192,6 +193,63 @@ async def set_current_itinerary(body: SetCurrentBody, uid: str = Depends(verify_
         pass
 
     return {"current_itinerary_id": body.itinerary_id}
+
+
+@router.delete("/itineraries/{itinerary_id}")
+async def delete_itinerary(itinerary_id: str, uid: str = Depends(verify_token)):
+    """Hard-delete a saved trip and its attached docs.
+
+    Removes:
+      - the itinerary doc
+      - the shared-itinerary twin (if collaboration was started)
+      - the companion_prefs intake answers for this trip
+      - all journal_entries tagged to this trip
+      - the itinerary_id from the user's saved_itinerary_ids
+      - the current_itinerary_id pointer if it pointed here
+
+    Chats are intentionally preserved — they're records of conversations
+    with people, not data about the trip. If we deleted chat sessions
+    on trip delete the user would lose history with co-travellers they
+    actually matched with.
+
+    Returns a count breakdown so the dashboard can show "Removed N
+    journal entries with this trip." if it wants to."""
+    itinerary = await get_itinerary(itinerary_id)
+    if itinerary is None:
+        # Idempotent — if the doc is already gone (race / double-click),
+        # still scrub the user profile pointers and return success.
+        pass
+    elif itinerary.user_id != uid:
+        raise HTTPException(status_code=403, detail="Not authorised to delete this itinerary")
+
+    removed = await delete_itinerary_and_related(itinerary_id)
+
+    # Purge user-profile pointers.
+    try:
+        profile = await get_user_profile(uid) or {}
+        saved_ids = [i for i in (profile.get("saved_itinerary_ids") or []) if i != itinerary_id]
+        updates: dict = {"saved_itinerary_ids": saved_ids}
+        # Clear current pointer if it was this trip — dashboard will fall
+        # back to the empty state until the user picks a new current.
+        if profile.get("current_itinerary_id") == itinerary_id:
+            updates["current_itinerary_id"] = None
+        await update_user_profile(uid, updates)
+    except Exception as e:
+        logger.warning("delete_itinerary profile cleanup failed: %s", e)
+        # We've already deleted the docs at this point; the pointer
+        # cleanup is best-effort. The next /itineraries/list call will
+        # naturally skip the dangling id (get_itinerary returns None).
+
+    try:
+        from mushahid.monitoring import capture
+        capture(uid, "itinerary_deleted", {
+            "itinerary_id":    itinerary_id,
+            "removed":         removed,
+        })
+    except Exception:
+        pass
+
+    return {"deleted": True, "itinerary_id": itinerary_id, "removed": removed}
 
 
 # ── Approval lifecycle (draft → finalized) ────────────────────────────────────
