@@ -229,17 +229,36 @@ async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verif
         # rather than returning zero matches.
         user_gender = (getattr(constraints, "gender", "") or "").strip().lower()
         if style_value == "solo" and user_gender in ("male", "female"):
-            before = len(candidates)
-            candidates = [
+            filtered = [
                 c for c in candidates
                 if (getattr(c, "gender", "") or "").strip().lower() == user_gender
             ]
-            dropped = before - len(candidates)
-            if dropped:
-                logger.info(
-                    "cotraveller: dropped %d candidates outside gender=%s (kept %d)",
-                    dropped, user_gender, len(candidates),
+            # Fail-open: if the candidate pool has no gender metadata
+            # populated yet (e.g. Pinecone seeded before we started
+            # writing the gender field), the filter would empty the
+            # pool. Rather than dead-end the user with "no matches",
+            # we log and skip the filter so something surfaces. Once
+            # the pool is re-seeded with gender, this path stops
+            # firing on its own.
+            with_gender = sum(
+                1 for c in candidates
+                if (getattr(c, "gender", "") or "").strip()
+            )
+            if not filtered and with_gender == 0 and candidates:
+                logger.warning(
+                    "cotraveller: gender filter would empty pool — "
+                    "no candidates have gender metadata (re-seed needed). "
+                    "Falling back to mixed matching for solo=%s.",
+                    user_gender,
                 )
+            else:
+                dropped = len(candidates) - len(filtered)
+                if dropped:
+                    logger.info(
+                        "cotraveller: dropped %d candidates outside gender=%s (kept %d)",
+                        dropped, user_gender, len(filtered),
+                    )
+                candidates = filtered
 
         # Cap the surfaced list at the top 3. When the user denies one,
         # _session_filters drops it from `denied_ids` on the next call
@@ -353,10 +372,25 @@ async def regenerate_cotraveller_matches(body: RegenerateMatchesRequest, uid: st
                     getattr(m.profile, "travel_style", None)) == style_value
             ]
         if style_value == "solo" and user_gender in ("male", "female"):
-            matches = [
+            filtered = [
                 m for m in matches
                 if (getattr(m.profile, "gender", "") or "").strip().lower() == user_gender
             ]
+            with_gender = sum(
+                1 for m in matches
+                if (getattr(m.profile, "gender", "") or "").strip()
+            )
+            # Fail-open identical to /cotraveller — don't dead-end on
+            # pre-gender seeded data.
+            if not filtered and with_gender == 0 and matches:
+                logger.warning(
+                    "cotraveller regenerate: gender filter would empty pool "
+                    "— no candidates have gender metadata (re-seed needed). "
+                    "Falling back to mixed matching for solo=%s.",
+                    user_gender,
+                )
+            else:
+                matches = filtered
         matches = matches[:3]
         # Analytics: regenerate is the "show me different matches" signal —
         # high rate means current matches aren't resonating. Excluded count

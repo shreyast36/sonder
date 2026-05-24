@@ -875,6 +875,7 @@ def build_metadata(
         "pace":                  persona["pace"],
         "budget_style":          persona["budget_style"],
         "travel_style":          persona["travel_style"],
+        "gender":                slot["gender"],
         "avatar_url":            avatar_url or "",
         "voice_anchor":          persona.get("voice_anchor", ""),
         "quirks":                persona.get("quirks", []),
