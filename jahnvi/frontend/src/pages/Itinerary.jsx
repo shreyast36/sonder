@@ -277,7 +277,8 @@ export default function Itinerary() {
       setReviseText('')
       setReviseOpen(false)
     } catch (e) {
-      setApproveError(e?.message || 'Could not log revision')
+      const isOffline = e instanceof TypeError && e.message === 'Failed to fetch'
+      setApproveError(isOffline ? 'No internet connection — please try again' : (e?.message || 'Could not log revision'))
     } finally {
       setReviseBusy(false)
     }
