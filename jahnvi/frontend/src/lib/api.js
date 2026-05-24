@@ -19,7 +19,15 @@ async function _readError(res) {
       const data = await res.json()
       return (data && (data.detail || data.message || data.error)) || res.statusText
     }
+    // Guard against HTML error pages (e.g. Cloudflare 504 gateway pages) leaking
+    // raw markup into error messages. Return a friendly fallback instead.
+    if (ct.includes('text/html')) {
+      return `Server error (${res.status}) — please try again.`
+    }
     const text = await res.text()
+    if (text.trimStart().startsWith('<!DOCTYPE') || text.trimStart().startsWith('<html')) {
+      return `Server error (${res.status}) — please try again.`
+    }
     return text.slice(0, 300) || res.statusText
   } catch {
     return res.statusText
@@ -197,12 +205,12 @@ export async function approveItinerary(itineraryId) {
 
 // Request changes on a draft itinerary. Backend runs one LLM regen + one
 // validate (single-pass), then returns the updated draft and the
-// validator verdict. 90s client-side timeout matches the backend's 75s
-// ceiling + network margin so a hung proxy surfaces as an error instead
+// validator verdict. 65s client-side timeout matches the backend's 55s
+// ceiling + ~10s network margin so a hung proxy surfaces as an error instead
 // of an infinite spinner.
 export async function reviseItinerary(itineraryId, feedback, targets = null) {
   const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), 90_000)
+  const t = setTimeout(() => ctrl.abort(), 65_000)
   try {
     const res = await fetch(`/api/itineraries/${encodeURIComponent(itineraryId)}/revise`, {
       method: 'POST',

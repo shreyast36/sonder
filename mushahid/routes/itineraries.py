@@ -392,15 +392,16 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
     final_validation: ValidationResult | None = None
     try:
         # Hard ceiling so a stuck LLM call can't hold the request open
-        # past Cloudflare's proxy timeout. 75s leaves margin under the
-        # ~100s edge limit and is plenty for a single regen.
+        # past Cloudflare's proxy timeout. 55s fires well before the real
+        # gateway limit so the backend always returns a structured JSON 504
+        # rather than letting Cloudflare serve an HTML error page.
         revised, final_validation = await asyncio.wait_for(
             run_single_revision(
                 itinerary, user_profile, feedback_for_loop,
                 seed_validation,
                 activity_feedback=structured_targets,
             ),
-            timeout=75.0,
+            timeout=55.0,
         )
     except asyncio.TimeoutError:
         logger.warning("revise: single-pass revision exceeded 75s ceiling")
