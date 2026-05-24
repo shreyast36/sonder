@@ -97,25 +97,21 @@ log = logging.getLogger("seed_couple_cotravellers")
 # ── Locked spec constants (couple cohort) ─────────────────────────────────
 
 
-# 9-city subset, representative across regions. Keeps total couples around
-# the user-requested 15-20 with the 2-bucket age split below.
+# 6-city subset of the singles pool, chosen for regional spread. Matrix
+# is 6 cities × 3 age buckets = 18 couples — the user-requested 15-20.
 CITIES: list[str] = [
     "New York, USA",
     "Mexico City, Mexico",
     "London, United Kingdom",
-    "Lisbon, Portugal",
     "Berlin, Germany",
-    "Cape Town, South Africa",
     "Mumbai, India",
-    "Bangkok, Thailand",
     "Tokyo, Japan",
 ]
 
-# 2 buckets — under-30 and 30s/40s. Couple trips skew younger on dating-
-# app comparable signals; 50s+ couples behave differently (already-married
-# group-travel logistics) and aren't the primary cohort.
+# Same age buckets as the singles seed — 20-50 in 10-year steps. Matches
+# the portrait prompt's age rule and keeps the two pools tonally aligned.
 AGE_BUCKETS: list[tuple[int, int]] = [
-    (24, 30), (30, 42),
+    (20, 30), (30, 40), (40, 50),
 ]
 
 # All couples are male + female. Primary gender (the chatter) cycles
@@ -175,62 +171,92 @@ def build_diversity_matrix() -> list[dict]:
 # Same CRITICAL rule as the singles script: never name the matching
 # vocabulary. Couple-specific framing layered on top so the model
 # writes for the PAIR, not for a solo who happens to have a partner.
+# Mirrors scripts/seed_cotravellers.py::_LLM_A_SYSTEM verbatim in
+# structure (Rules block, visual_cue examples + ban list, NEVER block,
+# JSON output schema) with couple-specific framing layered in. The
+# blindness contract is identical — never mention PUSH/PULL, never
+# name the emotional_signature taxonomy, never reference matching /
+# scoring / dimensions.
 _LLM_A_SYSTEM = """
 You design a fictional but emotionally specific COUPLE for a travel app.
 The goal is a pair who feels real on a profile card — not an archetype,
-not a marketing blurb, not a personality test result. Two people who
-have travelled together enough to have a rhythm.
+not a marketing blurb, not a personality test result. Two people, one
+man and one woman, who have travelled together enough to have a rhythm.
 
-The couple is a man and a woman. The user tells you the home city,
-age range, and which of the two is the "protagonist" (the one whose
-voice the chat replies will read as).
+The user gives you a home city, age range, and which of the two is the
+"protagonist" (the one whose voice the chat replies will read as). You
+return ONE JSON object matching the schema below.
 
-Couple-voice rules:
-- display_name MUST be "X & Y" (their two first names, ampersand,
-  lowercased "and" is also fine). Example: "Mira & Theo", "Aiko & Ren".
-- partner_name is JUST the partner's first name (so the chat-side
-  persona has a name to reference when they say "my partner / Theo").
-- protagonist_name is the primary person — the one whose voice the
-  chat replies will read as. They're "writing on behalf of both".
-- voice_anchor MUST be in WE voice — a 1-2 sentence shared trip memory
-  ("we got lost trying to find this tiny dumpling place in shanghai
-  and ended up at a karaoke bar at midnight").
-- quirks describe the COUPLE'S DYNAMIC, not one person — "she plans,
-  he wings it", "they always order one of everything to share", "she
-  reads at breakfast, he over-caffeinates and talks too much".
-- small_thing is the protagonist's first-person ("I" not "we") — same
-  format as the singles seed. It anchors the voice.
-
-Picking the chip selections:
-- All four chip selections (social_role / trip_feeling / friction_response
-  / ideal_atmosphere) should reflect the COUPLE's shared answer — what
-  they would say together. If they'd genuinely diverge, pick the
-  protagonist's answer with a quirk noting the partner's lean.
-- Vary your picks across the four fields so the persona doesn't read as
-  on-the-nose.
-
-Visual rules (drive the portrait):
-- visual_cue: short phrase for a CANDID COUPLE photo. Two people in
-  the frame, ordinary moment, no posed couples-shoot energy.
-  EXAMPLES (don't reuse verbatim — invent a different mundane shared
-  moment for this specific pair):
+Rules:
+- Specific over abstract. "She always orders the spicy thing and
+  regrets it; he finishes whatever she leaves" beats "they love food".
+- Contradictions are good. Real couples have them.
+- Pick exactly one option key for each of social_role / trip_feeling /
+  friction_response / ideal_atmosphere from the ALLOWED OPTIONS — these
+  reflect the couple's SHARED answer (the one they'd give together). If
+  they genuinely diverge, pick the protagonist's and note the partner's
+  lean in a quirk. Vary your picks across the four fields so the persona
+  doesn't read as on-the-nose.
+- display_name MUST be "X & Y" — the two first names, ampersand
+  ("Mira & Theo"). protagonist_name is the first name of the chatter;
+  partner_name is the first name of the other.
+- small_thing is gold — the PROTAGONIST'S first-person ("I" not "we"),
+  one sentence, oddly specific ("the way our cat headbutts the front
+  door when we get home from a trip").
+- voice_anchor is in WE voice — a 1-2 sentence shared recent-trip
+  memory the chat LLM will use to ground replies. Anchor it in a real
+  place + a sensory detail ("we got lost trying to find this tiny
+  dumpling place in Shanghai and ended up at a karaoke bar at midnight").
+- quirks: 1-2 short third-person quirks about the COUPLE'S DYNAMIC, not
+  one person ("she plans, he wings it", "they always order one of
+  everything to share", "he reads at breakfast while she over-
+  caffeinates and talks too much").
+- visual_cue: a short phrase the image generator will use for the
+  candid-snapshot setting. The image is a casual smartphone photo of
+  TWO PEOPLE, NOT a posed couples-shoot, NOT an engagement photo.
+  Cue must be a mundane everyday moment where the pair happens to be
+  near a camera.
+  EXAMPLES OF THE RIGHT REGISTER (do NOT pick these verbatim — invent
+  a different mundane shared moment tailored to THIS specific couple's
+  city, age, and quirks):
         "waiting on a bench at a bus stop, one looking at phone",
         "leaning against a kitchen counter mid-conversation",
         "standing in line at a bakery, slightly apart",
         "side by side on a couch, half-watching the same screen",
-        "walking down an ordinary residential street, mid-step".
-  Mundane, candid, unposed. No engagement-photo energy, no sunset, no
-  cherry blossoms, no holding-hands-on-a-beach. The cue should sound
-  like something a friend would say describing a candid photo of them.
+        "walking down an ordinary residential street, mid-step",
+        "sitting on apartment steps, one tying a shoelace",
+        "in a crowded transit station, slightly out of sync".
+  Treat the examples as showing the *register* (mundane, candid,
+  unposed, no props), not the content. Each couple should get its own
+  freshly-invented ordinary moment — bus stops, laundromats, pharmacy
+  queues, apartment stairwells, parking lots, supermarket aisles,
+  sidewalk corners, etc. Vary the setting, the body positions, what
+  they're each looking at, and whether they're interacting with each
+  other or doing parallel things.
+  BAD (avoid all of these — they break the candid feel):
+        "golden hour", "serene morning light", "dappled sunlight",
+        "under a cherry blossom tree", "on a temple step", "reading a
+        worn paperback together", "rooftop bar", "scenic overlook",
+        "looking off into the distance", "holding hands on the beach",
+        "kissing in front of the eiffel tower", "contemplative",
+        any cafe, any holding of a book/map/journal/camera/postcard,
+        any iconic landmark, any engagement / wedding / anniversary
+        framing.
+  No props in their hands except possibly an ordinary phone. The cue
+  should sound like something a friend would say describing a candid
+  photo of the two of them, not a travel ad.
 - appearance_descriptor: 1-3 words EACH for the two of them, separated
-  by ' + '. Example: "Indian + Brazilian", "Korean + Korean", "Black +
-  East Asian". Used for the image prompt only, not classification.
+  by ' + ' in PROTAGONIST + PARTNER order. Example: "Indian + Brazilian",
+  "Korean + Korean", "Black + East Asian". Treat this as appearance
+  information for image generation, not demographic classification.
+- Names should match the home city plausibly (mix of ethnicities is
+  fine — most cosmopolitan cities have residents of many backgrounds).
 
 NEVER mention or refer to:
 - "push" or "pull" motivations
 - emotional signatures / archetypes by name
 - travel matching, tags, scoring, dimensions
-The pair is just a pair. Nothing else.
+The couple is just a couple. Nothing else.
 
 Output ONLY this JSON object — no preface, no markdown fences:
 
@@ -241,7 +267,7 @@ Output ONLY this JSON object — no preface, no markdown fences:
   "age": 28,
   "partner_age": 30,
   "appearance_descriptor": "X + Y",
-  "preferred_destination": "City, Country — somewhere they'd actually go",
+  "preferred_destination": "City, Country — somewhere they'd actually go together",
   "archetype": "3-4 word evocative label for the COUPLE, title case, no period",
   "interests": ["3-5 specific lowercase tags they both enjoy"],
   "pace": "relaxed | moderate | packed",
