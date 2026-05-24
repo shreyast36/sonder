@@ -207,7 +207,11 @@ async def _emit_open_trip(persona) -> None:
         is_open_to_join  = True,
         join_capacity    = random.choice([1, 2]),
     )
-    await write_itinerary(itinerary)
+    try:
+        await write_itinerary(itinerary)
+    except Exception as e:
+        logger.warning("[synthetic_agents] write_itinerary failed for %s, aborting trip creation: %s", itinerary_id, e)
+        return
     await set_itinerary_open(itinerary_id, is_open=True, join_capacity=itinerary.join_capacity)
 
     # Persist note + synthetic-owner snapshot. The latter lets the join-
