@@ -18,6 +18,11 @@ const GREEN  = '#10B981'
 const AMBER  = '#F59E0B'
 const spring = { type: 'spring', stiffness: 280, damping: 22 }
 
+// Hard cap for the live Pulse surfaces (trips + posts). Keeps the
+// section scannable and prevents long sessions from accumulating
+// hundreds of cards in memory as realtime events fire.
+const PULSE_MAX = 10
+
 // ── helpers ──────────────────────────────────────────────────────────────
 
 function timeAgo(iso) {
@@ -809,10 +814,14 @@ export default function DashboardPulse({ selfUid }) {
   const tripsPollRef = useRef(null)
   const feedPollRef  = useRef(null)
 
+  // Hard cap the live surfaces so the section stays scannable and
+  // realtime pushes don't grow the arrays unbounded over a long
+  // session. Applied at every entry point (poll, WS push, optimistic
+  // local insert) so the invariant holds.
   const fetchTrips = useCallback(async () => {
     try {
       const res = await listOpenTrips(24)
-      setTrips(res?.trips || [])
+      setTrips((res?.trips || []).slice(0, PULSE_MAX))
     } catch { /* surface via empty state */ }
     finally { setLoadingTrips(false) }
   }, [])
@@ -820,7 +829,7 @@ export default function DashboardPulse({ selfUid }) {
     try {
       const res = await listFeed({ limit: 20 })
       setPosts(prev => {
-        const next = res?.posts || []
+        const next = (res?.posts || []).slice(0, PULSE_MAX)
         if (next.length && prev.length && next[0]?.post_id === prev[0]?.post_id) return prev
         return next
       })
@@ -841,7 +850,10 @@ export default function DashboardPulse({ selfUid }) {
       const trip = e.detail
       if (!trip?.itinerary_id) return
       const card = { ...trip, is_yours: trip.owner_uid === selfUid }
-      setTrips(prev => prev.some(t => t.itinerary_id === card.itinerary_id) ? prev : [card, ...prev])
+      setTrips(prev => {
+        if (prev.some(t => t.itinerary_id === card.itinerary_id)) return prev
+        return [card, ...prev].slice(0, PULSE_MAX)
+      })
     }
     function onTripClose(e) {
       const id = e.detail?.itinerary_id
@@ -851,7 +863,10 @@ export default function DashboardPulse({ selfUid }) {
     function onPostNew(e) {
       const post = e.detail
       if (!post?.post_id) return
-      setPosts(prev => prev.some(p => p.post_id === post.post_id) ? prev : [post, ...prev])
+      setPosts(prev => {
+        if (prev.some(p => p.post_id === post.post_id)) return prev
+        return [post, ...prev].slice(0, PULSE_MAX)
+      })
     }
     function onResolved(e) {
       const req = e.detail
@@ -932,8 +947,11 @@ export default function DashboardPulse({ selfUid }) {
     }
   }
 
-  const tripsToShow = useMemo(() => trips.slice(0, 6), [trips])
-  const postsToShow = useMemo(() => posts.slice(0, 8), [posts])
+  // Arrays are already capped at PULSE_MAX at every entry point; render
+  // all of them. The slice would be a no-op now but keep an explicit
+  // cap here as a safety net in case the invariant ever drifts.
+  const tripsToShow = useMemo(() => trips.slice(0, PULSE_MAX), [trips])
+  const postsToShow = useMemo(() => posts.slice(0, PULSE_MAX), [posts])
 
   return (
     <section style={{
@@ -1086,7 +1104,7 @@ export default function DashboardPulse({ selfUid }) {
             accent={GOLD}
           />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <Composer onCreated={(p) => setPosts(prev => [p, ...prev])}/>
+            <Composer onCreated={(p) => setPosts(prev => [p, ...prev].slice(0, PULSE_MAX))}/>
             {loadingFeed && (
               <div style={{ padding: '20px 0', display: 'flex', alignItems: 'center', gap: 10, color: MUTE }}>
                 <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.3, ease: 'linear', repeat: Infinity }}>
