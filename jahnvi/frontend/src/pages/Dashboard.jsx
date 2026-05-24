@@ -7,7 +7,7 @@ import MatchCard from '../components/MatchCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
-import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, deleteItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest } from '../lib/api'
+import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, deleteItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest, getUserProfile, patchProfileGender } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
 import NavTabs from '../components/NavTabs'
 import { storage } from '../lib/firebase'
@@ -659,6 +659,11 @@ export default function Dashboard() {
   // while the network round-trip catches up.
   const [storedItinerary, setStoredItinerary] = useState(() => loadStoredItinerary())
   const [matches, setMatches] = useState([])
+  // Gender backfill — for profiles that predate the gender field.
+  // When solo + no gender, the cotraveller route falls through to
+  // mixed matches; we replace the matches strip with a picker so
+  // the user can backfill in one click without leaving the dashboard.
+  const [genderState, setGenderState] = useState({ checked: false, needs: false, saving: false })
   const [matchingDisabled, setMatchingDisabled] = useState(null)
   const [activePair, setActivePair] = useState(null)
   const [matchesLoading, setMatchesLoading] = useState(false)
@@ -775,6 +780,61 @@ export default function Dashboard() {
       setTimeout(() => setDeleteError(null), 4000)
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  // One-shot profile read to decide if the user needs to backfill
+  // gender. Independent of the matches fetch so we don't block matches
+  // on a profile error.
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const prof = await getUserProfile()
+        if (cancelled) return
+        const style = prof?.constraints?.who_travelling_with
+        const g = (prof?.constraints?.gender || '').toLowerCase()
+        const needs = style === 'solo' && g !== 'male' && g !== 'female'
+        setGenderState(s => ({ ...s, checked: true, needs }))
+      } catch (err) {
+        if (cancelled) return
+        // 404 (no profile) / 503 — treat as no-prompt rather than dead-end
+        // the matches strip. User can still navigate to /companions to fix.
+        console.warn('getUserProfile (gender check) failed:', err?.message || err)
+        setGenderState(s => ({ ...s, checked: true, needs: false }))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [user?.uid])
+
+  async function handleSetGender(g) {
+    if (genderState.saving) return
+    setGenderState(s => ({ ...s, saving: true }))
+    try {
+      await patchProfileGender(g)
+      setGenderState({ checked: true, needs: false, saving: false })
+      // Re-fetch matches now that the filter will fire.
+      const itineraryId = storedItinerary?.itinerary_id || null
+      if (itineraryId) {
+        setMatchesLoading(true)
+        try {
+          const res = await getCotravellers(itineraryId)
+          if (!Array.isArray(res) && res?.matching_disabled) {
+            setMatches([]); setMatchingDisabled(res?.matching_disabled_reason || true)
+          } else {
+            setMatchingDisabled(null)
+            const ap = !Array.isArray(res) ? res?.active_pair : null
+            if (ap) { setActivePair(ap); setMatches([]) }
+            else    { setActivePair(null); setMatches(((Array.isArray(res) ? res : res?.matches) || []).map(matchToCard)) }
+          }
+        } finally {
+          setMatchesLoading(false)
+        }
+      }
+    } catch (err) {
+      console.warn('patchProfileGender failed:', err?.message || err)
+      setGenderState(s => ({ ...s, saving: false }))
     }
   }
 
@@ -1506,6 +1566,63 @@ export default function Dashboard() {
               </motion.h2>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Gender backfill prompt — replaces the matches list when
+                  the user is solo and their profile has no gender set.
+                  Mixed matches would be a safety regression for cold-
+                  strangers matching, so we gate the strip until they
+                  pick one. */}
+              {genderState.checked && genderState.needs && !activePair && (
+                <div style={{
+                  padding: '20px 22px', borderRadius: 14,
+                  background: 'rgba(245,158,11,0.05)',
+                  border: '1px solid rgba(245,158,11,0.35)',
+                }}>
+                  <p style={{
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                    letterSpacing: '0.26em', textTransform: 'uppercase',
+                    color: AMBER, margin: '0 0 10px',
+                  }}>
+                    One quick thing
+                  </p>
+                  <h3 style={{
+                    fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+                    fontWeight: 400, fontSize: 22, color: BONE, lineHeight: 1.2,
+                    margin: '0 0 10px',
+                  }}>
+                    Your gender
+                  </h3>
+                  <p style={{
+                    fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
+                    fontSize: 12, color: MUTE, lineHeight: 1.55, margin: '0 0 16px',
+                  }}>
+                    We only match solo travellers with the same gender for safety.
+                    Set it once and your matches will filter accordingly.
+                  </p>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    {[{ key: 'female', label: 'Female' }, { key: 'male', label: 'Male' }].map(opt => (
+                      <motion.button
+                        key={opt.key}
+                        whileTap={{ scale: 0.95 }}
+                        whileHover={{ borderColor: `${AMBER}66` }}
+                        onClick={() => handleSetGender(opt.key)}
+                        disabled={genderState.saving}
+                        style={{
+                          flex: 1, padding: '14px 0', borderRadius: 12,
+                          cursor: genderState.saving ? 'wait' : 'pointer',
+                          background: 'transparent',
+                          border: `1px solid ${HAIRLINE}`,
+                          fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+                          letterSpacing: '0.18em', textTransform: 'uppercase',
+                          color: BONE, transition: 'all 0.2s',
+                          opacity: genderState.saving ? 0.5 : 1,
+                        }}
+                      >
+                        {opt.label}
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {activePair && (
                 <motion.button
                   initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease }}
@@ -1527,7 +1644,7 @@ export default function Dashboard() {
                   </span>
                 </motion.button>
               )}
-              {!activePair && matches.slice(0, 4).map((m, i) => (
+              {!activePair && !(genderState.checked && genderState.needs) && matches.slice(0, 4).map((m, i) => (
                 <motion.div
                   key={m.id}
                   initial={{ opacity: 0, x: 24 }}
