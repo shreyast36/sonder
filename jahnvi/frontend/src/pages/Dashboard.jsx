@@ -250,6 +250,119 @@ function LiveTravellersStrip({ onJump }) {
   )
 }
 
+// ── Empty-state inspiration ───────────────────────────────────────────────
+// Rendered in the right column when the user has zero trips. Matches
+// would be lying with no trip to scope to, so we replace the "Curated
+// for you" block with a soft inspiration card that nudges toward
+// planning. Four destination shortcuts pre-fill /preferences so a user
+// who's curious can land on the form already partway through.
+
+const INSPIRATION_DESTINATIONS = [
+  { city: 'Lisbon',    country: 'Portugal',     query: 'Lisbon, Portugal'   },
+  { city: 'Kyoto',     country: 'Japan',        query: 'Kyoto, Japan'       },
+  { city: 'Reykjavík', country: 'Iceland',      query: 'Reykjavík, Iceland' },
+  { city: 'Mexico City', country: 'Mexico',     query: 'Mexico City, Mexico' },
+]
+
+function EmptyStateInspiration({ onPlan }) {
+  const navigate = useNavigate()
+  return (
+    <div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <motion.span
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+            style={{ width: 6, height: 6, borderRadius: '50%', background: GOLD, boxShadow: `0 0 10px ${GOLD}` }}
+          />
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+            A place to begin
+          </p>
+        </div>
+        <motion.h2
+          animate={{ filter: [`drop-shadow(0 0 12px rgba(212,182,134,0.18))`, `drop-shadow(0 0 28px rgba(212,182,134,0.45))`, `drop-shadow(0 0 12px rgba(212,182,134,0.18))`] }}
+          transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+          style={{
+            fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
+            fontSize: 34, color: BONE, lineHeight: 1.02, margin: 0,
+            letterSpacing: '-0.015em',
+          }}
+        >
+          Where would you go if you could?
+        </motion.h2>
+      </div>
+
+      <p style={{
+        fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
+        fontSize: 13, color: MUTE, lineHeight: 1.6, marginTop: 0, marginBottom: 22,
+      }}>
+        Plan one trip and the rest of the room — matches, journal, shared itineraries — opens up. Start with somewhere that's been on your mind, or borrow one of these.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
+        {INSPIRATION_DESTINATIONS.map((d, i) => (
+          <motion.button
+            key={d.city}
+            initial={{ opacity: 0, x: 18 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.45, delay: 0.15 + i * 0.08, ease }}
+            whileHover={{ x: 3, borderColor: `${GOLD}66` }}
+            whileTap={{ scale: 0.985 }}
+            onClick={() => {
+              // Hand the destination off to /preferences via sessionStorage.
+              // TripPreferences picks it up in its destination field if the
+              // user hasn't already started typing.
+              try { sessionStorage.setItem('sonder_seed_destination', d.query) } catch { /* noop */ }
+              navigate('/preferences')
+            }}
+            style={{
+              textAlign: 'left', padding: '14px 16px', borderRadius: 12,
+              background: 'rgba(232,212,168,0.03)',
+              border: `1px solid ${HAIRLINE}`,
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 12, transition: 'all 0.2s',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+              <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 19, color: BONE, lineHeight: 1.1 }}>
+                {d.city}
+              </span>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE }}>
+                {d.country}
+              </span>
+            </div>
+            <span style={{
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              color: GOLD, flexShrink: 0,
+            }}>
+              Start →
+            </span>
+          </motion.button>
+        ))}
+      </div>
+
+      <motion.button
+        whileHover={{ y: -2, boxShadow: `0 0 28px ${GOLD}33` }}
+        whileTap={{ scale: 0.98 }}
+        onClick={onPlan}
+        style={{
+          width: '100%', padding: '16px 20px',
+          background: `linear-gradient(135deg, ${GOLD} 0%, #B89668 100%)`,
+          border: 'none', borderRadius: 12, cursor: 'pointer',
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+          letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 600,
+          color: '#0a0807',
+          transition: 'all 0.25s',
+        }}
+      >
+        Plan something different
+      </motion.button>
+    </div>
+  )
+}
+
 function PastTripsRow({ trips, onSelect, switching, onDelete, deletingId }) {
   if (!trips || trips.length === 0) return null
   return (
@@ -1355,9 +1468,19 @@ export default function Dashboard() {
         </motion.div>
 
         {/* RIGHT — companions. Inbox moved to its own /inbox tab so
-            chat messages have room to breathe. */}
+            chat messages have room to breathe.
+
+            Cotraveller matches are scoped to a specific trip. With zero
+            saved trips there's no trip to scope to, so the "Curated for
+            you" block would be lying ("matches" against nothing). We
+            swap it for an inspiration card that nudges the user toward
+            planning their first trip — same column real estate, honest
+            content. */}
         <motion.div variants={reveal} style={{ padding: '52px 44px', display: 'flex', flexDirection: 'column', gap: 36 }}>
 
+          {pastTrips.length === 0 ? (
+            <EmptyStateInspiration onPlan={() => navigate('/preferences')}/>
+          ) : (
           <div>
             <div style={{ marginBottom: 24 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -1438,6 +1561,7 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+          )}
 
         </motion.div>
 

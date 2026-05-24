@@ -155,7 +155,19 @@ export default function TripPreferences() {
   const navigate = useNavigate()
 
   // ── Structured steps (logistics) ──
-  const [destination, setDest]        = useState('')
+  // Seed-from-dashboard: when the user clicks an inspiration destination
+  // on the empty-state dashboard, we stash it in sessionStorage and read
+  // it once here so the form lands with that city pre-filled.
+  const [destination, setDest]        = useState(() => {
+    try {
+      const seed = sessionStorage.getItem('sonder_seed_destination')
+      if (seed) {
+        sessionStorage.removeItem('sonder_seed_destination')
+        return seed
+      }
+    } catch { /* noop */ }
+    return ''
+  })
   const [departure, setDepart]        = useState('')
   const [returnDate, setReturn]       = useState('')
   const [styles, setStyles]           = useState([])
