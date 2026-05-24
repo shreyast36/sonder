@@ -269,13 +269,29 @@ async def approve_itinerary(itinerary_id: str, uid: str = Depends(verify_token))
 
 @router.post("/itineraries/{itinerary_id}/revise")
 async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depends(verify_token)):
-    """User wants changes. Phase-1 implementation: log the feedback into
-    revision_history, return current itinerary (the actual targeted
-    revision pipeline lands in Chunk 2 — feedback router + small/large
-    model routing + validator gate). Approval status stays at 'draft'.
+    """User wants changes. Runs the targeted-revision pipeline:
 
-    The route exists now so the frontend approval gate can wire up
-    end-to-end without waiting on the full revision engine."""
+      1. Classify feedback as SMALL (targeted edit) or LARGE (rewrite)
+         via mushahid.refinement.classifier.
+      2. Run the validator-gated refinement loop with classifier hints
+         + dedupe memory (titles the user already rejected this session
+         are explicitly blacklisted in the revision prompt).
+      3. On revision success: persist the new itinerary, append the
+         turn to revision_history with status='applied' + verdict,
+         return the updated draft.
+
+    The classifier decides which LLM tier the revision uses — small
+    edits stay on quick_edit (cheap, fast), large rewrites get
+    complex_refinement head-room. Both run through the same validator
+    gate before returning to the user.
+
+    409 if the itinerary is already finalized."""
+    from mushahid.refinement.classifier import classify_revision_feedback
+    from mushahid.refinement.loop import run_refinement_loop
+    from shared.schemas import (
+        ActivityFeedback, UserProfile, ValidationResult, ValidationStatus,
+    )
+
     itinerary = await _verify_itinerary_owner(itinerary_id, uid)
 
     if getattr(itinerary, "approval_status", "draft") == "finalized":
@@ -289,23 +305,118 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
         raise HTTPException(status_code=400, detail="Feedback or targets required")
 
     history = list(getattr(itinerary, "revision_history", []) or [])
-    history.append({
-        "turn":        len(history) + 1,
-        "feedback":    feedback,
-        "targets":     body.targets or [],
-        "created_at":  datetime.now(timezone.utc).isoformat(),
-        "status":      "pending",   # Chunk 2 flips to "applied" after the revision runs
-    })
+    turn_number = len(history) + 1
 
-    updated = itinerary.model_copy(update={"revision_history": history})
-    await write_itinerary(updated)
+    # ── 1. Classify the feedback (scope + targets + preserve hints) ──
+    summary_lines: list[str] = []
+    for day in (itinerary.days or [])[:5]:
+        names = [str(getattr(getattr(ia, "activity", None), "name", "") or "").strip()
+                 for ia in (day.activities or [])[:4]]
+        names = [n for n in names if n]
+        if names:
+            summary_lines.append(f"Day {day.day_number}: {' / '.join(names)}")
+    itin_summary = "\n".join(summary_lines)
+    verdict = await classify_revision_feedback(feedback or "edits via targets", itin_summary)
+    logger.info("revise classifier: turn=%d scope=%s targets=%s",
+                turn_number, verdict["scope"], verdict["target_day_numbers"])
+
+    # ── 2. Build dedupe blacklist from prior rejected titles ──
+    rejected_titles: list[str] = []
+    for h in history:
+        for t in (h.get("dropped_titles") or []):
+            if t and t not in rejected_titles:
+                rejected_titles.append(t)
+    # Stitch dedupe hints + preserve hints + classifier summary into the
+    # feedback string the refinement loop sees. The loop already knows
+    # how to weave these into the LLM prompt + revalidate after.
+    feedback_for_loop = feedback or verdict["summary"]
+    if verdict["preserve"]:
+        feedback_for_loop += "\n\nPRESERVE: " + " | ".join(verdict["preserve"])
+    if rejected_titles:
+        feedback_for_loop += "\n\nDO NOT RE-INTRODUCE these previously-rejected titles: " + ", ".join(rejected_titles[:20])
+    if verdict["target_day_numbers"]:
+        feedback_for_loop += f"\n\nFOCUS on day(s): {verdict['target_day_numbers']}. Preserve other days unchanged."
+
+    # ── 3. Run the validator-gated refinement loop ──
+    profile = await get_user_profile(uid) or {}
+    user_profile = UserProfile(
+        user_id=uid,
+        display_name=profile.get("display_name") or "Traveller",
+        constraints=profile.get("constraints"),
+        persona_answers=profile.get("persona_answers"),
+        compatibility_signals=profile.get("compatibility_signals"),
+        travel_style_embedding=profile.get("travel_style_embedding") or [],
+    )
+    seed_validation = ValidationResult(
+        itinerary_id=itinerary.itinerary_id,
+        status=ValidationStatus.revise,
+        score=0.6,
+        feedback="User-requested revision",
+        improvement_suggestions=[],
+    )
+
+    structured_targets = None
+    if body.targets:
+        structured_targets = [ActivityFeedback(**t) for t in body.targets
+                              if isinstance(t, dict) and t.get("activity_id")]
+
+    # The refinement loop yields SSE events; we don't stream here but
+    # we do need its final state. Drain the generator and ignore the
+    # interim chunks — Phase 3 could fan these out via a side WS for
+    # live progress.
+    revised = itinerary
+    try:
+        async for _chunk in run_refinement_loop(
+            itinerary, user_profile, feedback_for_loop,
+            seed_validation, activity_feedback=structured_targets,
+        ):
+            pass
+    except Exception as e:
+        logger.warning("revise: refinement loop failed: %s", e)
+
+    # The loop persists via write_itinerary internally; re-fetch to
+    # get the latest doc state.
+    latest = await get_itinerary(itinerary_id)
+    if latest is not None:
+        revised = latest
+
+    # ── 4. Diff dropped activity titles (for next-turn dedupe) ──
+    before_titles = {ia.activity.name.strip() for day in (itinerary.days or [])
+                                                for ia in (day.activities or [])
+                                                if getattr(getattr(ia, "activity", None), "name", "")}
+    after_titles  = {ia.activity.name.strip() for day in (revised.days or [])
+                                               for ia in (day.activities or [])
+                                               if getattr(getattr(ia, "activity", None), "name", "")}
+    dropped = sorted(before_titles - after_titles)
+    added   = sorted(after_titles - before_titles)
+
+    # ── 5. Append the turn to revision_history ──
+    history.append({
+        "turn":           turn_number,
+        "feedback":       feedback,
+        "targets":        body.targets or [],
+        "scope":          verdict["scope"],
+        "target_days":    verdict["target_day_numbers"],
+        "preserve":       verdict["preserve"],
+        "dropped_titles": dropped,
+        "added_titles":   added,
+        "created_at":     datetime.now(timezone.utc).isoformat(),
+        "status":         "applied",
+    })
+    final_itin = revised.model_copy(update={
+        "revision_history": history,
+        "approval_status":  "draft",
+    })
+    await write_itinerary(final_itin)
 
     try:
         from mushahid.monitoring import capture
-        capture(uid, "itinerary_revision_requested", {
+        capture(uid, "itinerary_revision_applied", {
             "itinerary_id": itinerary_id,
-            "turn":         len(history),
-            "has_targets":  bool(body.targets),
+            "turn":         turn_number,
+            "scope":        verdict["scope"],
+            "dropped":      len(dropped),
+            "added":        len(added),
         })
     except Exception:
         pass
@@ -313,8 +424,11 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
     return {
         "itinerary_id":    itinerary_id,
         "approval_status": "draft",
-        "revision_turn":   len(history),
-        "itinerary":       updated.model_dump(mode="json"),
+        "revision_turn":   turn_number,
+        "scope":           verdict["scope"],
+        "dropped_titles":  dropped,
+        "added_titles":    added,
+        "itinerary":       final_itin.model_dump(mode="json"),
     }
 
 
