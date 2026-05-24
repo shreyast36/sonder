@@ -369,6 +369,14 @@ export default function Itinerary() {
     setViewMode(mode)
     try { localStorage.setItem('sonder:itinerary:view', mode) } catch { /* noop */ }
   }
+  // Cross-view focus state — index into the active day's activities.
+  // Each view scrolls this activity into its viewport on mount + on
+  // change, and updates the state as the user scrolls. Switching
+  // mobile ↔ desktop preserves not just the active day but which
+  // specific activity the user was looking at.
+  const [activeActivityIdx, setActiveActivityIdx] = useState(0)
+  // Reset focus to the first activity when the day changes.
+  useEffect(() => { setActiveActivityIdx(0) }, [day])
 
   const firstName = (() => {
     if (user?.displayName) return user.displayName.split(' ')[0]
@@ -640,6 +648,8 @@ export default function Itinerary() {
                   day={day}
                   isStreaming={isStreaming}
                   scrollRef={phoneScrollRef}
+                  activeActivityIdx={activeActivityIdx}
+                  setActiveActivityIdx={setActiveActivityIdx}
                 />
               )}
               <PhoneHomeIndicator/>
@@ -657,6 +667,9 @@ export default function Itinerary() {
             safeActiveDay={safeActiveDay}
             setDay={setDay}
             isStreaming={isStreaming}
+            activeActivityIdx={activeActivityIdx}
+            setActiveActivityIdx={setActiveActivityIdx}
+            scrollContainerRef={mainRef}
           />
         )}
 
@@ -2002,10 +2015,59 @@ function PhoneLoading({ phase }) {
 // No phone chrome, no power button, no swipe gestures — keyboard /
 // mouse first.
 
-function DesktopItinerary({ dest, dateRange, days, safeActiveDay, setDay, isStreaming }) {
+function DesktopItinerary({
+  dest, dateRange, days, safeActiveDay, setDay, isStreaming,
+  activeActivityIdx = 0, setActiveActivityIdx, scrollContainerRef,
+}) {
   const photo = useDestinationPhoto(dest?.city, dest?.country)
   const activeDay = days[safeActiveDay] || null
   const activities = activeDay?.activities || []
+  const cardsRef = useRef([])
+  cardsRef.current = []
+
+  // On view-mount, scroll the activity the user was looking at in the
+  // OTHER view into our viewport. Small delay lets the cards mount +
+  // measure first. Block 'center' keeps the focused card mid-screen
+  // so users get the "I was just here" feeling.
+  useEffect(() => {
+    const el = cardsRef.current[activeActivityIdx]
+    if (!el) return
+    const t = setTimeout(() => {
+      try { el.scrollIntoView({ behavior: 'auto', block: 'center' }) } catch { /* noop */ }
+    }, 60)
+    return () => clearTimeout(t)
+    // Only on mount + when the focused day changes — not on every
+    // activeActivityIdx tick (that would fight the user's own scroll).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safeActiveDay])
+
+  // IntersectionObserver — track which card is "most visible" while the
+  // user scrolls, push the index up to parent state so a flip back to
+  // mobile view starts there.
+  useEffect(() => {
+    if (!setActiveActivityIdx || activities.length === 0) return
+    const root = scrollContainerRef?.current || null
+    const visibility = new Map()
+    const observer = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        visibility.set(Number(e.target.dataset.idx), e.intersectionRatio)
+      }
+      // Pick the index with the highest current ratio above a small
+      // threshold; falls back to current activeActivityIdx if nothing
+      // is visible enough.
+      let best = activeActivityIdx
+      let bestRatio = 0
+      for (const [idx, ratio] of visibility) {
+        if (ratio > bestRatio + 0.05) {
+          bestRatio = ratio; best = idx
+        }
+      }
+      if (best !== activeActivityIdx) setActiveActivityIdx(best)
+    }, { root, threshold: [0.25, 0.5, 0.75] })
+    cardsRef.current.forEach(el => el && observer.observe(el))
+    return () => observer.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safeActiveDay, activities.length])
 
   return (
     <div style={{
@@ -2144,7 +2206,12 @@ function DesktopItinerary({ dest, dateRange, days, safeActiveDay, setDay, isStre
             gap: 18, alignItems: 'start',
           }}>
             {activities.map((ia, idx) => (
-              <DesktopActivityCard key={ia.activity?.activity_id || idx} ia={ia} index={idx}/>
+              <DesktopActivityCard
+                key={ia.activity?.activity_id || idx}
+                ia={ia}
+                index={idx}
+                cardRef={(el) => { if (el) cardsRef.current[idx] = el }}
+              />
             ))}
             {activities.length === 0 && (
               <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 16, color: MUTE, padding: '20px 4px' }}>
@@ -2159,10 +2226,12 @@ function DesktopItinerary({ dest, dateRange, days, safeActiveDay, setDay, isStre
 }
 
 
-function DesktopActivityCard({ ia, index }) {
+function DesktopActivityCard({ ia, index, cardRef }) {
   const a = ia?.activity || {}
   return (
     <motion.div
+      ref={cardRef}
+      data-idx={index}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: 0.04 * index, ease: [0.16, 1, 0.3, 1] }}
@@ -2312,7 +2381,58 @@ function PhoneDestinationHeader({ dest, dateRange }) {
   )
 }
 
-function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isStreaming, scrollRef }) {
+function PhoneItinerary({
+  dest, dateRange, days, safeActiveDay, setDay, day, isStreaming, scrollRef,
+  activeActivityIdx = 0, setActiveActivityIdx,
+}) {
+  // Sync layer for the cross-view activity focus. Each row gets a ref +
+  // data-idx. On mount (i.e. view switch back from desktop) the active
+  // idx row is scrolled into the phone's scroll container. While the
+  // user scrolls the phone, an IntersectionObserver pushes the active
+  // idx up to parent state so flipping back to desktop preserves it.
+  const rowsRef = useRef([])
+  rowsRef.current = []
+
+  useEffect(() => {
+    const el = rowsRef.current[activeActivityIdx]
+    const container = scrollRef?.current
+    if (!el || !container) return
+    const t = setTimeout(() => {
+      try {
+        // Phone uses an inner scroll container, so scrollIntoView with
+        // 'auto' on the parent puts the row at the top of the visible
+        // area; we offset slightly so it doesn't sit flush.
+        const target = el.offsetTop - 80
+        container.scrollTo({ top: Math.max(0, target), behavior: 'auto' })
+      } catch { /* noop */ }
+    }, 60)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safeActiveDay])
+
+  useEffect(() => {
+    if (!setActiveActivityIdx) return
+    const container = scrollRef?.current
+    if (!container) return
+    const visibility = new Map()
+    const observer = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        visibility.set(Number(e.target.dataset.idx), e.intersectionRatio)
+      }
+      let best = activeActivityIdx
+      let bestRatio = 0
+      for (const [idx, ratio] of visibility) {
+        if (ratio > bestRatio + 0.05) {
+          bestRatio = ratio; best = idx
+        }
+      }
+      if (best !== activeActivityIdx) setActiveActivityIdx(best)
+    }, { root: container, threshold: [0.25, 0.5, 0.75] })
+    rowsRef.current.forEach(el => el && observer.observe(el))
+    return () => observer.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safeActiveDay, days])
+
   // Auto-scroll the active day pill into the center of the strip when the
   // selected day changes (e.g. swipe gesture, or click from the Index).
   const stripRef = useRef(null)
@@ -2431,6 +2551,8 @@ function PhoneItinerary({ dest, dateRange, days, safeActiveDay, setDay, day, isS
                   <PhoneActivityRow
                     key={ia.activity?.activity_id || `${day.day_number}-${j}`}
                     ia={ia}
+                    index={j}
+                    rowRef={(el) => { if (el) rowsRef.current[j] = el }}
                     last={j === (day.activities?.length ?? 1) - 1}
                   />
                 ))}
@@ -2466,11 +2588,13 @@ function _fmtDay(v) {
   } catch { return '' }
 }
 
-function PhoneActivityRow({ ia, last }) {
+function PhoneActivityRow({ ia, last, index, rowRef }) {
   const a = ia?.activity || {}
   const why = ia?.why_this
   return (
     <motion.div
+      ref={rowRef}
+      data-idx={index}
       variants={cardReveal}
       whileHover={{ x: 2, transition: { duration: 0.2 } }}
       whileTap={{ scale: 0.985 }}
