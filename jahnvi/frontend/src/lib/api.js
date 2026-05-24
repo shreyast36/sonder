@@ -326,6 +326,10 @@ export async function getTripPreview(itineraryId) {
   return get(`/api/discover/trips/${encodeURIComponent(itineraryId)}/preview`)
 }
 
+export async function fireSyntheticNow(kind = null) {
+  return post('/api/discover/synthetic/fire-now', kind ? { kind } : {})
+}
+
 export async function listMyJoinRequests({ asOwner = false } = {}) {
   const q = asOwner ? '?as=owner' : ''
   return get(`/api/discover/join-requests${q}`)
