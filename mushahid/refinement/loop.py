@@ -19,7 +19,6 @@ async def run_single_revision(
     feedback: str,
     seed_validation: ValidationResult,
     activity_feedback: list[ActivityFeedback] | None = None,
-    task_type: str = "complex_refinement",
 ) -> tuple[Itinerary, ValidationResult]:
     """One-pass user-initiated revision.
 
@@ -30,9 +29,16 @@ async def run_single_revision(
         trying to satisfy the critic.
       - Skips the best-effort re-embed (the loop wraps it in try/except: pass
         anyway, and embedding updates can happen out-of-band on next save).
-      - `task_type` lets callers route SMALL-scope edits to the cheap fast
-        model (`quick_edit`) and LARGE rewrites to the big model
-        (`complex_refinement`).
+
+    Tier note: we always use `complex_refinement` (large model). The small
+    tier caps output at 512-1024 tokens — fine for chat replies, but a
+    full itinerary JSON is 3-8k tokens and gets truncated, causing
+    parse_itinerary to throw. If we want a fast path, it needs to be a
+    targeted day-level patch (separate codepath), not a full regen on a
+    short-token model.
+
+    Raises on regen/parse failure so the caller can surface a real error
+    instead of silently returning the unchanged original.
 
     Returns (revised_itinerary, validation_result). The caller persists +
     enriches with history bookkeeping.
@@ -51,22 +57,25 @@ async def run_single_revision(
             seed_validation.improvement_suggestions
         )
 
-    # Single regen pass.
-    revised = itinerary
-    try:
-        chunks: list[str] = []
-        async for chunk in generate_refined_itinerary(
-            itinerary, combined_feedback, seed_validation, task_type=task_type,
-        ):
-            chunks.append(chunk)
-        raw = "".join(chunks)
-        revised = parse_itinerary(
-            raw, user_profile,
-            destination=itinerary.destination,
-            activities=[ia.activity for day in itinerary.days for ia in day.activities],
-        )
-    except Exception:
-        revised = itinerary  # fall back to original on parse failure
+    # Single regen pass. Errors propagate — caller turns them into a 502
+    # so the user sees "revision failed" instead of an unchanged screen.
+    chunks: list[str] = []
+    async for chunk in generate_refined_itinerary(
+        itinerary, combined_feedback, seed_validation,
+        task_type="complex_refinement",
+    ):
+        chunks.append(chunk)
+    raw = "".join(chunks)
+    revised = parse_itinerary(
+        raw, user_profile,
+        destination=itinerary.destination,
+        activities=[ia.activity for day in itinerary.days for ia in day.activities],
+    )
+
+    # Preserve the original itinerary_id so the route's bookkeeping
+    # (history append, current-trip pointer, dedupe) keeps targeting the
+    # same document instead of forking a new id on every revise.
+    revised = revised.model_copy(update={"itinerary_id": itinerary.itinerary_id})
 
     # Single validate pass — same gates as the loop, no retry.
     try:

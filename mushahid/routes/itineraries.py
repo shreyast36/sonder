@@ -388,11 +388,6 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
     # user stares at a frozen button. We do one regen + one validate and
     # return whatever the validator says; the user can revise again if
     # they want.
-    #
-    # Tier picked from the classifier: SMALL → quick_edit (cheap, fast
-    # small model); LARGE → complex_refinement (big model with head-room).
-    task_type = "quick_edit" if verdict["scope"] == "small" else "complex_refinement"
-
     revised = itinerary
     final_validation: ValidationResult | None = None
     try:
@@ -404,7 +399,6 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
                 itinerary, user_profile, feedback_for_loop,
                 seed_validation,
                 activity_feedback=structured_targets,
-                task_type=task_type,
             ),
             timeout=75.0,
         )
@@ -412,7 +406,11 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
         logger.warning("revise: single-pass revision exceeded 75s ceiling")
         raise HTTPException(status_code=504, detail="Revision took too long — please try a smaller change.")
     except Exception as e:
+        # Don't swallow — return a real error instead of an unchanged
+        # itinerary. The UI was showing the approve gate with no diff
+        # because we used to fall through silently when parse failed.
         logger.warning("revise: single-pass revision failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"Revision failed — please try again. ({type(e).__name__})")
 
     # ── 3b. Update per-user ranker weights from this feedback turn ──
     # Decay the boost on every repeat turn so weights don't oscillate
