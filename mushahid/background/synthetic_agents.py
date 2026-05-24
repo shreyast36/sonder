@@ -273,29 +273,6 @@ async def _run_action(persona) -> None:
         logger.warning("synthetic_agents: action failed: %s", e)
 
 
-async def fire_one_now(kind: str | None = None) -> dict:
-    """Manual trigger — picks a persona and fires one action right now.
-    Used by the debug endpoint so users / devs can verify the loop end-
-    to-end without waiting for the next interval. Returns a dict
-    describing what happened so the caller can show it in the UI.
-
-    `kind` can force 'post' or 'trip'; otherwise random."""
-    personas = await _pick_personas(n=8)
-    if not personas:
-        return {"ok": False, "reason": "no personas available"}
-    persona = random.choice(personas)
-    try:
-        if kind == "trip" or (kind is None and random.random() < 0.5):
-            await _emit_open_trip(persona)
-            return {"ok": True, "kind": "trip", "persona": getattr(persona, "display_name", "")}
-        else:
-            await _emit_post(persona)
-            return {"ok": True, "kind": "post", "persona": getattr(persona, "display_name", "")}
-    except Exception as e:
-        logger.warning("fire_one_now failed: %s", e)
-        return {"ok": False, "reason": str(e)}
-
-
 async def _seed_burst(personas: list, count: int) -> None:
     """Fire `count` actions in parallel on cold-start so the surface
     isn't empty when the first user lands. Uses asyncio.gather so the

@@ -434,20 +434,6 @@ async def _score_against_synthetic(viewer_uid: str, snap: dict) -> float | None:
         return None
 
 
-class FireSyntheticBody(BaseModel):
-    kind: str | None = None   # "post" | "trip" | None (random)
-
-
-@router.post("/discover/synthetic/fire-now")
-async def fire_synthetic_now(body: FireSyntheticBody, uid: str = Depends(verify_token)):
-    """Debug endpoint: trigger one synthetic action immediately. Lets the
-    user / dev verify the loop end-to-end without waiting for the next
-    interval. Auth-gated to any signed-in user."""
-    from mushahid.background.synthetic_agents import fire_one_now
-    result = await fire_one_now(kind=body.kind)
-    return result
-
-
 @router.get("/discover/trips/{itinerary_id}/preview")
 async def trip_preview(itinerary_id: str, uid: str = Depends(verify_token)):
     """Lightweight detail payload for the trip-detail modal. Returns

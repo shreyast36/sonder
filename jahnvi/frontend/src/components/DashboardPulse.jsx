@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import {
-  listOpenTrips, requestToJoin, getTripPreview, fireSyntheticNow,
+  listOpenTrips, requestToJoin, getTripPreview,
   listFeed, createPost, deletePost as apiDeletePost,
   listComments, addComment,
 } from '../lib/api'
@@ -809,8 +809,6 @@ export default function DashboardPulse({ selfUid }) {
   const [tripPreview, setTripPreview] = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [verdict, setVerdict] = useState(null)
-  const [conjuring, setConjuring] = useState(false)
-  const [conjureMsg, setConjureMsg] = useState(null)
 
   // initial + slow background poll (real-time WS fills the gap)
   const tripsPollRef = useRef(null)
@@ -936,26 +934,6 @@ export default function DashboardPulse({ selfUid }) {
       setJoinErr(e?.message || 'Could not send request')
     } finally {
       setJoinBusy(false)
-    }
-  }
-
-  async function conjure(kind) {
-    if (conjuring) return
-    setConjuring(true); setConjureMsg(null)
-    try {
-      const res = await fireSyntheticNow(kind)
-      if (res?.ok) {
-        setConjureMsg(`${res.persona || 'A traveller'} just ${res.kind === 'trip' ? 'opened a trip' : 'posted'} — refreshing…`)
-        // The realtime WS push will deliver it, but kick a poll too in case.
-        await Promise.all([fetchTrips(), fetchFeed()])
-      } else {
-        setConjureMsg(`Couldn't conjure activity: ${res?.reason || 'unknown'}`)
-      }
-    } catch (e) {
-      setConjureMsg(`Couldn't conjure activity: ${e?.message || 'request failed'}`)
-    } finally {
-      setConjuring(false)
-      setTimeout(() => setConjureMsg(null), 4500)
     }
   }
 
@@ -1096,36 +1074,14 @@ export default function DashboardPulse({ selfUid }) {
               </div>
             )}
             {!loadingTrips && tripsToShow.length === 0 && (
-              <div style={{ padding: '28px 24px 24px', borderRadius: 14, border: `1px dashed ${HAIRLINE}`, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div>
-                  <MapPin size={18} style={{ color: VIOLET, opacity: 0.6, marginBottom: 8 }}/>
-                  <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 18, color: BONE, margin: 0 }}>
-                    No open trips right now.
-                  </p>
-                  <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 11.5, color: MUTE, margin: '6px 0 0', lineHeight: 1.55 }}>
-                    Synthetic travellers post every 15-50s. You can also conjure one now.
-                  </p>
-                </div>
-                <button
-                  onClick={() => conjure('trip')}
-                  disabled={conjuring}
-                  style={{
-                    alignSelf: 'center',
-                    padding: '8px 16px', borderRadius: 999,
-                    background: `linear-gradient(135deg, ${VIOLET} 0%, #6D28D9 100%)`,
-                    border: 'none', cursor: conjuring ? 'wait' : 'pointer', color: '#fff',
-                    fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 500,
-                    letterSpacing: '0.22em', textTransform: 'uppercase',
-                    opacity: conjuring ? 0.6 : 1,
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    boxShadow: `0 6px 16px ${VIOLET}44`,
-                  }}
-                >
-                  {conjuring
-                    ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, ease: 'linear', repeat: Infinity }}><Loader2 size={10}/></motion.span>
-                    : <Sparkles size={10}/>}
-                  Conjure a trip
-                </button>
+              <div style={{ padding: '32px 24px', borderRadius: 14, border: `1px dashed ${HAIRLINE}`, textAlign: 'center' }}>
+                <MapPin size={18} style={{ color: VIOLET, opacity: 0.6, marginBottom: 8 }}/>
+                <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 18, color: BONE, margin: 0 }}>
+                  Quiet for now.
+                </p>
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 11.5, color: MUTE, margin: '6px 0 0', lineHeight: 1.55 }}>
+                  Open your own trip to companions — your card will appear here first.
+                </p>
               </div>
             )}
             <AnimatePresence initial={false}>
@@ -1160,42 +1116,9 @@ export default function DashboardPulse({ selfUid }) {
               </div>
             )}
             {!loadingFeed && postsToShow.length === 0 && (
-              <div style={{ padding: '20px 24px', borderRadius: 14, border: `1px dashed ${HAIRLINE}`, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 17, color: MUTE, margin: 0 }}>
-                  No voices yet.
-                </p>
-                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 11.5, color: DIM, margin: 0, lineHeight: 1.55 }}>
-                  Post above to start the room, or pull a persona in.
-                </p>
-                <button
-                  onClick={() => conjure('post')}
-                  disabled={conjuring}
-                  style={{
-                    alignSelf: 'flex-start',
-                    padding: '7px 14px', borderRadius: 999,
-                    background: 'transparent',
-                    border: `1px solid ${GOLD}55`,
-                    cursor: conjuring ? 'wait' : 'pointer', color: GOLD,
-                    fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 500,
-                    letterSpacing: '0.22em', textTransform: 'uppercase',
-                    opacity: conjuring ? 0.6 : 1,
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                  }}
-                >
-                  {conjuring
-                    ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, ease: 'linear', repeat: Infinity }}><Loader2 size={10}/></motion.span>
-                    : <Sparkles size={10}/>}
-                  Conjure a voice
-                </button>
-              </div>
-            )}
-            {conjureMsg && (
-              <motion.p
-                initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-                style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: GOLD, margin: '4px 0 0', letterSpacing: '0.04em' }}
-              >
-                {conjureMsg}
-              </motion.p>
+              <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 17, color: MUTE, margin: '8px 4px' }}>
+                Be the first voice in the room.
+              </p>
             )}
             <AnimatePresence initial={false}>
               {postsToShow.map(p => (
