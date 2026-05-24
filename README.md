@@ -585,6 +585,89 @@ Every persona-voiced surface (chat replies, proposal accept/counter, persona-ini
 
 **Output shape discipline** — all structured outputs (proposal verdict, suggestion, post body, opener) require `Return ONLY valid JSON. No markdown fences.` plus a balanced-brace fallback parser in `_parse_json_object` for the inevitable code-fenced output. Posts and opener strip quote-wrapping defensively.
 
+### Validator engine — pluggable critic + repair stack
+
+`mushahid/validation/validator_engine.py` ships a fully-configurable critic / repair stack. Every threshold, prompt, taxonomy stem, regex, and structure lives in one frozen `ValidatorEngineConfig` dataclass so the engine itself stays generic and reviewable from a single file.
+
+**Five separate validator prompts** — each strict and category-scoped:
+
+| Validator | Categories it checks |
+|---|---|
+| `itinerary_critic_system` | budget_fit · pacing_realism · must_haves_covered · avoid_list_respected · day_sequence_logic · activity_specificity · feasibility_risk |
+| `persona_reveal_validator_system` | concrete_observation · evidence_fidelity · no_itinerary_content · specificity · internal_label_leakage |
+| `cotraveller_match_validator_system` | ranking_grounding · evidence_fidelity · specificity · tension_awareness · internal_label_leakage · tone |
+| `chat_reply_validator_system` | assistant_voice · ai_leakage · semantic_drift · token_stutter · empty_token_generation · romantic_vibes · taxonomy_leakage · unsafe_or_weird · bad_conversation_dynamics · contradiction_memory |
+| `chat_reply_repair_system` | Rewrite-once instruction — under 50 words, preserve context, no quotes / preamble / helper speech / loops |
+
+**Every validator returns the same shape** — `{"valid": bool, "issues": [{"category", "severity": "low|medium|high", "evidence", "fix"}]}` — so severity-based decisioning and repair routing is generic across surfaces.
+
+**Itinerary critic — Swapability Test**: the user template ends with `"If an activity description applies anywhere else without changing context, it fails specificity"`. Combined with the explicit instruction `"Penalize generic activities heavily unless they include enough detail to be actionable"`, this catches Sonnet's tendency to write "explore the Old Town" instead of "the rosé-coloured cafés on Largo do Carmo at golden hour."
+
+**Local pre-check before the LLM call** — `chat_reply_local_precheck` runs fast deterministic checks first:
+
+- `min_acceptable_reply_length` (`< 3` chars → `empty_token_generation` issue, return immediately, never even hit the LLM).
+- `has_repetition` → `token_stutter` issue.
+- `evaluate_semantic_genericity` — counts hits against a 15-stem set (`"sounds amazing"`, `"hidden gem"`, `"bucket list"`, `"fellow traveler"`, etc), scores `base + matches × multiplier`, fires if above `genericity_threshold (0.80)`. The score is also surfaced in telemetry per-event so PostHog can watch the genericity distribution drift over time.
+
+This local pass either kills the bad reply outright (no LLM cost) or feeds its `issues` list to the LLM repair prompt as concrete `VALIDATION ISSUES` context, so the rewrite is grounded rather than blind.
+
+**Memory contradiction detection** — `evaluate_memory_contradictions` parses the chat history with two regex templates (`past_destinations` matches `"i've been to X"` / `"visited X"`; `past_negations` matches `"never been to X"` / `"haven't visited X"`) and flags any reply that contradicts the established timeline. Catches a real failure mode where the persona "remembers" trips that never happened or denies trips it just claimed.
+
+**Telemetry per execution** — every validator run emits a `TelemetryEvent` to PostHog with `validator_passed_first_try`, `repair_triggered`, `repair_count`, `regex_precheck_hit`, `total_latency_ms`, `semantic_genericity_score`, `execution_log`, and `detected_anomalies`. Lets us watch validator behaviour empirically rather than trusting the prompts to keep working as the underlying models drift.
+
+**Async edit-in-place (chat reply only)** — the validator is fully off the critical path; the unvalidated reply is broadcast immediately, then `_validate_async` runs in `asyncio.create_task`. If the repair changes the text, `update_chat_message_content` patches the persisted doc and the WS broadcasts a `message_edited` event; `useWebSocket`'s handler swaps the bubble text in place. Users see the reply land instantly and watch it quietly self-correct a moment later when needed — quality without latency cost.
+
+### Ranking architecture — pipeline of stages, equal-weight priors, observability built in
+
+All three rankers (co-traveller, destination, activity) run through one generic engine in `shreyas/ranking/engine.py`. The engine knows nothing about specific features, weights, or taxonomies — it executes the policy's declared `pipeline = [FeatureScoringStage, InteractionStage, WeightedCombinerStage, RerankerStage]`. **`InteractionStage` and `RerankerStage` are no-ops in V1 but live in the pipeline now so adding cross-candidate features / diversity / fatigue / sequencing later doesn't require an engine rewrite.**
+
+**Policy = declarative config, not code paths.** Each policy file (`policies/cotraveller.py`, `destination.py`, `activity.py`) is just a module exposing:
+
+```python
+features: list[str]           # which feature functions to score
+weights: dict[str, float]     # currently {f: 1/N for f in features}
+pipeline: list                # stage instances in order
+feedback_policy: dict         # boost/reduce/min_weight/renormalization hyperparams
+include_retrieval_in_sum: bool   # avoids double-counting pinecone_passthrough in V1
+```
+
+**`FEATURE_REGISTRY` — 10 reusable scoring functions** in `shreyas/ranking/features.py`:
+
+| Feature | Signal |
+|---|---|
+| `pinecone_passthrough` | Raw cosine retrieval score |
+| `salience_weighted_question_overlap` | Per-question PPM-keyword alignment × the viewer's `answer_salience` (so users who wrote more revealing free text get `small_thing` weighted higher automatically) |
+| `signature_proximity` | Identity (1.0 if same emotional signature, else 0.0) — no hand-picked similarity matrix until feedback can learn one |
+| `pace_ordinal_fit` / `budget_ordinal_fit` | Ordinal distance on the enum |
+| `style_match` | Travel-style exact match |
+| `interest_jaccard` / `tag_interest_overlap` | Two flavours of interest overlap |
+| `activity_cost_fit` / `pace_duration_fit` | Activity-only fits |
+
+Every policy ships with `weights = {f: 1/N for f in features}` — **equal-weight priors expressing honest uncertainty**. We haven't earned any confidence in feature importance yet; per-user weights override the policy defaults via `compatibility_signals.ranker_weights[surface]` once feedback has shaped them. Budget acts as a feasibility gate (raw `budget_usd / trip_days` cutoff in `filters.py`, no fudge multipliers), not a positive ranker signal.
+
+**`ScoreSheet` separates retrieval from features from rerank.** Threaded through every stage:
+
+```python
+candidate          # underlying object (CoTravellerProfile / Destination / Activity)
+retrieval_score    # pinecone cosine, set once at engine entry, never modified
+feature_scores     # {name: (raw, weighted)}  — both kept so observability can see raw distributions
+feature_snippets   # {name: "human explanation"} — feeds the match_reasons UI
+rerank_adjustments # {name: float}  — empty in V1, reserved for MMR / fatigue / sequencing
+final_score        # retrieval (if include_retrieval_in_sum) + Σ(weighted) + Σ(rerank), clipped to [0,1]
+```
+
+V1 has `include_retrieval_in_sum: False` because `pinecone_passthrough` is in `features` — including both would double-count. V2 will drop `pinecone_passthrough` from the feature list and give retrieval its own weight slot via the flag.
+
+**Per-question salience drives the overlap feature.** `compute_answer_salience` counts PPM-keyword density across each persona answer (chip + free text), normalising to a distribution summing to 1.0. The `salience_weighted_question_overlap` feature multiplies per-question answer alignment by the viewer's salience — so users who wrote more revealing free text get their `small_thing` weighted higher automatically. Persisted on `compatibility_signals.answer_salience` at persona-infer time so the feature is deterministic across runs.
+
+**Deterministic text-feedback learning.** `apply_text_feedback` in `feedback.py` runs a regex `TEXT_FEEDBACK_KEYWORDS` map — `\bcheap(?:er)?\b` → `[budget_ordinal_fit, activity_cost_fit]`, `\bless\s+packed\b` → `[pace_ordinal_fit, pace_duration_fit]`, `\blocal|authentic|touristy\b` → `[tag_interest_overlap]`, interest words → `[tag_interest_overlap, interest_jaccard]`. Multiple matches stack additively. Boost / reduce / clamp / renormalization hyperparameters come from the policy's `feedback_policy` dict, NOT the keyword map — so the same map can drive different learning rates per surface.
+
+**Structured per-activity edits go to `feature_logging`.** `POST /update-trip` accepts `ActivityFeedback[]` (`{activity_id, action: "swap"|"remove"|"adjust_time", reason?}`). Each event lands in Firestore with the candidate's feature breakdown at the time of the action. V2 will compute replacement gradients (`accepted.features - rejected.features`) once delta data accumulates — until then, the structured stream is the data substrate that lets us bootstrap real learning later.
+
+**Feature-stats observability built in.** `feature_stats.py` records every feature observation (mean / variance / count, p50/p95 later) per `surface × feature` so silent scale domination is visible — e.g. if `pinecone_passthrough` is winning 80% of the combined score because its raw distribution sits at 0.78 while ordinal fits sit at 0.5, you see it in Firestore aggregates rather than discovering it via empty engagement metrics three months in. Same flow per ranking surface, same dashboard.
+
+**Cross-candidate live updates via chat signal scanner.** The match-score isn't frozen at retrieval time — `_apply_chat_signals` runs after every user message, calls `scan_and_apply` over the message text, updates the session's `live_weights`, and re-runs `score_compatibility(viewer, candidate)` with those weights spliced into `ranker_weights["cotraveller"]`. The refreshed `match_score` is what the persona's reciprocal-approval threshold reads at decision time.
+
 ### Persona inference — five oblique questions
 
 Five questions designed to surface latent travel psychology without ever naming the dimensions:
