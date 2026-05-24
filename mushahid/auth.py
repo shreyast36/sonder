@@ -44,6 +44,20 @@ async def verify_token(authorization: str = Header(...)) -> str:
     return _verify(authorization.removeprefix("Bearer "))
 
 
+async def verify_token_optional(authorization: str | None = Header(default=None)) -> str | None:
+    """Like verify_token but returns None for anonymous callers instead of 401.
+    Use on endpoints that are publicly readable (e.g. share links) but can
+    return a richer view when the caller is signed in."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    try:
+        return _verify(authorization.removeprefix("Bearer "))
+    except HTTPException:
+        # Invalid/expired token on a public route — treat as anonymous
+        # rather than rejecting the request.
+        return None
+
+
 def verify_token_string(token: str) -> str:
     """Verify a raw token string (no 'Bearer ' prefix).
     Used for WebSocket first-message auth — do NOT pass tokens in query params."""

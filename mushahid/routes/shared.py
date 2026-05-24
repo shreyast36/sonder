@@ -36,7 +36,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ali.generation.proposal_evaluator import evaluate_proposal
-from mushahid.auth import verify_token
+from mushahid.auth import verify_token, verify_token_optional
 from mushahid.realtime.firestore import (
     get_chat_session, get_itinerary, get_shared_itinerary,
     write_shared_itinerary,
@@ -390,10 +390,22 @@ class RespondRequest(BaseModel):
 
 
 @router.get("/shared/{itinerary_id}")
-async def get_state(itinerary_id: str, uid: str = Depends(verify_token)):
+async def get_state(itinerary_id: str, uid: str | None = Depends(verify_token_optional)):
     """Return the full SharedItinerary. Bootstraps on first read so the
     frontend can render immediately after the approval step without a
-    separate init call."""
+    separate init call.
+
+    Public share link: anonymous visitors get a read-only view of an
+    already-existing SharedItinerary. Bootstrapping (which requires a
+    chat session) and participant assertion only run for signed-in users.
+    """
+    if uid is None:
+        # Anonymous viewer: must read an existing shared doc; no bootstrap.
+        shared = await get_shared_itinerary(itinerary_id)
+        if shared is None:
+            raise HTTPException(status_code=404, detail="Shared itinerary not found")
+        return shared.model_dump(mode="json")
+
     shared, _ = await _load_or_bootstrap(itinerary_id, uid)
     _assert_participant(shared, uid)
     return shared.model_dump(mode="json")
