@@ -13,14 +13,15 @@ Sonder takes a user from zero to a personalised, day-by-day itinerary, matches t
 **Full user journey:**
 
 1. **Persona reveal** — Enter trip basics (destination, dates, budget in any currency, must-haves) + five oblique persona questions. Get a descriptor, paragraph, bullets, emotional-tone subtitle, and inferred push/pull dimensions.
-2. **Itinerary generation** — Live-streamed, day-by-day, with "Why this?" RAG explanations per activity. Auto-saved to your trip history.
-3. **Trip vault** — Every saved trip on the dashboard. Switch the active one, open Journal entries, jump to the destination feed.
-4. **Co-traveller matching** — Curated top-3 matches, scored on a transparent salience-weighted feature pipeline. Synthetic personas (LLM-designed) fill the pool until real-user density is there.
-5. **Chat → mutual approval** — Real-time WebSocket chat with presence, typing, seen receipts, in-app banners, OS push. The persona's reciprocal approval is a coin flip weighted by the live match score (no hardcoded thresholds).
-6. **Shared itinerary negotiation** — Once approved, a `/shared/{id}` page where both sides propose, counter, and accept activity changes. Persona evaluations run off the request path so the UI feels instant; verdicts arrive over WebSocket. Optimistic locking on `version` prevents silent overwrites.
-7. **Sonder Pulse (Dashboard)** — A live two-column section showing **Open invitations** (trips other people opened for companions) and **The room** (a social feed of posts + threaded comments). Synthetic personas autonomously post and open trips every 15-50 seconds; real users join the room organically.
-8. **Join-to-trip flow** — Click any open invitation → a detail modal with persona snapshot, match-preview percentage, and a colour-coded fit label. Synthetic trips auto-resolve instantly using the same compatibility signal that drives matching; approved requests add you to the trip's co-traveller list.
-9. **Finalise** — Pair locks the itinerary in. Email it or download a PDF.
+2. **Itinerary generation** — Live-streamed, day-by-day, with "Why this?" RAG explanations per activity. Auto-saved to your trip history. View it in **Both / Desktop / Mobile** tabs — the bi-view shows the editorial desktop layout alongside the phone mockup, cross-view scroll sync keeps the active activity in frame as you switch.
+3. **Approve or revise** — Trip lands in `draft` state. Approve locks it in; revise streams a regenerated trip back day-by-day via SSE with a live diff toast (`Swapped Freehand Chicago → St. Jane Chicago`). Per-revise per-user ranker weight delta with reinforcement decay so repeated similar feedback doesn't oscillate the weights.
+4. **Trip vault** — Every saved trip on the dashboard. Switch the active one, open Journal entries, jump to the destination feed.
+5. **Co-traveller matching** — Curated top-3 matches, scored on a transparent salience-weighted feature pipeline. Synthetic personas (LLM-designed) fill the pool until real-user density is there.
+6. **Chat → mutual approval** — Real-time WebSocket chat with presence, typing, seen receipts, in-app banners, OS push. The persona's reciprocal approval is a coin flip weighted by the live match score (no hardcoded thresholds).
+7. **Shared itinerary negotiation** — Once approved, a `/shared/{id}` page where both sides propose, counter, and accept activity changes. Persona evaluations run off the request path so the UI feels instant; verdicts arrive over WebSocket. Optimistic locking on `version` prevents silent overwrites.
+8. **Sonder Pulse (Dashboard)** — A live two-column section showing **Open invitations** (trips other people opened for companions) and **The room** (a social feed of posts + threaded comments). Synthetic personas autonomously post and open trips every 15-50 seconds; real users join the room organically.
+9. **Join-to-trip flow** — Click any open invitation → a detail modal with persona snapshot, match-preview percentage, and a colour-coded fit label. Synthetic trips auto-resolve instantly using the same compatibility signal that drives matching; approved requests add you to the trip's co-traveller list.
+10. **Finalise** — Pair locks the itinerary in. Email it or download a PDF.
 
 ---
 
@@ -186,6 +187,7 @@ The router engine reads provider per tier from env; each provider client reads i
 | Feature | Transport | Direction | Owner |
 |---|---|---|---|
 | Itinerary generation progress | SSE (`/api/plan-trip`) | Server → user | Mushahid |
+| Itinerary revision progress | SSE (`/api/itineraries/{id}/revise`) | Server → user | Mushahid |
 | Chat messages + typing + seen | WebSocket (`/api/ws/chat/{session_id}`) | Bidirectional | Shreyas |
 | Co-traveller presence (TTL) | WS broadcast + Firestore `presence/{uid}` | Bidirectional | Shreyas |
 | Chat-reply edit-in-place (validator repair) | WS `message_edited` event | Server → user | Mushahid + Shreyas |
@@ -236,6 +238,83 @@ POST /shared/{id}/finalize     locks the itinerary (no more changes)
 Optimistic locking: every write checks `client_version == current_version`. Mismatch returns HTTP 409 — the client re-fetches and lets the user retry.
 
 The frontend `/shared/{id}` page renders a live activity feed (filtered to entries created after the page mounted, so reload gives a clean slate) and a per-day card grid with inline Accept / Counter / Replace / Move actions.
+
+### Itinerary approval lifecycle & user-initiated revision
+
+The initial generation pipeline (`run_refinement_loop` inside `/plan-trip`) is a quality gate — the validator can request up to `MAX_REFINEMENT_ATTEMPTS` rewrites before the trip lands on screen. After that, every itinerary lands in **draft** state. The user explicitly approves or asks for changes before the trip leaves draft and becomes the basis of any shared-itinerary or co-traveller activity.
+
+```
+generated itinerary (draft)
+   │
+   ├── POST /api/itineraries/{id}/approve       → status flips to 'finalized'
+   │                                              409 if already finalized
+   │
+   └── POST /api/itineraries/{id}/revise        → SSE stream (see below)
+                                                  409 if already finalized
+```
+
+The approval state lives on `Itinerary.approval_status` (`"draft"` | `"finalized"`) with `finalized_at` timestamp and a full `revision_history` array — one entry per revise turn carrying `feedback`, `scope`, `target_days`, `dropped_titles`, `added_titles`, `boosted_features`, `boost_multiplier`, `validation_*`, `created_at`.
+
+#### `/revise` — single-pass, streaming, day-targeted
+
+The /revise route does **not** reuse `run_refinement_loop`. The orchestrator loop iterates up to 3× trying to satisfy the LLM critic — fine on first-time generation, but on a user-initiated revise it amplifies wall time 3× while the user watches a frozen modal. Instead:
+
+1. **Classify the feedback** via `mushahid/refinement/classifier.py` — emits `{scope: "small"|"large", target_day_numbers: [int], target_categories: [str], preserve: [str], summary: str}`. Falls back to scope=large on parse failure.
+2. **Build dedupe blacklist** — every title the user has rejected on prior turns is appended to the prompt as `DO NOT RE-INTRODUCE`. Stops the LLM offering "Freehand Chicago" again on turn 3.
+3. **Single regen pass** via `stream_single_revision` in `mushahid/refinement/loop.py`:
+   - If `target_day_numbers` is set → uses the **targeted-day prompt** (`build_targeted_day_refinement_prompt` in `ali/generation/prompts.py`) that asks for a bare JSON array of just the affected days. Output tokens drop from ~10k (whole itinerary) to ~1-2k (one day).
+   - Otherwise → full-itinerary refinement prompt.
+   - Always uses the **LARGE tier** (`complex_refinement`). Routing SMALL-scope edits to the small tier caused silent truncation — the small client caps `max_tokens` at 512-1024, the regen output is 3-8k, so the stream got cut, parse failed, and the user saw the approve gate again with zero changes. Fast path = day-targeting, not model-downgrading.
+4. **Single validate pass** — same gates as the orchestrator loop (deterministic `run_all_checks` first, then `validate_large_output` if those pass). **No retry**. If the validator flags a constraint violation, the verdict comes back in the response — the user already asked for the change; we don't burn another minute trying to outsmart them. They can revise again.
+5. **Per-user ranker weight delta** with **decay** — `apply_text_feedback` boosts features the feedback text implies (`"cheaper"` → `budget_ordinal_fit`, `activity_cost_fit`; `"less packed"` → `pace_ordinal_fit`, `pace_duration_fit`). Turn 1 = full strength; turn 2 = ½; turn 3 = ¼; floor at ⅛. Stops weights oscillating when the user keeps pushing back on similar things.
+6. **`itinerary_id` is preserved** across revisions — `parse_itinerary` mints a fresh UUID on every call, so we explicitly overwrite it post-parse. Without this, history append + current-trip pointer + dedupe blacklist would fragment across new IDs every turn.
+
+#### SSE event sequence
+
+`/itineraries/{id}/revise` returns `text/event-stream` so the frontend sees changes as they land, not 60s later:
+
+```
+revising            { scope, target_days, hint: "Rewriting day 3…" }
+day_revised         { day_number, day }   ← one per day as its JSON closes
+validating          {}
+revision_done       { itinerary, validation, dropped_titles, added_titles, scope }
+revision_persisted  { turn }              ← history + weight delta written
+revision_failed     { message }           ← terminal error path
+```
+
+`stream_refined_itinerary_by_day` and `stream_refined_days_by_day` in `ali/generation/itinerary_generator.py` reuse the same forward-only brace-counter pattern as `generate_itinerary_by_day` — the full-itinerary stream waits for the `"days"` key, the targeted-day stream parses bare-array form from the first `{`. If the streaming detector misses everything (markdown fences, key-order quirks), a whole-buffer `parse_itinerary` fallback runs so we never silently no-op.
+
+The route returns immediately via `StreamingResponse`. Post-stream bookkeeping (history append, weight delta, monitoring `capture`, persist with `approval_status="draft"`) happens **after** the user already has the visible diff, then emits `revision_persisted`. If anything in bookkeeping fails the user still has the regenerated itinerary on screen — the failure is logged but doesn't break the visible flow.
+
+#### Frontend consumption
+
+`streamReviseItinerary` in `jahnvi/frontend/src/lib/api.js` takes a `handlers` object and consumes the SSE stream via `fetch` + `ReadableStream` (same pattern as `useSSE` for `/plan-trip`). 120s client-side timeout via `AbortController` — generous since the stream surfaces progress along the way, so a hung backend doesn't disguise itself as a working one.
+
+`handleRevise` in `Itinerary.jsx`:
+- Closes the modal immediately — progress shows as a top-of-screen toast so the user can watch the days update live.
+- On `day_revised`: splices the revised day into local `itinerary.days[]` by `day_number` so the currently-visible day re-renders the moment the LLM finishes it.
+- On `revision_done`: builds a friendly diff line — "Swapped Freehand Chicago → St. Jane Chicago" when exactly 1 in / 1 out, otherwise "Updated N activities" with truncated lists.
+- On `revision_failed`: red toast + records the message on `approveError`.
+
+Toast component supports `progress` / `done` / `error` styles; progress sticks until the next event lands, done auto-dismisses in 6.5s, error in 5s.
+
+### Bi-view itinerary surface
+
+The Itinerary page now has a three-way view toggle — **Both / Desktop / Mobile** — at the top of `<main>`. Defaults adapt to viewport: `≥1180px → both`, `≥900px → desktop`, `<900px → mobile`. Stored in `localStorage['sonder:itinerary:view']`.
+
+- **Both** — desktop editorial layout takes the main column, the phone mockup is sticky-pinned on the right at ~`(320..420)/PHONE_W` scale. Both surfaces visible at once.
+- **Desktop** — desktop layout full-width, no phone.
+- **Mobile** — phone mockup centred, no desktop layout.
+
+**Cross-view focus state**: a single `activeActivityIdx` is held in the parent and passed to both `PhoneItinerary` and `DesktopItinerary`. Each view runs an `IntersectionObserver` on its activity rows / cards and pushes the most-visible index up to the parent as you scroll. On view switch, the active view's `scrollIntoView({block: 'center'})` lands the same activity in its viewport — so flipping Mobile ↔ Desktop preserves not just the active day but which specific activity you were looking at.
+
+**Mouse-scrollable phone**: the wheel router (`onWheel` on `window`) gets a hit-test against `phoneSurfaceRef` — if the cursor is over the phone bounds, wheel always scrolls the phone's internal `phoneScrollRef`, even when the page itself can scroll. Needed for the bi-view, where the desktop column is tall (so `main.scrollHeight > clientHeight`) and the old "only hijack when page can't scroll" rule meant you could never mouse-wheel the phone preview alongside it.
+
+### Persona-first CTA labels
+
+The button labels follow the actual next step instead of the eventual destination:
+- TripPreferences final step: **"Determine your persona"** (next stop is `/persona-reveal`, not the itinerary).
+- PersonaReveal CTA: **"Plan your trip"** (the button that actually fires generation).
 
 ### Chat latency engineering (<5s target)
 
@@ -517,6 +596,8 @@ npm run dev
 | `GET`  | `/api/itineraries/list` | All saved trips, newest first |
 | `POST` | `/api/itineraries/{id}/save` | Append to history + mark current |
 | `POST` | `/api/itineraries/set-current` | Switch hero trip |
+| `POST` | `/api/itineraries/{id}/approve` | Flip `approval_status` → `"finalized"`. 409 if already finalized. Triggers downstream lock — no more revises after this. |
+| `POST` | `/api/itineraries/{id}/revise` | **SSE stream** — `revising` → `day_revised`* → `validating` → `revision_done` → `revision_persisted`. Body: `{feedback: str, targets?: ActivityFeedback[]}`. 409 if already finalized. 502 on regen failure. |
 | `GET`  | `/api/itineraries/{id}/companion-prefs` | Per-trip companion intake answers |
 | `POST` | `/api/itineraries/{id}/companion-prefs` | Persist intake answers |
 
@@ -884,7 +965,13 @@ A sweep across every code file surfaced a long tail of load-bearing decisions wo
 
 **`jahnvi/frontend/src/lib/destinationPhoto.js`** — Wikipedia REST API with `"City, Country"` → `"City"` fallback for disambiguation. 14-day localStorage TTL with **negative caching** (remembers when an article wasn't found so we don't re-query it). Free, CORS-permissive, no API key.
 
-**`jahnvi/frontend/src/pages/Itinerary.jsx`** — auto-saves generated trips via `autoSavedIdRef` double-persist guard. `PHASE_COPY` map intentionally returns `null` for transient internal events (`persona_inferred`, `retrieval_done`, `ranked`) so the UI label only updates on user-meaningful phases.
+**`jahnvi/frontend/src/pages/Itinerary.jsx`** — auto-saves generated trips via `autoSavedIdRef` double-persist guard. `PHASE_COPY` map intentionally returns `null` for transient internal events (`persona_inferred`, `retrieval_done`, `ranked`) so the UI label only updates on user-meaningful phases. **Three-way view mode** (`both` / `desktop` / `mobile`) — single `activeActivityIdx` parent state plus `IntersectionObserver` in each view keeps the focused activity synced across view switches. **Wheel router** routes mouse wheel to the phone's internal scroll whenever the cursor is over `phoneSurfaceRef` (not just when the page can't scroll) so the bi-view phone preview stays mouse-scrollable alongside a tall desktop column. **Revise handler** consumes the `/revise` SSE stream via `streamReviseItinerary`, splices revised days into local state on `day_revised`, and narrates progress in a top-of-screen toast (`Rewriting day 3…` → `Day 3 updated` → `Swapped X → Y`).
+
+**`mushahid/refinement/loop.py :: stream_single_revision`** — async generator powering `/revise`. One LLM regen + one validate, no `MAX_REFINEMENT_ATTEMPTS` loop. Routes to `stream_refined_days_by_day` when `target_day_numbers` is set (output 1-2k tokens) and `stream_refined_itinerary_by_day` otherwise (output 3-8k tokens). Always uses the large tier — small tier caps at 512-1024 tokens which silently truncates full-itinerary JSON. Emits SSE events as each day's JSON closes; falls back to a whole-buffer `parse_itinerary` if the brace counter detects nothing.
+
+**`mushahid/refinement/classifier.py`** — small-LLM JSON classifier that scopes user revise feedback. Emits `{scope, summary, target_day_numbers, target_categories, preserve}` so the route can pick the targeted-day prompt path, build a dedupe `DO NOT RE-INTRODUCE` blacklist from prior rejected titles, and feed FOCUS / PRESERVE hints into the regen prompt. Defaults to scope=large on parse failure — better to over-spend on one turn than ship a wrong small-edit. Balanced-brace fallback parser handles markdown-fenced output.
+
+**`mushahid/routes/itineraries.py :: /revise`** — wraps `stream_single_revision` in a `StreamingResponse`. Sniffs the final `revision_done` event off the stream and runs post-stream bookkeeping (revision_history append, per-user ranker weight delta with decay multiplier `max(0.125, 0.5 ** (turn-1))`, monitoring capture, persist with `approval_status="draft"`) **after** the user already has the diff on screen. Emits `revision_persisted` when bookkeeping completes. Failures in bookkeeping are logged but don't break the visible flow — the regenerated itinerary is already saved.
 
 **`jahnvi/frontend/src/pages/PersonaReveal.jsx`** — caches persona in localStorage keyed by a deterministic hash of the trip profile JSON. Changing answers automatically changes the hash and invalidates the cache; no explicit clear needed.
 
