@@ -356,15 +356,22 @@ export default function Itinerary() {
   const isWide    = vw >= 1180
   const isCompact = vw < 720
 
-  // View mode — desktop-optimised layout vs. the phone-mockup view.
-  // Desktop is default on wider screens since the phone wastes the
-  // horizontal real estate; mobile mockup is still one toggle away.
+  // View mode — three options:
+  //   'both'    — desktop layout + phone mockup side-by-side (default on
+  //               wide screens; both surfaces visible at once)
+  //   'desktop' — desktop-only, full width
+  //   'mobile'  — phone mockup only, centred
+  // Wide screens (≥1180) default to 'both' so users see the editorial
+  // desktop layout AND the phone preview without toggling. Mid screens
+  // (900-1180) default to 'desktop'; small (<900) to 'mobile'.
   const [viewMode, setViewMode] = useState(() => {
     try {
       const saved = localStorage.getItem('sonder:itinerary:view')
-      if (saved === 'mobile' || saved === 'desktop') return saved
+      if (saved === 'mobile' || saved === 'desktop' || saved === 'both') return saved
     } catch { /* noop */ }
-    return vw >= 900 ? 'desktop' : 'mobile'
+    if (vw >= 1180) return 'both'
+    if (vw >= 900)  return 'desktop'
+    return 'mobile'
   })
   function switchView(mode) {
     setViewMode(mode)
@@ -437,24 +444,46 @@ export default function Itinerary() {
     return Math.min(1, availW / (PHONE_W + 12))
   })()
 
-  // Route wheel events into the phone's inner scroll when the page itself
-  // has nowhere to go vertically. If the viewport is too short to fit the
-  // phone (high zoom, short laptops), the page scrolls naturally — wheel
-  // hijack stays out of the way so the user can reach the whole device.
+  // Route wheel events into the phone's inner scroll under two cases:
+  //   1. Cursor is currently hovering the phone surface — scroll the phone
+  //      directly even if the page itself can scroll. Needed for the
+  //      "both" bi-view where the desktop layout is tall (so main can
+  //      scroll), and you'd otherwise never be able to mouse-wheel the
+  //      phone preview alongside it.
+  //   2. Page itself has nowhere to go vertically (mobile-only mode at
+  //      high zoom / short laptops) — forward window-level wheel into
+  //      the phone so the user can reach the whole device.
   const phoneScrollRef = useRef(null)
+  const phoneSurfaceRef = useRef(null)   // outer phone bounds (for hover hit-test)
   const mainRef = useRef(null)
   const bootedRef = useRef(false)
   useEffect(() => { bootedRef.current = booted }, [booted])
   useEffect(() => {
     const onWheel = (e) => {
       if (!bootedRef.current) return
+      const el = phoneScrollRef.current
+      if (!el) return
+
+      // Case 1: cursor over the phone surface → scroll phone directly.
+      // We do this *before* the page-can-scroll check so the bi-view
+      // routes wheel to whichever surface the user is pointing at.
+      const surface = phoneSurfaceRef.current
+      if (surface) {
+        const r = surface.getBoundingClientRect()
+        const inside = e.clientX >= r.left && e.clientX <= r.right
+                    && e.clientY >= r.top  && e.clientY <= r.bottom
+        if (inside) {
+          el.scrollTop += e.deltaY
+          e.preventDefault()
+          return
+        }
+      }
+
+      // Case 2: page can scroll? Let it.
       const main = mainRef.current
-      // Page can scroll? Let it.
       if (main && main.scrollHeight - main.clientHeight > 4) return
       // Don't hijack scroll over the top nav.
       if (e.clientY < 68) return
-      const el = phoneScrollRef.current
-      if (!el) return
       el.scrollTop += e.deltaY
       e.preventDefault()
     }
@@ -579,12 +608,14 @@ export default function Itinerary() {
           natural page scroll automatically. */}
       <main ref={mainRef} style={{
         flex: 1, position: 'relative', zIndex: 1,
-        // Desktop view flows like a normal scrolling page; mobile view
-        // centres the phone mockup. Switch layout primitives per mode.
-        display: viewMode === 'desktop' && showingItinerary ? 'block' : 'flex',
-        alignItems: viewMode === 'desktop' && showingItinerary ? 'unset' : 'safe center',
-        justifyContent: viewMode === 'desktop' && showingItinerary ? 'unset' : 'safe center',
-        padding: isCompact ? '20px 0' : (viewMode === 'desktop' ? '0' : '32px 0'),
+        // Layout primitives per mode:
+        //   mobile / boot screen → flex centred so the phone sits mid-stage
+        //   desktop              → block flow so the editorial layout scrolls
+        //   both                 → block flow; the bi-view container handles its own grid
+        display: (viewMode === 'desktop' || viewMode === 'both') && showingItinerary ? 'block' : 'flex',
+        alignItems: (viewMode === 'desktop' || viewMode === 'both') && showingItinerary ? 'unset' : 'safe center',
+        justifyContent: (viewMode === 'desktop' || viewMode === 'both') && showingItinerary ? 'unset' : 'safe center',
+        padding: isCompact ? '20px 0' : (viewMode === 'mobile' ? '32px 0' : '0'),
         overflowX: 'hidden', overflowY: 'auto',
       }}>
         <DestinationBackdrop city={dest?.city} visible={booted && showingItinerary}/>
@@ -605,8 +636,9 @@ export default function Itinerary() {
             border: `1px solid ${HAIRLINE}`,
           }}>
             {[
-              { key: 'desktop', label: 'Desktop view' },
-              { key: 'mobile',  label: 'Mobile view'  },
+              { key: 'both',    label: 'Both'    },
+              { key: 'desktop', label: 'Desktop' },
+              { key: 'mobile',  label: 'Mobile'  },
             ].map(t => {
               const active = viewMode === t.key
               return (
@@ -633,13 +665,31 @@ export default function Itinerary() {
           </div>
         )}
 
-        {viewMode === 'mobile' || !showingItinerary ? (
-          <PhoneStage scale={phoneScale}>
-            <PhoneFrame onPowerButton={togglePower} powerButtonGlow={!booted && !booting}>
-              <PhoneStatusBar/>
-              {!showingItinerary ? (
-                <PhoneLoading phase={phase}/>
-              ) : (
+        {(() => {
+          // Boot screen always uses the phone stage centred — no itinerary
+          // surfaces to render yet.
+          if (!showingItinerary) {
+            return (
+              <PhoneStage scale={phoneScale} surfaceRef={phoneSurfaceRef}>
+                <PhoneFrame onPowerButton={togglePower} powerButtonGlow={!booted && !booting}>
+                  <PhoneStatusBar/>
+                  <PhoneLoading phase={phase}/>
+                  <PhoneHomeIndicator/>
+                  <AnimatePresence>
+                    {!booted && !booting && <PhoneSleepScreen key="sleep" onWake={powerOn}/>}
+                    {booting && <PhoneBootScreen key="boot"/>}
+                  </AnimatePresence>
+                </PhoneFrame>
+              </PhoneStage>
+            )
+          }
+
+          // Shared phone block — reused by 'mobile' and 'both' modes.
+          // Bi-view scales the phone down so it fits alongside desktop.
+          const phoneBlock = (extraScale = 1) => (
+            <PhoneStage scale={phoneScale * extraScale} surfaceRef={phoneSurfaceRef}>
+              <PhoneFrame onPowerButton={togglePower} powerButtonGlow={!booted && !booting}>
+                <PhoneStatusBar/>
                 <PhoneItinerary
                   dest={dest}
                   dateRange={dateRange}
@@ -652,27 +702,62 @@ export default function Itinerary() {
                   activeActivityIdx={activeActivityIdx}
                   setActiveActivityIdx={setActiveActivityIdx}
                 />
-              )}
-              <PhoneHomeIndicator/>
-              <AnimatePresence>
-                {!booted && !booting && <PhoneSleepScreen key="sleep" onWake={powerOn}/>}
-                {booting && <PhoneBootScreen key="boot"/>}
-              </AnimatePresence>
-            </PhoneFrame>
-          </PhoneStage>
-        ) : (
-          <DesktopItinerary
-            dest={dest}
-            dateRange={dateRange}
-            days={days}
-            safeActiveDay={safeActiveDay}
-            setDay={setDay}
-            isStreaming={isStreaming}
-            activeActivityIdx={activeActivityIdx}
-            setActiveActivityIdx={setActiveActivityIdx}
-            scrollContainerRef={mainRef}
-          />
-        )}
+                <PhoneHomeIndicator/>
+                <AnimatePresence>
+                  {!booted && !booting && <PhoneSleepScreen key="sleep" onWake={powerOn}/>}
+                  {booting && <PhoneBootScreen key="boot"/>}
+                </AnimatePresence>
+              </PhoneFrame>
+            </PhoneStage>
+          )
+
+          const desktopBlock = (
+            <DesktopItinerary
+              dest={dest}
+              dateRange={dateRange}
+              days={days}
+              safeActiveDay={safeActiveDay}
+              setDay={setDay}
+              isStreaming={isStreaming}
+              activeActivityIdx={activeActivityIdx}
+              setActiveActivityIdx={setActiveActivityIdx}
+              scrollContainerRef={mainRef}
+            />
+          )
+
+          if (viewMode === 'mobile')  return phoneBlock(1)
+          if (viewMode === 'desktop') return desktopBlock
+
+          // 'both' — desktop layout takes the main column, phone preview
+          // anchors to the right at a smaller scale. On narrow viewports
+          // we collapse the phone column to keep it readable; the toggle
+          // still lets the user pick either surface alone.
+          const phoneColWidth = Math.min(420, Math.max(320, vw * 0.30))
+          const phoneFitScale = phoneColWidth / (PHONE_W + 20)
+          return (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `minmax(0, 1fr) ${phoneColWidth}px`,
+              gap: 24,
+              alignItems: 'start',
+              padding: '0 24px',
+            }}>
+              <div style={{ minWidth: 0 }}>
+                {desktopBlock}
+              </div>
+              {/* Sticky phone preview — stays in view while you scroll the
+                  desktop layout, mouse-wheel over it scrolls the phone
+                  thanks to the surface-hover hijack above. */}
+              <div style={{
+                position: 'sticky', top: 56, alignSelf: 'start',
+                paddingTop: 12, paddingBottom: 24,
+                display: 'flex', justifyContent: 'center',
+              }}>
+                {phoneBlock(phoneFitScale)}
+              </div>
+            </div>
+          )
+        })()}
 
       </main>
 
@@ -1729,7 +1814,7 @@ function PhoneBootScreen() {
   )
 }
 
-function PhoneStage({ children, scale = 1 }) {
+function PhoneStage({ children, scale = 1, surfaceRef }) {
   // Mouse-tracked 3D tilt with spring smoothing — the phone reads as a
   // physical object the cursor is holding. All hooks declared at the top
   // of the component, no hook calls inside JSX (React 18 prod is strict).
@@ -1761,6 +1846,7 @@ function PhoneStage({ children, scale = 1 }) {
   // shorter than PHONE_H (high browser zoom, short laptop screens, etc.).
   return (
     <motion.div
+      ref={surfaceRef}
       initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 1, ease, delay: 0.15 }}

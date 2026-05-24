@@ -506,7 +506,7 @@ export default function TripPreferences() {
             onClick={advance}
             style={{ width: '100%', padding: '18px 0', background: `linear-gradient(135deg, ${ORANGE} 0%, #EA580C 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff', transition: 'all 0.25s', boxShadow: `0 0 40px ${ORANGE}28` }}
           >
-            {step < TOTAL_STEPS - 1 ? 'Continue' : submitting ? 'Planning your trip…' : 'Start planning'}
+            {step < TOTAL_STEPS - 1 ? 'Continue' : submitting ? 'Reading your persona…' : 'Determine your persona'}
           </motion.button>
         </div>
       </div>

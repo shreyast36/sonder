@@ -173,7 +173,7 @@ export default function PersonaReveal() {
                   onClick={handleConfirm}
                   style={ctaPrimary(true)}
                 >
-                  This feels like me
+                  Plan your trip
                 </motion.button>
                 <button onClick={handleAdjust} style={ctaSecondary}>
                   Adjust my answers
