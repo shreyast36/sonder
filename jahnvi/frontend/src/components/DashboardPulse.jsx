@@ -703,6 +703,25 @@ function PostCard({ post, selfUid, onDelete }) {
         }}>
           {post.text}
         </p>
+        {post.image_url && (
+          <div style={{
+            marginTop: 4, borderRadius: 12, overflow: 'hidden',
+            border: `1px solid ${HAIRLINE}`,
+            background: 'rgba(8,8,7,0.5)',
+            position: 'relative', aspectRatio: '16 / 10',
+          }}>
+            <img
+              src={post.image_url}
+              alt=""
+              loading="lazy"
+              style={{
+                width: '100%', height: '100%', objectFit: 'cover',
+                display: 'block',
+              }}
+              onError={(e) => { e.currentTarget.parentElement.style.display = 'none' }}
+            />
+          </div>
+        )}
         <CommentThread postId={post.post_id} selfUid={selfUid} initialCount={post.comment_count || 0}/>
       </div>
     </motion.div>

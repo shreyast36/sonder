@@ -143,6 +143,16 @@ async def _emit_post(persona) -> None:
     if not text:
         return
 
+    # Auto-illustrate from Pixabay so synthetic posts read as scrollable
+    # social cards, not text walls. Best-effort — no key / no hits just
+    # returns None and the post renders text-only.
+    image_url = None
+    try:
+        from shared.pixabay import fetch_image_url_for_post_text
+        image_url = await fetch_image_url_for_post_text(text)
+    except Exception as e:
+        logger.debug("synthetic_agents: pixabay lookup failed: %s", e)
+
     post = {
         "post_id":        _new_id("post"),
         "author_id":      getattr(persona, "profile_id", "") or _new_id("ct"),
@@ -150,7 +160,7 @@ async def _emit_post(persona) -> None:
         "author_avatar":  getattr(persona, "avatar_url", None),
         "text":           text,
         "linked_trip_id": None,
-        "image_url":      None,
+        "image_url":      image_url,
         "comment_count":  0,
         "created_at":     _now_iso(),
         "is_synthetic":   True,

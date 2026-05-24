@@ -91,6 +91,18 @@ async def create_post(body: PostCreateRequest, uid: str = Depends(verify_token))
     if not text:
         raise HTTPException(status_code=400, detail="Post text is empty after sanitisation")
     name, avatar = await _profile_summary(uid)
+
+    # Auto-illustrate from Pixabay if the caller didn't supply an
+    # image. Best-effort: failure / no-key / no-hits all return None,
+    # and the post renders text-only.
+    image_url = body.image_url
+    if not image_url:
+        try:
+            from shared.pixabay import fetch_image_url_for_post_text
+            image_url = await fetch_image_url_for_post_text(text)
+        except Exception as e:
+            logger.debug("pixabay lookup failed for post: %s", e)
+
     post = {
         "post_id":        _new_id("post"),
         "author_id":      uid,
@@ -98,7 +110,7 @@ async def create_post(body: PostCreateRequest, uid: str = Depends(verify_token))
         "author_avatar":  avatar,
         "text":           text,
         "linked_trip_id": (body.linked_trip_id or None),
-        "image_url":      (body.image_url or None),
+        "image_url":      image_url,
         "comment_count":  0,
         "created_at":     _now_iso(),
     }
