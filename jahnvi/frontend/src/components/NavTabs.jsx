@@ -8,8 +8,9 @@ const VIOLET = '#8B5CF6'
 // Pulses a small accent dot on the active tab so the rhythm matches
 // the rest of the section headers.
 const TABS = [
-  { key: 'dashboard', label: 'Your trip', path: '/dashboard' },
-  { key: 'pulse',     label: 'Sonder Pulse', path: '/pulse'    },
+  { key: 'dashboard', label: 'Your trip',    path: '/dashboard' },
+  { key: 'inbox',     label: 'Inbox',        path: '/inbox'     },
+  { key: 'pulse',     label: 'Sonder Pulse', path: '/pulse'     },
 ]
 
 export default function NavTabs() {
@@ -17,6 +18,7 @@ export default function NavTabs() {
   const { pathname } = useLocation()
   const activeKey =
     pathname.startsWith('/pulse')     ? 'pulse'     :
+    pathname.startsWith('/inbox')     ? 'inbox'     :
     pathname.startsWith('/dashboard') ? 'dashboard' :
                                          null
   return (

@@ -112,7 +112,7 @@ function InboxRow({ row, selfUid, onClick, index }) {
 
 // ── section ──────────────────────────────────────────────────────────────
 
-export default function InboxStrip({ selfUid }) {
+export default function InboxStrip({ selfUid, limit = 8 }) {
   const navigate = useNavigate()
   const [rows, setRows]       = useState([])
   const [loading, setLoading] = useState(true)
@@ -201,7 +201,7 @@ export default function InboxStrip({ selfUid }) {
       )}
 
       <AnimatePresence initial={false}>
-        {rows.slice(0, 8).map((r, i) => (
+        {rows.slice(0, limit).map((r, i) => (
           <InboxRow
             key={r.session_id}
             row={r}

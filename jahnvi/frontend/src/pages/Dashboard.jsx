@@ -9,7 +9,6 @@ import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
 import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
-import InboxStrip from '../components/InboxStrip'
 import NavTabs from '../components/NavTabs'
 import { storage } from '../lib/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -1265,10 +1264,9 @@ export default function Dashboard() {
           {/* Past trips moved to its own full-width strip below the grid */}
         </motion.div>
 
-        {/* RIGHT — inbox, companions */}
+        {/* RIGHT — companions. Inbox moved to its own /inbox tab so
+            chat messages have room to breathe. */}
         <motion.div variants={reveal} style={{ padding: '52px 44px', display: 'flex', flexDirection: 'column', gap: 36 }}>
-
-          <InboxStrip selfUid={user?.uid}/>
 
           <div>
             <div style={{ marginBottom: 24 }}>

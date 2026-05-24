@@ -106,7 +106,11 @@ export default function NotificationProvider({ children }) {
     const { session_id, sender_name, sender_is_seed, preview } = data
     // Suppress if the user is already on the chat page for this session —
     // they're literally looking at the message arrive.
+    // Suppress the in-app banner when the user is already on the chat
+    // page for this session OR on /inbox (the inbox row updates inline
+    // via sonder:inbox:refresh — banner would be redundant noise).
     if (locRef.current === `/chat/${session_id}`) return
+    if (locRef.current.startsWith('/inbox')) return
 
     setBanner({
       kind:        'chat',
