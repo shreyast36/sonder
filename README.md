@@ -63,6 +63,7 @@ Both work with Pinecone and AI, but do different things:
 | AI — Image | OpenAI `gpt-image-1` (seed time only, for synthetic persona portraits) |
 | AI — Emotion classifier | GoEmotions 27-label cosine classifier (in-memory) |
 | Embeddings | OpenAI `text-embedding-3-small` (1536-dim) |
+| AI — Voice | **ElevenLabs TTS** via `ali/voice/elevenlabs.py` — persona voice_id assigned via deterministic `profile_id` hash. Output MP3s cached in Firebase Storage keyed by `sha256(text + voice_id)` so re-plays are free |
 | Email | Resend / SendGrid / SES — `EMAIL_PROVIDER` |
 | Web Push | Service worker (`public/sw.js`) + VAPID + `pywebpush` |
 | Frontend hosting | Vercel |
@@ -368,7 +369,7 @@ POST /discover/trips/{id}/join-request
 The matching pool is seeded with LLM-designed personas (no randomuser.me / stock photos). For each diversity-matrix slot (emotional signature × age bracket × home city), the LARGE LLM writes a full persona JSON. Each persona gets:
 
 - A stylised cinematic portrait from `gpt-image-1` (painterly, explicitly not photoreal)
-- A stable voice id from a deterministic hash of `profile_id` against the OpenAI TTS whitelist
+- A stable voice id from a deterministic hash of `profile_id` against the ElevenLabs voice whitelist (audio synthesised on-demand via `/api/voice/synthesize`, MP3s cached in Firebase Storage)
 - An emotional signature via the same inferrer real users hit
 - A rich embedding text upserted to the `cotravellers` Pinecone namespace
 
@@ -505,6 +506,11 @@ npm run dev
 | `POST` | `/api/push/subscribe` | Upserts the browser's `PushSubscription` |
 | `POST` | `/api/push/unsubscribe` | Drops a subscription by endpoint |
 
+### Voice (TTS)
+| Method | Route | Returns |
+|---|---|---|
+| `POST` | `/api/voice/synthesize` | `{audio_url, cached: bool}` — ElevenLabs MP3 for a persona's message; Firebase Storage cache keyed by `sha256(text + voice_id)`. 600-char input cap |
+
 ### Export
 | Method | Route | Returns |
 |---|---|---|
@@ -607,7 +613,7 @@ Every persona-voiced surface (chat replies, proposal accept/counter, persona-ini
 
 - `min_acceptable_reply_length` (`< 3` chars → `empty_token_generation` issue, return immediately, never even hit the LLM).
 - `has_repetition` → `token_stutter` issue.
-- `evaluate_semantic_genericity` — counts hits against a 15-stem set (`"sounds amazing"`, `"hidden gem"`, `"bucket list"`, `"fellow traveler"`, etc), scores `base + matches × multiplier`, fires if above `genericity_threshold (0.80)`. The score is also surfaced in telemetry per-event so PostHog can watch the genericity distribution drift over time.
+- `evaluate_semantic_genericity` — counts hits against a 14-stem set (`"sounds amazing"`, `"hidden gem"`, `"bucket list"`, `"fellow traveler"`, etc), scores `base + matches × multiplier`, fires if above `genericity_threshold (0.80)`. The score is also surfaced in telemetry per-event so PostHog can watch the genericity distribution drift over time.
 
 This local pass either kills the bad reply outright (no LLM cost) or feeds its `issues` list to the LLM repair prompt as concrete `VALIDATION ISSUES` context, so the rewrite is grounded rather than blind.
 
