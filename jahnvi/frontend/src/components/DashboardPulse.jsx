@@ -23,6 +23,27 @@ const spring = { type: 'spring', stiffness: 280, damping: 22 }
 // hundreds of cards in memory as realtime events fire.
 const PULSE_MAX = 10
 
+// Stale-while-revalidate caches so /pulse never reloads to an empty
+// shell. Hydrated synchronously on mount before the first API call
+// returns; replaced when fresh data lands.
+const TRIPS_CACHE_KEY = 'sonder:pulse:trips'
+const POSTS_CACHE_KEY = 'sonder:pulse:posts'
+
+function loadCache(key) {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return parsed
+    }
+  } catch { /* noop */ }
+  return []
+}
+
+function saveCache(key, arr) {
+  try { localStorage.setItem(key, JSON.stringify(arr || [])) } catch { /* noop */ }
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────
 
 function timeAgo(iso) {
@@ -1107,10 +1128,15 @@ function Composer({ onCreated }) {
 
 export default function DashboardPulse({ selfUid }) {
   const navigate = useNavigate()
-  const [trips, setTrips] = useState([])
-  const [posts, setPosts] = useState([])
-  const [loadingTrips, setLoadingTrips] = useState(true)
-  const [loadingFeed,  setLoadingFeed]  = useState(true)
+  // Stale-while-revalidate: render whatever was on screen last time
+  // immediately, then update when the fetch lands. Prevents the
+  // 0-voices empty shell on refresh.
+  const [trips, setTrips] = useState(() => loadCache(TRIPS_CACHE_KEY))
+  const [posts, setPosts] = useState(() => loadCache(POSTS_CACHE_KEY))
+  // Loading flags only flip true if we had nothing cached — we don't
+  // want to show a loading spinner over the cached content.
+  const [loadingTrips, setLoadingTrips] = useState(() => loadCache(TRIPS_CACHE_KEY).length === 0)
+  const [loadingFeed,  setLoadingFeed]  = useState(() => loadCache(POSTS_CACHE_KEY).length === 0)
   const [joinTarget, setJoinTarget] = useState(null)
   const [joinBusy, setJoinBusy] = useState(false)
   const [joinErr, setJoinErr] = useState(null)
@@ -1129,19 +1155,29 @@ export default function DashboardPulse({ selfUid }) {
   const fetchTrips = useCallback(async () => {
     try {
       const res = await listOpenTrips(24)
-      setTrips((res?.trips || []).slice(0, PULSE_MAX))
-    } catch { /* surface via empty state */ }
+      const next = (res?.trips || []).slice(0, PULSE_MAX)
+      // Only overwrite cached state on a NON-empty response — preserves
+      // the user's last good view if the API temporarily returns []
+      // (cold deploy, transient Firestore hiccup, etc.).
+      if (next.length > 0) {
+        setTrips(next)
+        saveCache(TRIPS_CACHE_KEY, next)
+      }
+    } catch { /* keep cached state on error */ }
     finally { setLoadingTrips(false) }
   }, [])
   const fetchFeed = useCallback(async () => {
     try {
       const res = await listFeed({ limit: 20 })
-      setPosts(prev => {
-        const next = (res?.posts || []).slice(0, PULSE_MAX)
-        if (next.length && prev.length && next[0]?.post_id === prev[0]?.post_id) return prev
-        return next
-      })
-    } catch { /* noop */ }
+      const next = (res?.posts || []).slice(0, PULSE_MAX)
+      if (next.length > 0) {
+        setPosts(prev => {
+          if (prev.length && next[0]?.post_id === prev[0]?.post_id) return prev
+          saveCache(POSTS_CACHE_KEY, next)
+          return next
+        })
+      }
+    } catch { /* keep cached state on error */ }
     finally { setLoadingFeed(false) }
   }, [])
 
@@ -1160,20 +1196,28 @@ export default function DashboardPulse({ selfUid }) {
       const card = { ...trip, is_yours: trip.owner_uid === selfUid }
       setTrips(prev => {
         if (prev.some(t => t.itinerary_id === card.itinerary_id)) return prev
-        return [card, ...prev].slice(0, PULSE_MAX)
+        const next = [card, ...prev].slice(0, PULSE_MAX)
+        saveCache(TRIPS_CACHE_KEY, next)
+        return next
       })
     }
     function onTripClose(e) {
       const id = e.detail?.itinerary_id
       if (!id) return
-      setTrips(prev => prev.filter(t => t.itinerary_id !== id))
+      setTrips(prev => {
+        const next = prev.filter(t => t.itinerary_id !== id)
+        saveCache(TRIPS_CACHE_KEY, next)
+        return next
+      })
     }
     function onPostNew(e) {
       const post = e.detail
       if (!post?.post_id) return
       setPosts(prev => {
         if (prev.some(p => p.post_id === post.post_id)) return prev
-        return [post, ...prev].slice(0, PULSE_MAX)
+        const next = [post, ...prev].slice(0, PULSE_MAX)
+        saveCache(POSTS_CACHE_KEY, next)
+        return next
       })
     }
     function onResolved(e) {
@@ -1325,7 +1369,11 @@ export default function DashboardPulse({ selfUid }) {
             fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13,
             color: MUTE, margin: '6px 0 0', lineHeight: 1.55,
           }}>
-            {posts.length} {posts.length === 1 ? 'voice' : 'voices'} · {trips.length} {trips.length === 1 ? 'trip open' : 'trips open'} for company
+            {posts.length === 0 && trips.length === 0
+              ? 'Pulling the latest activity in real time.'
+              : <>
+                  {posts.length} {posts.length === 1 ? 'voice' : 'voices'} · {trips.length} {trips.length === 1 ? 'trip open' : 'trips open'} for company
+                </>}
           </p>
         </div>
 
@@ -1342,6 +1390,7 @@ export default function DashboardPulse({ selfUid }) {
             scrollbarWidth: 'thin',
             maskImage: 'linear-gradient(90deg, black 95%, transparent 100%)',
             WebkitMaskImage: 'linear-gradient(90deg, black 95%, transparent 100%)',
+            minHeight: 100,
           }}>
             <AnimatePresence initial={false}>
               {tripsToShow.map(t => (
@@ -1352,12 +1401,24 @@ export default function DashboardPulse({ selfUid }) {
                 />
               ))}
             </AnimatePresence>
-            {/* Pad with skeleton chips until we have at least 6 visible
-                rings — keeps the row from looking empty / sparse on
-                cold load or low-density days. */}
-            {tripsToShow.length < 6 && Array.from({ length: 6 - tripsToShow.length }).map((_, i) => (
-              <SkeletonStoryChip key={`sk-${i}`} delay={i * 0.05}/>
-            ))}
+            {tripsToShow.length === 0 && (
+              <div style={{
+                padding: '20px 22px', borderRadius: 14,
+                background: `linear-gradient(135deg, ${VIOLET}10 0%, rgba(232,212,168,0.03) 100%)`,
+                border: `1px solid ${VIOLET}33`,
+                display: 'inline-flex', alignItems: 'center', gap: 12,
+              }}>
+                <MapPin size={16} style={{ color: VIOLET }}/>
+                <div>
+                  <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 16, color: BONE, margin: 0, lineHeight: 1.2 }}>
+                    Trips are warming up.
+                  </p>
+                  <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 11, color: MUTE, margin: '2px 0 0', letterSpacing: '0.02em' }}>
+                    Fresh invitations land here every minute.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1370,7 +1431,11 @@ export default function DashboardPulse({ selfUid }) {
             </p>
           </div>
           {/* Composer spans full width above the post grid */}
-          <Composer onCreated={(p) => setPosts(prev => [p, ...prev].slice(0, PULSE_MAX))}/>
+          <Composer onCreated={(p) => setPosts(prev => {
+            const next = [p, ...prev].slice(0, PULSE_MAX)
+            saveCache(POSTS_CACHE_KEY, next)
+            return next
+          })}/>
 
           {/* 2-column post grid on desktop. CSS Grid with auto-fit and
               minmax(320, 1fr) means it collapses to 1 col on narrow
@@ -1386,13 +1451,26 @@ export default function DashboardPulse({ selfUid }) {
                 <PostCard key={p.post_id} post={p} selfUid={selfUid} onDelete={deleteOne}/>
               ))}
             </AnimatePresence>
-            {/* Always render skeletons to pad the grid to at least 4
-                cards — the room never reads 'empty' while polls / synth
-                agents catch up. Real cards push them out as they land. */}
-            {Array.from({ length: Math.max(0, 4 - postsToShow.length) }).map((_, i) => (
-              <SkeletonPostCard key={`sk-${i}`} delay={i * 0.08}/>
-            ))}
           </div>
+          {postsToShow.length === 0 && (
+            <div style={{
+              marginTop: 18,
+              padding: '32px 28px', borderRadius: 16,
+              background: `linear-gradient(135deg, ${GOLD}10 0%, rgba(232,212,168,0.03) 100%)`,
+              border: `1px solid ${GOLD}33`,
+              display: 'flex', alignItems: 'center', gap: 14,
+            }}>
+              <MessageCircle size={18} style={{ color: GOLD, flexShrink: 0 }}/>
+              <div>
+                <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 19, color: BONE, margin: 0, lineHeight: 1.2 }}>
+                  The room is filling up.
+                </p>
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 12, color: MUTE, margin: '4px 0 0', lineHeight: 1.55 }}>
+                  Travellers post here all the time. Drop your own thought above to kick things off — or just hang for a sec, fresh voices land every minute.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
