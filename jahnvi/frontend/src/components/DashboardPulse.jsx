@@ -1283,7 +1283,8 @@ export default function DashboardPulse({ selfUid }) {
         setJoinTarget(null)
       }
     } catch (e) {
-      setJoinErr(e?.message || 'Could not send request')
+      const isOffline = e instanceof TypeError && e.message === 'Failed to fetch'
+      setJoinErr(isOffline ? 'No internet connection — please try again' : (e?.message || 'Could not send request'))
     } finally {
       setJoinBusy(false)
     }

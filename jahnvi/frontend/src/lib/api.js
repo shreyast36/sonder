@@ -4,6 +4,10 @@ import { Sentry } from './sentry'
 const BASE = import.meta.env.VITE_API_BASE_URL || ''
 
 async function authHeaders() {
+  if (!auth.currentUser) {
+    const err = Object.assign(new Error('Not authenticated'), { status: 401 })
+    throw err
+  }
   const token = await auth.currentUser.getIdToken()
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 }
@@ -25,8 +29,11 @@ async function _readError(res) {
 // Report 5xx + network failures to Sentry while preserving the throw for callers.
 // 4xx is left uncaptured: 401/403 are auth state, 404 from /users/profile is a
 // normal first-login signal, 422 is client-side input — all expected behavior.
+// Pure "Failed to fetch" TypeErrors are also excluded: they reflect client-side
+// network loss (no connectivity), not a server or application bug.
 function _reportIfServerError(err, method, path) {
   const status = err?.status
+  if (err instanceof TypeError && err.message === 'Failed to fetch') return
   if (typeof status !== 'number' || status >= 500) {
     Sentry.captureException(err, {
       tags: { api_method: method, api_path: path, http_status: status ?? 'network' },
