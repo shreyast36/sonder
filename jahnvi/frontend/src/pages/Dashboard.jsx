@@ -1331,7 +1331,9 @@ export default function Dashboard() {
                     You already have your travelling party.
                   </p>
                   <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 12, color: MUTE, margin: '8px 0 0', lineHeight: 1.55 }}>
-                    Family trips skip companion matching — head to your shared itinerary to plan together.
+                    {matchingDisabled === 'friends_trip'
+                      ? 'Friend-group trips skip companion matching — head to your shared itinerary to plan together.'
+                      : 'Family trips skip companion matching — head to your shared itinerary to plan together.'}
                   </p>
                 </div>
               )}

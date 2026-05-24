@@ -163,19 +163,21 @@ async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verif
 
         profile = await _load_user_profile(uid, body.itinerary_id)
 
-        # Skip matching entirely for family trips — they already have their
-        # group, surfacing strangers as 'companions' makes no product sense.
-        # Friends keep matching: a friend group can still add one more.
-        # Solo / couple of course matter most for matching.
+        # Skip matching entirely for family + friends trips — they
+        # already have their party, and authoring a coherent "friend
+        # group" persona to match against is a much harder writing
+        # problem we're not solving in V1. Solo / couple matter most
+        # for matching; everyone else heads straight to the shared-
+        # itinerary surface.
         constraints = getattr(profile, "constraints", None)
         style = getattr(constraints, "who_travelling_with", None)
         style_value = getattr(style, "value", None) if style else None
-        if style_value == "family":
+        if style_value in ("family", "friends"):
             return {
                 "matches": [], "active_pair": None,
                 "denied_count": len(denied_ids),
                 "matching_disabled": True,
-                "matching_disabled_reason": "family_trip",
+                "matching_disabled_reason": f"{style_value}_trip",
             }
         cs = dict(profile.compatibility_signals or {})
         if not cs.get("top_interests") and body.top_interests:
@@ -204,7 +206,7 @@ async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verif
         # We log the drop count instead of silently filtering so we
         # can spot a seed-pool gap (e.g. zero couple personas left
         # after filter).
-        if style_value in ("solo", "couple", "friends"):
+        if style_value in ("solo", "couple"):
             before = len(candidates)
             candidates = [
                 c for c in candidates
@@ -312,9 +314,9 @@ async def regenerate_cotraveller_matches(body: RegenerateMatchesRequest, uid: st
         constraints = getattr(profile, "constraints", None)
         style = getattr(constraints, "who_travelling_with", None)
         style_value = getattr(style, "value", None) if style else None
-        raw_top_n = 3 if style_value not in ("solo", "couple", "friends") else 12
+        raw_top_n = 12 if style_value in ("solo", "couple") else 3
         matches = await regenerate_matches(profile, excluded, feedback=feedback, top_n=raw_top_n)
-        if style_value in ("solo", "couple", "friends"):
+        if style_value in ("solo", "couple"):
             matches = [
                 m for m in matches
                 if (getattr(getattr(m.profile, "travel_style", None), "value", None) or
