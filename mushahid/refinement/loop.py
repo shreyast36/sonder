@@ -13,6 +13,89 @@ from ali.generation.output_parser import parse_itinerary
 from ali.vector.embeddings import build_refined_query, embed_text
 
 
+async def run_single_revision(
+    itinerary: Itinerary,
+    user_profile: UserProfile,
+    feedback: str,
+    seed_validation: ValidationResult,
+    activity_feedback: list[ActivityFeedback] | None = None,
+    task_type: str = "complex_refinement",
+) -> tuple[Itinerary, ValidationResult]:
+    """One-pass user-initiated revision.
+
+    Difference from `run_refinement_loop`:
+      - Runs the LLM regen EXACTLY ONCE (no MAX_REFINEMENT_ATTEMPTS loop).
+        The user asked for this change — we apply it and surface validator
+        verdict back to them, instead of burning 2-3 more minutes silently
+        trying to satisfy the critic.
+      - Skips the best-effort re-embed (the loop wraps it in try/except: pass
+        anyway, and embedding updates can happen out-of-band on next save).
+      - `task_type` lets callers route SMALL-scope edits to the cheap fast
+        model (`quick_edit`) and LARGE rewrites to the big model
+        (`complex_refinement`).
+
+    Returns (revised_itinerary, validation_result). The caller persists +
+    enriches with history bookkeeping.
+    """
+    # Merge per-activity feedback into the feedback string (same as the loop).
+    if activity_feedback:
+        act_lines = "; ".join(
+            f"{af.activity_id} ({af.action})" + (f": {af.reason}" if af.reason else "")
+            for af in activity_feedback
+        )
+        feedback = f"{feedback} | Activity feedback: {act_lines}".strip(" |")
+
+    combined_feedback = f"{feedback}\n\nValidator feedback: {seed_validation.feedback}"
+    if seed_validation.improvement_suggestions:
+        combined_feedback += "\nSuggestions: " + "; ".join(
+            seed_validation.improvement_suggestions
+        )
+
+    # Single regen pass.
+    revised = itinerary
+    try:
+        chunks: list[str] = []
+        async for chunk in generate_refined_itinerary(
+            itinerary, combined_feedback, seed_validation, task_type=task_type,
+        ):
+            chunks.append(chunk)
+        raw = "".join(chunks)
+        revised = parse_itinerary(
+            raw, user_profile,
+            destination=itinerary.destination,
+            activities=[ia.activity for day in itinerary.days for ia in day.activities],
+        )
+    except Exception:
+        revised = itinerary  # fall back to original on parse failure
+
+    # Single validate pass — same gates as the loop, no retry.
+    try:
+        if user_profile.constraints:
+            checks = run_all_checks(revised, user_profile.constraints)
+            if not checks.budget_ok or not checks.must_haves_ok or not checks.avoid_list_ok:
+                validation = ValidationResult(
+                    itinerary_id=revised.itinerary_id,
+                    status=ValidationStatus.revise,
+                    score=0.5,
+                    feedback="Constraint check failed after revision.",
+                    improvement_suggestions=[],
+                )
+            else:
+                validation = await validate_large_output(revised, user_profile)
+        else:
+            validation = await validate_large_output(revised, user_profile)
+    except Exception:
+        validation = ValidationResult(
+            itinerary_id=revised.itinerary_id,
+            status=ValidationStatus.revise,
+            score=0.0,
+            feedback="Validation error — flagging for revision.",
+        )
+
+    await write_itinerary(revised)
+    return revised, validation
+
+
 async def run_refinement_loop(
     itinerary: Itinerary,
     user_profile: UserProfile,

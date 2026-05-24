@@ -42,14 +42,15 @@ async def generate_refined_itinerary(
     itinerary: Itinerary,
     feedback: str,
     validation_result: ValidationResult,
+    task_type: str = "complex_refinement",
 ) -> AsyncIterator[str]:
     """
     Stream a revised itinerary incorporating user feedback and validation issues.
-    Call this from the refinement loop instead of generate_itinerary() so that
-    the feedback actually reaches the LLM via build_refinement_prompt().
+    `task_type` selects the LLM tier — pass "quick_edit" for SMALL-scope user
+    revisions so they route to the cheap fast model.
     """
     prompt = build_refinement_prompt(itinerary, feedback, validation_result)
-    async for chunk in stream_request("complex_refinement", prompt, REFINEMENT_SYSTEM_PROMPT):
+    async for chunk in stream_request(task_type, prompt, REFINEMENT_SYSTEM_PROMPT):
         yield chunk
 
 

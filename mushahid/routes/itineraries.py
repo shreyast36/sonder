@@ -307,8 +307,9 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
     gate before returning to the user.
 
     409 if the itinerary is already finalized."""
+    import asyncio
     from mushahid.refinement.classifier import classify_revision_feedback
-    from mushahid.refinement.loop import run_refinement_loop
+    from mushahid.refinement.loop import run_single_revision
     from shared.schemas import (
         ActivityFeedback, UserProfile, ValidationResult, ValidationStatus,
     )
@@ -381,25 +382,37 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
         structured_targets = [ActivityFeedback(**t) for t in body.targets
                               if isinstance(t, dict) and t.get("activity_id")]
 
-    # The refinement loop yields SSE events; we don't stream here but
-    # we do need its final state. Drain the generator and ignore the
-    # interim chunks — Phase 3 could fan these out via a side WS for
-    # live progress.
-    revised = itinerary
-    try:
-        async for _chunk in run_refinement_loop(
-            itinerary, user_profile, feedback_for_loop,
-            seed_validation, activity_feedback=structured_targets,
-        ):
-            pass
-    except Exception as e:
-        logger.warning("revise: refinement loop failed: %s", e)
+    # SINGLE-pass revision. The original refinement loop iterates up to
+    # MAX_REFINEMENT_ATTEMPTS (3) — fine for first-time generation, but
+    # for a user-initiated revise it amplifies wall time 3× while the
+    # user stares at a frozen button. We do one regen + one validate and
+    # return whatever the validator says; the user can revise again if
+    # they want.
+    #
+    # Tier picked from the classifier: SMALL → quick_edit (cheap, fast
+    # small model); LARGE → complex_refinement (big model with head-room).
+    task_type = "quick_edit" if verdict["scope"] == "small" else "complex_refinement"
 
-    # The loop persists via write_itinerary internally; re-fetch to
-    # get the latest doc state.
-    latest = await get_itinerary(itinerary_id)
-    if latest is not None:
-        revised = latest
+    revised = itinerary
+    final_validation: ValidationResult | None = None
+    try:
+        # Hard ceiling so a stuck LLM call can't hold the request open
+        # past Cloudflare's proxy timeout. 75s leaves margin under the
+        # ~100s edge limit and is plenty for a single regen.
+        revised, final_validation = await asyncio.wait_for(
+            run_single_revision(
+                itinerary, user_profile, feedback_for_loop,
+                seed_validation,
+                activity_feedback=structured_targets,
+                task_type=task_type,
+            ),
+            timeout=75.0,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("revise: single-pass revision exceeded 75s ceiling")
+        raise HTTPException(status_code=504, detail="Revision took too long — please try a smaller change.")
+    except Exception as e:
+        logger.warning("revise: single-pass revision failed: %s", e)
 
     # ── 3b. Update per-user ranker weights from this feedback turn ──
     # Decay the boost on every repeat turn so weights don't oscillate
@@ -449,6 +462,9 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
         "added_titles":   added,
         "boosted_features": weight_delta_logged["boosted"],
         "boost_multiplier": weight_delta_logged["multiplier"],
+        "validation_score":   getattr(final_validation, "score", None),
+        "validation_status":  getattr(final_validation, "status", ValidationStatus.revise).value if final_validation else "revise",
+        "validation_feedback": getattr(final_validation, "feedback", "") if final_validation else "",
         "created_at":     datetime.now(timezone.utc).isoformat(),
         "status":         "applied",
     })
@@ -477,6 +493,12 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
         "scope":           verdict["scope"],
         "dropped_titles":  dropped,
         "added_titles":    added,
+        "validation": {
+            "status":   getattr(final_validation, "status", ValidationStatus.revise).value if final_validation else "revise",
+            "score":    getattr(final_validation, "score", None),
+            "feedback": getattr(final_validation, "feedback", "") if final_validation else "",
+            "suggestions": getattr(final_validation, "improvement_suggestions", []) if final_validation else [],
+        },
         "itinerary":       final_itin.model_dump(mode="json"),
     }
 

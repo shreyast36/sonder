@@ -188,11 +188,35 @@ export async function approveItinerary(itineraryId) {
   return post(`/api/itineraries/${encodeURIComponent(itineraryId)}/approve`, {})
 }
 
-// Request changes on a draft itinerary. Phase-1: logs feedback into
-// revision_history; Phase-2 wires the targeted revision pipeline.
+// Request changes on a draft itinerary. Backend runs one LLM regen + one
+// validate (single-pass), then returns the updated draft and the
+// validator verdict. 90s client-side timeout matches the backend's 75s
+// ceiling + network margin so a hung proxy surfaces as an error instead
+// of an infinite spinner.
 export async function reviseItinerary(itineraryId, feedback, targets = null) {
-  return post(`/api/itineraries/${encodeURIComponent(itineraryId)}/revise`,
-              targets ? { feedback, targets } : { feedback })
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), 90_000)
+  try {
+    const res = await fetch(`/api/itineraries/${encodeURIComponent(itineraryId)}/revise`, {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify(targets ? { feedback, targets } : { feedback }),
+      signal: ctrl.signal,
+    })
+    if (!res.ok) {
+      const err = Object.assign(new Error(await _readError(res)), { status: res.status })
+      _reportIfServerError(err, 'POST', '/api/itineraries/revise')
+      throw err
+    }
+    return res.json()
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      throw new Error('Revision took too long — try a smaller change.')
+    }
+    throw e
+  } finally {
+    clearTimeout(t)
+  }
 }
 
 export async function saveItineraryAsCurrent(itineraryId) {

@@ -888,7 +888,7 @@ export default function Itinerary() {
                   opacity: (reviseBusy || !reviseText.trim()) ? 0.5 : 1,
                 }}
               >
-                {reviseBusy ? 'Logging…' : 'Send feedback'}
+                {reviseBusy ? 'Rewriting…' : 'Send feedback'}
               </motion.button>
             </div>
           </motion.div>
