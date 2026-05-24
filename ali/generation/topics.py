@@ -1039,8 +1039,8 @@ async def generate_persona_opener(
 
     rules = (
         f"You are texting {first_name} FIRST — they haven't said anything yet. "
-        f"Your message MUST start exactly with: \"Hey! {first_name}, \" (capital H, "
-        "exclamation mark, comma after the name, then a single space).\n\n"
+        f"Your message MUST start exactly with: \"Hey {first_name}! \" (capital H, "
+        "no comma, exclamation mark AFTER the name, then a single space).\n\n"
         "After that opener, ask ONE short question grounded in:\n"
     )
     if dest != _EMPTY and digest != _EMPTY:
@@ -1069,13 +1069,19 @@ async def generate_persona_opener(
     if pname and cleaned.lower().startswith(pname.lower() + ":"):
         cleaned = cleaned[len(pname) + 1:].lstrip()
 
-    # Enforce the "Hey! {first_name}, " prefix even if the model drifted.
-    expected_prefix = f"Hey! {first_name},"
+    # Enforce the "Hey {first_name}! " prefix even if the model drifted.
+    expected_prefix = f"Hey {first_name}!"
     if not cleaned.lower().startswith(expected_prefix.lower()):
-        # Strip any drifted greeting and re-prefix.
+        # Strip any drifted greeting (including the old "Hey! {name}," shape
+        # that older personas may still output mid-deploy) and re-prefix.
         tail = cleaned
-        for bad_start in (f"Hey {first_name},", f"Hi {first_name},", f"Hello {first_name},",
-                          "Hey,", "Hi,", "Hello,", "Hey!"):
+        for bad_start in (
+            f"Hey! {first_name},", f"Hey! {first_name}",
+            f"Hey {first_name},",  f"Hey {first_name}",
+            f"Hi! {first_name},",  f"Hi {first_name}!", f"Hi {first_name},", f"Hi {first_name}",
+            f"Hello {first_name}!", f"Hello {first_name},", f"Hello {first_name}",
+            "Hey!", "Hey,", "Hi!", "Hi,", "Hello,", "Hello!",
+        ):
             if tail.lower().startswith(bad_start.lower()):
                 tail = tail[len(bad_start):].lstrip(" ,!")
                 break
