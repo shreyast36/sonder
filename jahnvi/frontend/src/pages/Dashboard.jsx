@@ -510,51 +510,55 @@ export default function Dashboard() {
   const [switchingTrip, setSwitchingTrip] = useState(false)
 
   const refresh = async () => {
+    // Track the current itinerary in a local so the past-trips fallback
+    // below sees the *just-fetched* value, not the stale closure from
+    // when `refresh` was created. Without this the synthesised vault
+    // entry rarely fires.
+    let currentIt = null
     try {
       const res = await getCurrentItinerary()
-      const it = res?.itinerary ?? null
-      if (it) {
-        setStoredItinerary(it)
-        try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(it)) } catch { /* noop */ }
+      currentIt = res?.itinerary ?? null
+      if (currentIt) {
+        setStoredItinerary(currentIt)
+        try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(currentIt)) } catch { /* noop */ }
       }
-      // If the server returns null we intentionally DO NOT wipe localStorage:
-      // the user may have just generated a trip and not clicked Save yet, or
-      // Firestore might be having a brief moment. Cached card stays visible
-      // until they explicitly save a different one (or sign out).
     } catch (err) {
       console.warn('getCurrentItinerary failed (keeping cache):', err?.message || err)
     }
+
+    // Build the past-trips list. If the API returns anything, use it.
+    // If it returns empty OR errors, fall back to synthesizing one entry
+    // from the just-fetched itinerary OR storedItinerary state OR
+    // localStorage cache — in that order. Either way: if we have *any*
+    // itinerary anywhere, the vault shows it. We never silently strand
+    // the user with an empty vault.
+    let trips = []
     try {
       const res = await listSavedItineraries()
-      const trips = Array.isArray(res?.trips) ? res.trips : []
-      // Fallback: if the API returns nothing (no profile.saved_itinerary_ids
-      // yet, brand-new user, or transient Firestore hiccup) but we DO have a
-      // current itinerary in state or cache, synthesize a single-trip vault
-      // entry so the user always sees their trip rather than an empty section.
-      if (trips.length === 0) {
-        const fromState = storedItinerary
-        let raw = fromState
-        if (!raw) {
-          try { raw = JSON.parse(localStorage.getItem('sonder_last_itinerary') || 'null') } catch { /* noop */ }
-        }
-        if (raw && raw.itinerary_id) {
-          const days = raw.days || []
-          trips.push({
-            itinerary_id:    raw.itinerary_id,
-            is_current:      true,
-            city:            raw.destination?.city || '',
-            country:         raw.destination?.country || '',
-            day_count:       days.length,
-            trip_start:      days[0]?.trip_date || null,
-            trip_end:        days[days.length - 1]?.trip_date || null,
-            total_budget_usd: raw.total_budget_usd || 0,
-          })
-        }
-      }
-      setPastTrips(trips)
+      trips = Array.isArray(res?.trips) ? res.trips : []
     } catch (err) {
-      console.warn('listSavedItineraries failed:', err?.message || err)
+      console.warn('listSavedItineraries failed (falling back):', err?.message || err)
     }
+    if (trips.length === 0) {
+      let raw = currentIt || storedItinerary
+      if (!raw) {
+        try { raw = JSON.parse(localStorage.getItem('sonder_last_itinerary') || 'null') } catch { /* noop */ }
+      }
+      if (raw && raw.itinerary_id) {
+        const days = raw.days || []
+        trips = [{
+          itinerary_id:     raw.itinerary_id,
+          is_current:       true,
+          city:             raw.destination?.city || '',
+          country:          raw.destination?.country || '',
+          day_count:        days.length,
+          trip_start:       days[0]?.trip_date || null,
+          trip_end:         days[days.length - 1]?.trip_date || null,
+          total_budget_usd: raw.total_budget_usd || 0,
+        }]
+      }
+    }
+    setPastTrips(trips)
   }
 
   async function handleSwitchTrip(itineraryId) {
@@ -1323,9 +1327,9 @@ export default function Dashboard() {
 
         </motion.div>
 
-        {/* Your trips — full-width strip between the main grid and Pulse */}
-        {pastTrips.length > 0 && (
-          <motion.section
+        {/* Your trips — always rendered so the Live Travellers strip
+            and the section context never disappear with state changes. */}
+        <motion.section
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease, delay: 0.2 }}
@@ -1376,7 +1380,6 @@ export default function Dashboard() {
               switching={switchingTrip}
             />
           </motion.section>
-        )}
 
         {/* Sonder Pulse — the discovery surface folded inline */}
         <DashboardPulse selfUid={user?.uid}/>
