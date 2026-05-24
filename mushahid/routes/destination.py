@@ -9,7 +9,7 @@ GET /api/destination-photo?city=X&country=Y → {"url": "https://..." | null}
 """
 from fastapi import APIRouter, Query
 
-from shared.pixabay import fetch_image_url
+from shared.pixabay import fetch_image_url, fetch_image_urls
 
 router = APIRouter()
 
@@ -39,3 +39,32 @@ async def destination_photo(
         if url:
             return {"url": url, "query": q}
     return {"url": None, "query": None}
+
+
+@router.get("/destination-photos")
+async def destination_photos(
+    city: str = Query(..., min_length=1, max_length=120),
+    country: str = Query("", max_length=120),
+    count: int = Query(5, ge=1, le=12),
+):
+    """Multi-photo lookup for the cinematic trip-locked-in reveal.
+    Returns up to `count` distinct Pixabay image URLs ranked by
+    popularity. Public — no auth, falls through to an empty list
+    on any error so the caller can fail open."""
+    city = (city or "").strip()
+    country = (country or "").strip()
+    # Most-specific query first; the multi variant is cached per query
+    # so re-asking with the same city is free.
+    primary = f"{city} {country}".strip() or city
+    try:
+        urls = await fetch_image_urls(primary, count=count)
+    except Exception:
+        urls = []
+    if not urls and country:
+        # Country-less retry — broader pool when "Patagonia Argentina"
+        # comes back empty but "Patagonia" alone has results.
+        try:
+            urls = await fetch_image_urls(city, count=count)
+        except Exception:
+            urls = []
+    return {"urls": urls, "query": primary if urls else None}

@@ -116,6 +116,66 @@ export async function fetchDestinationPhoto(city, country) {
   return found
 }
 
+/**
+ * Multi-photo lookup for the cinematic trip-locked-in reveal.
+ * Backed by /api/destination-photos (Pixabay). 14-day localStorage
+ * cache keyed by (city, country, count) so the reveal renders
+ * instantly on a refresh.
+ */
+const MANY_CACHE_KEY = 'sonder_dest_photos_many_v1'
+
+function _readMany() {
+  try { return JSON.parse(localStorage.getItem(MANY_CACHE_KEY) || '{}') } catch { return {} }
+}
+function _writeMany(obj) {
+  try { localStorage.setItem(MANY_CACHE_KEY, JSON.stringify(obj)) } catch { /* quota */ }
+}
+
+export async function fetchDestinationPhotos(city, country, count = 5) {
+  if (!city) return []
+  const key = `${_key(city, country)}|${count}`
+  const cache = _readMany()
+  const hit = cache[key]
+  if (hit && Date.now() - (hit.ts || 0) < TTL_MS && Array.isArray(hit.urls)) return hit.urls
+
+  const params = new URLSearchParams({ city, count: String(count) })
+  if (country) params.set('country', country)
+  let urls = []
+  try {
+    const resp = await fetch(`/api/destination-photos?${params.toString()}`)
+    if (resp.ok) {
+      const data = await resp.json()
+      urls = Array.isArray(data?.urls) ? data.urls.filter(Boolean) : []
+    }
+  } catch { /* fall through */ }
+
+  cache[key] = { urls, ts: Date.now() }
+  _writeMany(cache)
+  return urls
+}
+
+export function useDestinationPhotos(city, country, count = 5) {
+  const [photos, setPhotos] = useState(() => {
+    if (!city) return []
+    const cache = _readMany()
+    const hit = cache[`${_key(city, country)}|${count}`]
+    if (hit && Date.now() - (hit.ts || 0) < TTL_MS && Array.isArray(hit.urls)) return hit.urls
+    return []
+  })
+
+  useEffect(() => {
+    if (!city) { setPhotos([]); return }
+    let cancelled = false
+    fetchDestinationPhotos(city, country, count).then(urls => {
+      if (!cancelled) setPhotos(urls || [])
+    })
+    return () => { cancelled = true }
+  }, [city, country, count])
+
+  return photos
+}
+
+
 export function useDestinationPhoto(city, country) {
   const [photo, setPhoto] = useState(() => {
     if (!city) return null

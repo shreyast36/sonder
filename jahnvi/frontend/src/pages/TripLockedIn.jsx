@@ -15,12 +15,12 @@
  * so this page is purely UX choreography.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate, useParams } from 'react-router-dom'
 import { BG, BONE, GOLD, MUTE, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
-import { useDestinationPhoto } from '../lib/destinationPhoto'
+import { useDestinationPhoto, useDestinationPhotos } from '../lib/destinationPhoto'
 import { getCurrentItinerary, saveItineraryAsCurrent } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
 
@@ -78,18 +78,40 @@ export default function TripLockedIn() {
     return () => { cancelled = true }
   }, [authLoading, user, itineraryId, navigate])
 
-  // Auto-advance from reveal → prompt after a beat so the user reads the
-  // destination name before the question lands. 4s is the read-and-breathe
-  // window for "{Destination} · {dates}". User can also skip past with the
-  // "Continue" button.
+  // Cinematic reveal needs more breathing room — the Ken-Burns montage
+  // cuts every ~1.2s and the typographic build runs ~3.6s before the
+  // city title settles. 7s is the read-and-breathe window before the
+  // page flips to the co-traveller prompt. "Continue" lets eager users
+  // skip ahead.
   useEffect(() => {
     if (phase !== 'reveal' || !itinerary) return
-    const t = setTimeout(() => setPhase('prompt'), 4200)
+    const t = setTimeout(() => setPhase('prompt'), 7200)
     return () => clearTimeout(t)
   }, [phase, itinerary])
 
   const dest = itinerary?.destination || {}
-  const photo = useDestinationPhoto(dest.city, dest.country)
+  // Multi-photo for the reveal montage. Falls back to the single-
+  // photo helper (Wikipedia path) when Pixabay returns nothing usable
+  // so the screen always has at least one background image.
+  const photos = useDestinationPhotos(dest.city, dest.country, 5)
+  const fallbackPhoto = useDestinationPhoto(dest.city, dest.country)
+  const montagePhotos = useMemo(() => {
+    if (photos.length > 0) return photos
+    return fallbackPhoto ? [fallbackPhoto] : []
+  }, [photos, fallbackPhoto])
+
+  // Rotate through the montage every 1.2s during the reveal phase.
+  // Pauses on the prompt screen so the user isn't visually distracted
+  // when reading the question.
+  const [photoIdx, setPhotoIdx] = useState(0)
+  useEffect(() => {
+    if (phase !== 'reveal' || montagePhotos.length < 2) return
+    const t = setInterval(() => {
+      setPhotoIdx(i => (i + 1) % montagePhotos.length)
+    }, 1200)
+    return () => clearInterval(t)
+  }, [phase, montagePhotos.length])
+
   const days  = itinerary?.days || []
   const dateRange = _fmtDateRange(days)
 
@@ -119,25 +141,77 @@ export default function TripLockedIn() {
       display: 'flex', flexDirection: 'column',
       position: 'relative', overflow: 'hidden',
     }}>
-      {/* Hero photo as a soft background, with a deep gradient over it so
-          the type stays readable. Slow zoom on mount to feel cinematic. */}
-      {photo && (
-        <motion.div
-          initial={{ scale: 1.10, opacity: 0 }}
-          animate={{ scale: 1.00, opacity: 1 }}
-          transition={{ duration: 2.4, ease }}
-          style={{
-            position: 'absolute', inset: 0, zIndex: 0,
-            backgroundImage: `url(${photo})`,
-            backgroundSize: 'cover', backgroundPosition: 'center',
-            filter: 'saturate(0.85) brightness(0.55)',
-          }}
-        />
+      {/* CINEMATIC MONTAGE — Ken-Burns slideshow.
+          Rapid 1.2s cuts give the page a trailer cadence. Each slide
+          zooms slightly and crossfades into the next so the transition
+          feels deliberate rather than choppy. */}
+      <AnimatePresence>
+        {phase === 'reveal' && montagePhotos.length > 0 && (
+          <motion.div
+            key={`slide-${photoIdx}`}
+            initial={{ opacity: 0, scale: 1.18 }}
+            animate={{ opacity: 1, scale: 1.04 }}
+            exit={{ opacity: 0, scale: 1.10 }}
+            transition={{ duration: 1.5, ease: [0.16, 1, 0.3, 1] }}
+            style={{
+              position: 'absolute', inset: 0, zIndex: 0,
+              backgroundImage: `url(${montagePhotos[photoIdx]})`,
+              backgroundSize: 'cover', backgroundPosition: 'center',
+              filter: 'saturate(0.88) brightness(0.58)',
+              willChange: 'transform, opacity',
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* After the reveal phase settles the prompt screen pins on the
+          first photo so the background stays calm while the user reads
+          the question. */}
+      {phase !== 'reveal' && montagePhotos.length > 0 && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 0,
+          backgroundImage: `url(${montagePhotos[0]})`,
+          backgroundSize: 'cover', backgroundPosition: 'center',
+          filter: 'saturate(0.78) brightness(0.45)',
+        }}/>
       )}
+
+      {/* Cinematic vignette — dark edges keep focus centre, where the
+          type lives. Always rendered (independent of montage) so the
+          composition reads as "film frame" not "browser tab". */}
       <div style={{
         position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
-        background: 'linear-gradient(180deg, rgba(8,8,7,0.55) 0%, rgba(14,11,8,0.40) 35%, rgba(8,8,7,0.92) 100%)',
+        background: 'radial-gradient(ellipse 120% 90% at 50% 50%, transparent 25%, rgba(0,0,0,0.75) 100%)',
       }}/>
+
+      {/* Top + bottom gradient scrims for type contrast */}
+      <div style={{
+        position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
+        background: 'linear-gradient(180deg, rgba(8,8,7,0.55) 0%, rgba(14,11,8,0.30) 30%, rgba(14,11,8,0.30) 70%, rgba(8,8,7,0.85) 100%)',
+      }}/>
+
+      {/* Opening flash — quick gold burst on initial reveal so the page
+          lands with a visible "stinger" rather than a fade-in. Mounts
+          once and gone in 600ms. */}
+      <AnimatePresence>
+        {phase === 'reveal' && itinerary && (
+          <motion.div
+            key="stinger"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: [0, 0.45, 0] }}
+            transition={{ duration: 0.65, times: [0, 0.3, 1], ease: 'easeOut' }}
+            style={{
+              position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none',
+              background: 'radial-gradient(ellipse at 50% 50%, rgba(240,220,176,0.85) 0%, rgba(212,182,134,0.45) 25%, transparent 60%)',
+              mixBlendMode: 'screen',
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Gold dust particles falling from the top — adds visible motion
+          during the reveal so the screen never feels static. */}
+      {phase === 'reveal' && <GoldDust count={28}/>}
 
       {/* Top nav — minimal, just the brand mark */}
       <nav style={{
@@ -195,102 +269,161 @@ export default function TripLockedIn() {
           {!error && itinerary && phase === 'reveal' && (
             <motion.div
               key="reveal"
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
-              transition={{ duration: 0.7, ease }}
-              style={{ width: '100%', maxWidth: 780 }}
+              initial={{ opacity: 1 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, scale: 1.08, transition: { duration: 0.5, ease } }}
+              style={{ width: '100%', maxWidth: 920 }}
             >
+              {/* "LOCKED IN" — track-out animation: starts tight, expands
+                  as it lands so it reads as the camera pulling back. */}
               <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.6, delay: 0.2, ease }}
+                initial={{ opacity: 0, letterSpacing: '0.20em' }}
+                animate={{ opacity: 1, letterSpacing: '0.42em' }}
+                transition={{ duration: 1.1, delay: 0.15, ease }}
                 style={{
-                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
-                  letterSpacing: '0.36em', textTransform: 'uppercase',
-                  color: `${GOLD}cc`, marginBottom: 28,
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+                  textTransform: 'uppercase', fontWeight: 600,
+                  color: GOLD, marginBottom: 28,
+                  textShadow: `0 0 24px ${GOLD}55`,
                 }}
               >
                 Locked in
               </motion.p>
 
-              <motion.h1
-                initial={{ opacity: 0, scale: 0.96 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 1.1, delay: 0.35, ease }}
-                style={{
-                  fontFamily: '"Cormorant Garamond",serif', fontWeight: 400,
-                  fontStyle: 'italic', fontSize: 'clamp(36px, 7vw, 84px)',
-                  lineHeight: 1.0, letterSpacing: '-0.02em',
-                  color: BONE, marginBottom: 14,
-                  textShadow: '0 6px 32px rgba(0,0,0,0.55)',
-                }}
-              >
-                You're going to {dest.city || 'your trip'}.
-              </motion.h1>
-
+              {/* COUNTRY — slams in before the city for a "trailer card"
+                  feel. Small caps, tracked out, drops a beat before CITY. */}
               {dest.country && (
                 <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.8, delay: 0.9, ease }}
+                  initial={{ opacity: 0, y: -16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.6, ease }}
                   style={{
-                    fontFamily: '"Inter Tight",sans-serif', fontSize: 12,
-                    letterSpacing: '0.32em', textTransform: 'uppercase',
-                    color: MUTE, marginBottom: 14,
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 13,
+                    letterSpacing: '0.36em', textTransform: 'uppercase',
+                    color: 'rgba(244,237,224,0.85)', marginBottom: 12,
+                    textShadow: '0 2px 14px rgba(0,0,0,0.65)',
                   }}
                 >
                   {dest.country}
                 </motion.p>
               )}
 
+              {/* CITY — the OH SHIT moment. Starts overscaled and blurred
+                  at 0.95 then SLAMS to scale 1 with a deep drop-shadow
+                  and the gold particle stinger fires behind it (handled
+                  above). Pulses gently after settling. */}
+              <motion.h1
+                initial={{ opacity: 0, scale: 1.55, filter: 'blur(16px)', y: 12 }}
+                animate={{
+                  opacity: 1, scale: 1, filter: 'blur(0px)', y: 0,
+                }}
+                transition={{
+                  duration: 1.05,
+                  delay: 0.95,
+                  ease: [0.16, 1, 0.3, 1],
+                }}
+                style={{
+                  fontFamily: '"Cormorant Garamond",serif', fontWeight: 400,
+                  fontStyle: 'italic',
+                  fontSize: 'clamp(54px, 11vw, 152px)',
+                  lineHeight: 0.95, letterSpacing: '-0.025em',
+                  color: BONE, marginBottom: 22,
+                  textShadow: '0 8px 48px rgba(0,0,0,0.75), 0 0 60px rgba(212,182,134,0.30)',
+                  willChange: 'transform, filter, opacity',
+                }}
+              >
+                {dest.city || 'your trip'}
+              </motion.h1>
+
+              {/* Underline ornament — a hairline that draws across after
+                  the city lands. Telegraphs "this is the title". */}
+              <motion.div
+                initial={{ width: 0, opacity: 0 }}
+                animate={{ width: 120, opacity: 1 }}
+                transition={{ duration: 0.7, delay: 1.7, ease }}
+                style={{
+                  height: 1, background: `linear-gradient(to right, transparent, ${GOLD}, transparent)`,
+                  margin: '0 auto 28px',
+                  boxShadow: `0 0 12px ${GOLD}55`,
+                }}
+              />
+
+              {/* "You're going" — affirmation line in serif, lower-key
+                  than the city but warm enough to land. */}
+              <motion.p
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, delay: 1.9, ease }}
+                style={{
+                  fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+                  fontSize: 'clamp(22px, 3vw, 32px)',
+                  color: `${BONE}d0`, margin: '0 0 14px',
+                  letterSpacing: '0.01em',
+                }}
+              >
+                You're going.
+              </motion.p>
+
+              {/* DATE — click-in with a tiny x-shake so it reads as a
+                  stamped credit. */}
               {dateRange && (
                 <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.8, delay: 1.1, ease }}
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: [0, -3, 3, 0] }}
+                  transition={{
+                    opacity: { duration: 0.5, delay: 2.4, ease },
+                    x:       { duration: 0.5, delay: 2.4, times: [0, 0.3, 0.7, 1], ease: 'easeOut' },
+                  }}
                   style={{
-                    fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
-                    fontSize: 20, color: `${BONE}c0`, marginBottom: 40,
+                    fontFamily: '"Inter Tight",sans-serif',
+                    fontSize: 14, color: BONE, marginBottom: 40,
+                    letterSpacing: '0.24em', textTransform: 'uppercase',
+                    fontWeight: 500,
                   }}
                 >
                   {dateRange}
                 </motion.p>
               )}
 
-              {/* Day stripe — small per-day pills so the reveal carries the
-                  finalized itinerary's actual shape, not just the city name. */}
+              {/* Day stripe — each pill cascades in left-to-right after
+                  the date stamp. Reads like end credits scrolling. */}
               {days.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 1.0, delay: 1.4, ease }}
-                  style={{
-                    display: 'flex', flexWrap: 'wrap', gap: 8,
-                    justifyContent: 'center', marginBottom: 40,
-                    maxWidth: 680, marginLeft: 'auto', marginRight: 'auto',
-                  }}
-                >
-                  {days.slice(0, 12).map(d => (
-                    <span key={d.day_number} style={{
-                      padding: '8px 14px', borderRadius: 999,
-                      background: 'rgba(212,182,134,0.08)',
-                      border: `1px solid ${HAIRLINE}`,
-                      fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
-                      letterSpacing: '0.10em', color: `${BONE}d8`,
-                      maxWidth: 320, overflow: 'hidden',
-                      textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
+                <div style={{
+                  display: 'flex', flexWrap: 'wrap', gap: 8,
+                  justifyContent: 'center', marginBottom: 40,
+                  maxWidth: 720, marginLeft: 'auto', marginRight: 'auto',
+                }}>
+                  {days.slice(0, 12).map((d, i) => (
+                    <motion.span
+                      key={d.day_number}
+                      initial={{ opacity: 0, y: 10, scale: 0.92 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{
+                        duration: 0.4,
+                        delay: 3.0 + i * 0.08,
+                        ease: [0.16, 1, 0.3, 1],
+                      }}
+                      style={{
+                        padding: '8px 14px', borderRadius: 999,
+                        background: 'rgba(212,182,134,0.10)',
+                        border: `1px solid ${GOLD}33`,
+                        fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                        letterSpacing: '0.10em', color: `${BONE}e0`,
+                        maxWidth: 320, overflow: 'hidden',
+                        textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        boxShadow: `0 0 18px ${GOLD}11`,
+                      }}
+                    >
                       Day {d.day_number}{d.theme ? ` · ${d.theme}` : ''}
-                    </span>
+                    </motion.span>
                   ))}
-                </motion.div>
+                </div>
               )}
 
               <motion.button
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ duration: 0.6, delay: 1.9, ease }}
+                transition={{ duration: 0.6, delay: 4.2, ease }}
                 whileHover={{ y: -2 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={() => setPhase('prompt')}
@@ -376,6 +509,58 @@ export default function TripLockedIn() {
           )}
         </AnimatePresence>
       </div>
+    </div>
+  )
+}
+
+// Gold-dust particles drifting across the screen during the reveal.
+// Cheap visual motion — keeps the screen alive without a video asset.
+// Each particle gets a deterministic seed so positions stay stable
+// across re-renders within the same mount.
+function GoldDust({ count = 24 }) {
+  const particles = useMemo(() => {
+    return Array.from({ length: count }, (_, i) => ({
+      left:    Math.random() * 100,
+      size:    1 + Math.random() * 2.5,
+      drift:   -20 + Math.random() * 40,
+      delay:   Math.random() * 4,
+      dur:     5 + Math.random() * 5,
+      opacity: 0.25 + Math.random() * 0.55,
+    }))
+  }, [count])
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none',
+      overflow: 'hidden',
+    }}>
+      {particles.map((p, i) => (
+        <motion.span
+          key={i}
+          initial={{ y: '-10vh', x: 0, opacity: 0 }}
+          animate={{
+            y: '110vh',
+            x: p.drift,
+            opacity: [0, p.opacity, p.opacity, 0],
+          }}
+          transition={{
+            duration: p.dur,
+            delay:    p.delay,
+            repeat:   Infinity,
+            ease:     'linear',
+            times:    [0, 0.15, 0.85, 1],
+          }}
+          style={{
+            position: 'absolute',
+            left: `${p.left}%`,
+            top: 0,
+            width: p.size, height: p.size,
+            borderRadius: '50%',
+            background: `radial-gradient(circle, rgba(240,220,176,1) 0%, rgba(212,182,134,0.4) 60%, transparent 100%)`,
+            boxShadow: '0 0 6px rgba(240,220,176,0.7)',
+            willChange: 'transform, opacity',
+          }}
+        />
+      ))}
     </div>
   )
 }

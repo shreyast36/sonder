@@ -35,6 +35,50 @@ def _normalise(query: str) -> str:
     return re.sub(r"\s+", " ", (query or "").lower().strip())
 
 
+async def fetch_image_urls(query: str, *, count: int = 5, category: str = "travel") -> list[str]:
+    """Up to `count` distinct large image URLs for the query, ranked
+    by Pixabay's popularity. Cached in-process alongside the single-
+    image cache (different key shape) so the destination-photo route
+    can ask for a montage without re-paying Pixabay quota.
+    """
+    if not PIXABAY_API_KEY:
+        return []
+    q = _normalise(query)
+    if not q:
+        return []
+    cache_key = f"__many__{count}__{q}"
+    if cache_key in _CACHE:
+        # Stored as a JSON-friendly tuple-or-None on the same dict.
+        cached = _CACHE.get(cache_key)
+        return list(cached) if isinstance(cached, (list, tuple)) else []
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
+            resp = await client.get(_API, params={
+                "key":            PIXABAY_API_KEY,
+                "q":              q,
+                "image_type":     "photo",
+                "orientation":    "horizontal",
+                "category":       category,
+                "safesearch":     "true",
+                "order":          "popular",
+                "per_page":       max(3, min(count, 20)),
+            })
+            resp.raise_for_status()
+            data = resp.json()
+            hits = data.get("hits") or []
+            urls: list[str] = []
+            for h in hits[:count]:
+                u = h.get("largeImageURL") or h.get("webformatURL")
+                if u:
+                    urls.append(u)
+            _CACHE[cache_key] = urls
+            return urls
+    except Exception as e:
+        logger.warning("Pixabay multi-search failed for %r: %s", q, e)
+        _CACHE[cache_key] = []
+        return []
+
+
 async def fetch_image_url(query: str, *, category: str = "travel") -> Optional[str]:
     """One large image URL for the given query, or None.
 
