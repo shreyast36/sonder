@@ -131,6 +131,76 @@ Return ONLY a JSON object with these keys:
 No preamble. No code fences. No markdown. Just the JSON object."""
 
 
+def _group_framing(constraints: TripConstraints) -> str:
+    """Per-group-type guidance for the persona LLM.
+
+    The same persona answers read differently depending on who's on the
+    trip. A solo traveller's social_role answer reveals their isolated
+    instincts; a couple's reveals the dynamic between two people; a
+    family lead's reveals the role they take inside a group; a friend-
+    group lead's reveals the social register they bring to a peer
+    setting. The reveal copy must use the right grammatical lens (you /
+    you both / your family / your group) and read the same persona
+    primitives through that lens — not the same paragraph with pronouns
+    swapped.
+
+    This block is appended to the system prompt; downstream the
+    paragraph + bullets + descriptor all need to honour it."""
+    style = constraints.who_travelling_with
+    n = max(1, int(constraints.group_size or 1))
+    if style is None:
+        return ""
+    if style.value == "solo":
+        return (
+            "TRIP SHAPE: solo traveller (party of 1).\n"
+            "Read the persona answers as their isolated instincts. Use "
+            "second-person singular ('you', 'your'). The reveal is about "
+            "how this one person travels — pace they set when nobody else "
+            "is anchoring them, how they handle their own friction, what "
+            "they gravitate toward when nobody else is voting."
+        )
+    if style.value == "couple":
+        return (
+            "TRIP SHAPE: a couple travelling together (party of 2).\n"
+            "Read the persona answers as the DYNAMIC between them, not "
+            "just one half. The 'they' / 'them' in the answers refers to "
+            "the user; the reveal should land on the trip THEY shape "
+            "together. Use second-person 'you' (the user) but lean into "
+            "phrases that imply the partner is present — 'the kind of "
+            "evening you'd both linger in', 'rooms you'd choose together'. "
+            "Don't invent the partner's traits; do let the trip feel "
+            "shared rather than solo."
+        )
+    if style.value == "family":
+        return (
+            f"TRIP SHAPE: family trip of {n}.\n"
+            "Read the persona answers as the role this person takes inside "
+            "the group. social_role + friction_response reveal how they "
+            "ABSORB or REGULATE the family's energy under stress; "
+            "ideal_atmosphere reveals what atmosphere they'd lobby the "
+            "family toward. The reveal should describe the trip 'your "
+            "family' would take with this person setting the tone. Use "
+            "'you' and 'your family' — not 'they'. Lean into anchors that "
+            "imply mixed ages and shared meals; avoid late-night / "
+            "high-stimulation framing unless the answers explicitly point "
+            "there."
+        )
+    if style.value == "friends":
+        return (
+            f"TRIP SHAPE: trip with friends, group of {n}.\n"
+            "Read the persona answers as the social register this person "
+            "brings to a peer group. social_role reveals what slot they "
+            "play in the group (planner / regulator / hype / connector); "
+            "trip_feeling reveals what THEY want the group to come away "
+            "with, even if others want different things. The reveal "
+            "describes the trip 'you and your group' would take with this "
+            "person setting the tone. Use 'you' and 'your group' / 'the "
+            "group' — not 'they'. Lean into anchors that imply shared "
+            "decisions and overlapping energy levels."
+        )
+    return ""
+
+
 def _user_prompt(
     constraints: TripConstraints,
     answers: PersonaQuestionAnswers,
@@ -143,12 +213,16 @@ def _user_prompt(
     pace       = _resolve_pace(constraints.pace)
     styles     = ", ".join(constraints.must_haves) if constraints.must_haves else "—"
     who        = constraints.who_travelling_with.value if constraints.who_travelling_with else "—"
+    party      = max(1, int(constraints.group_size or 1))
+    group_block = _group_framing(constraints)
 
-    return f"""User's persona signals:
+    framing_section = f"{group_block}\n\n" if group_block else ""
+
+    return f"""{framing_section}User's persona signals:
 
 Travel style chips: {styles}
 Pace: {pace}
-Travelling with: {who}
+Travelling with: {who} (party of {party})
 
 Their persona answers:
 - On a trip people rely on them for: {social}

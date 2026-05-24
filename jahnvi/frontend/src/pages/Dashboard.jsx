@@ -496,6 +496,7 @@ export default function Dashboard() {
   // while the network round-trip catches up.
   const [storedItinerary, setStoredItinerary] = useState(() => loadStoredItinerary())
   const [matches, setMatches] = useState([])
+  const [matchingDisabled, setMatchingDisabled] = useState(null)
   const [activePair, setActivePair] = useState(null)
   const [matchesLoading, setMatchesLoading] = useState(false)
   // Open-to-companions toggle state for the current trip. Synced from
@@ -584,6 +585,15 @@ export default function Dashboard() {
     getCotravellers(itineraryId)
       .then(res => {
         if (cancelled) return
+        // Backend suppresses matching for family trips — they already have
+        // their group, surfacing strangers as 'companions' makes no sense.
+        if (!Array.isArray(res) && res?.matching_disabled) {
+          setActivePair(null)
+          setMatches([])
+          setMatchingDisabled(res?.matching_disabled_reason || true)
+          return
+        }
+        setMatchingDisabled(null)
         // If the user already has an approved pair for this trip, suppress
         // the new-matches strip entirely — they don't have a slot to fill,
         // they have a co-traveller already.
@@ -1312,7 +1322,17 @@ export default function Dashboard() {
                   <MatchCard match={m} onClick={() => navigate(`/match/${m.id}`)}/>
                 </motion.div>
               ))}
-              {!matchesLoading && !activePair && matches.length === 0 && (
+              {!matchesLoading && !activePair && matches.length === 0 && matchingDisabled && (
+                <div style={{ padding: '24px', borderRadius: 12, border: `1px solid ${HAIRLINE}`, background: 'rgba(232,212,168,0.025)' }}>
+                  <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 18, color: BONE, margin: 0, lineHeight: 1.15 }}>
+                    You already have your travelling party.
+                  </p>
+                  <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 12, color: MUTE, margin: '8px 0 0', lineHeight: 1.55 }}>
+                    Family trips skip companion matching — head to your shared itinerary to plan together.
+                  </p>
+                </div>
+              )}
+              {!matchesLoading && !activePair && matches.length === 0 && !matchingDisabled && (
                 <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 14, color: MUTE, padding: '20px 4px', margin: 0 }}>
                   No matches yet — plan a trip and we'll line up companions whose rhythm fits yours.
                 </p>

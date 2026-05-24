@@ -1,9 +1,15 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional
 from datetime import date
 from jahnvi.schemas.enums import (
     PacePreference, BudgetStyle, TravelStyle, EmotionIntent,
 )
+
+
+# Hard ceiling for family / friends parties. Past 8 the trip-planning shape
+# changes (multi-room logistics, separate itinerary tracks, etc.) and the
+# generator + ranker aren't tuned for it.
+MAX_PARTY_SIZE = 8
 
 
 class TripConstraints(BaseModel):
@@ -18,6 +24,12 @@ class TripConstraints(BaseModel):
     PersonaQuestionAnswers.small_thing.
 
     pace is structured (not inferred from text).
+
+    group_size is constrained by who_travelling_with:
+      - solo    → exactly 1
+      - couple  → exactly 2
+      - family  → 2..MAX_PARTY_SIZE (user-specified)
+      - friends → 2..MAX_PARTY_SIZE (user-specified)
     """
     destination_query:    str = ""
     destination_type:     str = ""
@@ -39,6 +51,30 @@ class TripConstraints(BaseModel):
     trip_feeling:         Optional[str] = None
     friction_response:    Optional[str] = None
     ideal_atmosphere:     Optional[str] = None
+
+    @model_validator(mode="after")
+    def _coerce_group_size(self) -> "TripConstraints":
+        """Bind group_size to who_travelling_with at the API boundary so
+        downstream code can trust the pair is consistent. Solo / couple
+        are deterministic; family / friends accept user-specified sizes
+        in 2..MAX_PARTY_SIZE."""
+        style = self.who_travelling_with
+        if style == TravelStyle.solo:
+            self.group_size = 1
+        elif style == TravelStyle.couple:
+            self.group_size = 2
+        elif style in (TravelStyle.family, TravelStyle.friends):
+            if self.group_size < 2:
+                self.group_size = 2
+            elif self.group_size > MAX_PARTY_SIZE:
+                self.group_size = MAX_PARTY_SIZE
+        else:
+            # Style unset — leave size alone; default factory already gave 1.
+            if self.group_size < 1:
+                self.group_size = 1
+            elif self.group_size > MAX_PARTY_SIZE:
+                self.group_size = MAX_PARTY_SIZE
+        return self
 
 
 class PersonaQuestionAnswers(BaseModel):

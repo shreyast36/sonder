@@ -14,7 +14,11 @@ const STYLES      = ['Adventure', 'Culture & history', 'Nature & landscape', 'Ci
 const PACES       = [{ key: 'relaxed', label: 'Slow', sub: 'Linger' }, { key: 'moderate', label: 'Moderate', sub: 'Balanced' }, { key: 'packed', label: 'Fast', sub: 'Pack it in' }]
 const CURRENCIES  = ['USD', 'EUR', 'JPY', 'GBP', 'CNY', 'AUD', 'CAD', 'CHF', 'HKD', 'SGD', 'SEK', 'NOK', 'NZD', 'INR', 'MXN']
 const WHO_OPTS    = [{ key: 'solo', label: 'Solo' }, { key: 'couple', label: 'Couple' }, { key: 'family', label: 'Family' }, { key: 'friends', label: 'Friends' }]
-const GROUP_SIZES = [1, 2, 3, 4, 5]
+// Group size is only user-pickable for family / friends. Solo locks to 1,
+// couple locks to 2. Cap at 8 — past that the trip-planning shape changes
+// and the generator + ranker aren't tuned for it.
+const PARTY_SIZES = [2, 3, 4, 5, 6, 7, 8]
+const MAX_PARTY_SIZE = 8
 
 const STRUCTURED_STEPS = 5
 const STEP_LABELS = ['Destination', 'Dates', 'Travel style', 'Budget', 'Your group']
@@ -162,6 +166,24 @@ export default function TripPreferences() {
   const [groupSize, setGroupSize]     = useState(1)
   const [travelsWith, setTravelsWith] = useState('')
 
+  // Group size follows from travel style:
+  //   solo    → locked at 1
+  //   couple  → locked at 2
+  //   family  → user picks (2-8); skips matching downstream
+  //   friends → user picks (2-8); matching kept on
+  // Whenever travelsWith flips, snap group_size to the correct default
+  // (and let the user adjust afterwards for family / friends).
+  function chooseTravelsWith(key) {
+    setTravelsWith(key)
+    if (key === 'solo')   setGroupSize(1)
+    else if (key === 'couple') setGroupSize(2)
+    else if (key === 'family' || key === 'friends') {
+      // Default the user into a sensible mid-size, let them adjust.
+      setGroupSize(prev => (prev >= 2 && prev <= MAX_PARTY_SIZE) ? prev : 3)
+    }
+  }
+  const needsPartySize = travelsWith === 'family' || travelsWith === 'friends'
+
   // ── Persona answers (survey + freeform mix) ──
   const [persona, setPersona] = useState({
     social_role:        '',
@@ -187,7 +209,13 @@ export default function TripPreferences() {
         departure && returnDate,
         styles.length > 0,
         budget.trim().length > 0,
-        groupSize >= 1 && travelsWith.length > 0 && nationality.trim().length > 0,
+        travelsWith.length > 0 &&
+          nationality.trim().length > 0 &&
+          (
+            travelsWith === 'solo'   ? groupSize === 1 :
+            travelsWith === 'couple' ? groupSize === 2 :
+            groupSize >= 2 && groupSize <= MAX_PARTY_SIZE
+          ),
       ][step]
 
   function toggleMulti(key, value, max = null) {
@@ -317,29 +345,43 @@ export default function TripPreferences() {
       sub: 'Help us shape the trip around your group.',
       content: (
         <div style={{ marginTop: 52 }}>
-          <div style={{ display: 'flex', gap: 10, marginBottom: 44 }}>
+          <div style={{ display: 'flex', gap: 10, marginBottom: needsPartySize ? 28 : 44 }}>
             {WHO_OPTS.map(w => {
               const active = travelsWith === w.key
               return (
-                <motion.button key={w.key} whileTap={{ scale: 0.95 }} onClick={() => setTravelsWith(w.key)}
+                <motion.button key={w.key} whileTap={{ scale: 0.95 }} onClick={() => chooseTravelsWith(w.key)}
                   style={{ flex: 1, padding: '16px 0', borderRadius: 14, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 12, background: active ? `${ORANGE}12` : 'transparent', border: `1px solid ${active ? `${ORANGE}55` : HAIRLINE}`, color: active ? ORANGE : MUTE, transition: 'all 0.2s', boxShadow: active ? `0 0 20px ${ORANGE}22` : 'none' }}>
                   {w.label}
                 </motion.button>
               )
             })}
           </div>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 18 }}>Group size</p>
-          <div style={{ display: 'flex', gap: 10, marginBottom: 44 }}>
-            {GROUP_SIZES.map(n => {
-              const active = groupSize === n
-              return (
-                <motion.button key={n} whileTap={{ scale: 0.92 }} onClick={() => setGroupSize(n)}
-                  style={{ width: 52, height: 52, borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 16, fontWeight: 500, background: active ? `${ORANGE}18` : 'transparent', border: `1px solid ${active ? `${ORANGE}66` : HAIRLINE}`, color: active ? ORANGE : MUTE, transition: 'all 0.2s' }}>
-                  {n === 5 ? '5+' : n}
-                </motion.button>
-              )
-            })}
-          </div>
+          <AnimatePresence>
+            {needsPartySize && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.25 }}
+                style={{ overflow: 'hidden' }}
+              >
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 18 }}>
+                  How many in your {travelsWith === 'family' ? 'family' : 'group'}?
+                </p>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 44, flexWrap: 'wrap' }}>
+                  {PARTY_SIZES.map(n => {
+                    const active = groupSize === n
+                    return (
+                      <motion.button key={n} whileTap={{ scale: 0.92 }} onClick={() => setGroupSize(n)}
+                        style={{ width: 52, height: 52, borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 16, fontWeight: 500, background: active ? `${ORANGE}18` : 'transparent', border: `1px solid ${active ? `${ORANGE}66` : HAIRLINE}`, color: active ? ORANGE : MUTE, transition: 'all 0.2s' }}>
+                        {n}
+                      </motion.button>
+                    )
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Your nationality</p>
           <ElegantInput value={nationality} onChange={setNationality} placeholder="British, Indian, Brazilian…" icon={Users}/>
         </div>

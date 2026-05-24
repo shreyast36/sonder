@@ -162,6 +162,21 @@ async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verif
             return {"matches": [], "active_pair": active_pair, "denied_count": len(denied_ids)}
 
         profile = await _load_user_profile(uid, body.itinerary_id)
+
+        # Skip matching entirely for family trips — they already have their
+        # group, surfacing strangers as 'companions' makes no product sense.
+        # Friends keep matching: a friend group can still add one more.
+        # Solo / couple of course matter most for matching.
+        constraints = getattr(profile, "constraints", None)
+        style = getattr(constraints, "who_travelling_with", None)
+        style_value = getattr(style, "value", None) if style else None
+        if style_value == "family":
+            return {
+                "matches": [], "active_pair": None,
+                "denied_count": len(denied_ids),
+                "matching_disabled": True,
+                "matching_disabled_reason": "family_trip",
+            }
         cs = dict(profile.compatibility_signals or {})
         if not cs.get("top_interests") and body.top_interests:
             cs["top_interests"] = body.top_interests
