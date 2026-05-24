@@ -141,6 +141,13 @@ async def write_itinerary_status(user_id: str, status: str) -> None:
 
 
 async def write_itinerary(itinerary: Itinerary) -> None:
+    """Persist the full itinerary doc.
+
+    Raises on Firestore failure so callers can avoid follow-up merge=True
+    writes that would otherwise create an orphan partial document
+    containing only sidecar fields (which later fails Pydantic validation
+    on read via get_itinerary).
+    """
     if LOCAL_MODE:
         _store[f"itinerary:{itinerary.itinerary_id}"] = itinerary.model_dump()
         return
@@ -151,6 +158,7 @@ async def write_itinerary(itinerary: Itinerary) -> None:
         )
     except Exception as e:
         logger.warning("write_itinerary failed (Firestore unavailable?): %s", e)
+        raise
 
 
 async def delete_itinerary_and_related(itinerary_id: str) -> dict:
@@ -816,7 +824,12 @@ async def list_open_trips(limit: int = 60) -> list[dict]:
 
 
 async def set_itinerary_open(itinerary_id: str, *, is_open: bool, join_capacity: int) -> bool:
-    """Flip an itinerary's join-discovery state. Returns True on success."""
+    """Flip an itinerary's join-discovery state. Returns True on success.
+
+    Refuses to write if the underlying itinerary doc does not exist —
+    otherwise a merge=True write would create an orphan partial document
+    that later fails Pydantic validation on read.
+    """
     payload = {"is_open_to_join": bool(is_open), "join_capacity": max(0, int(join_capacity))}
     if LOCAL_MODE:
         key = f"itinerary:{itinerary_id}"
@@ -825,9 +838,15 @@ async def set_itinerary_open(itinerary_id: str, *, is_open: bool, join_capacity:
         _store[key] = {**_store[key], **payload}
         return True
     try:
-        await asyncio.to_thread(
-            lambda: get_db().collection("itineraries").document(itinerary_id).set(payload, merge=True)
-        )
+        doc_ref = get_db().collection("itineraries").document(itinerary_id)
+        snap = await asyncio.to_thread(lambda: doc_ref.get())
+        if not snap.exists:
+            logger.warning(
+                "set_itinerary_open: refusing to merge — base doc %s missing",
+                itinerary_id,
+            )
+            return False
+        await asyncio.to_thread(lambda: doc_ref.set(payload, merge=True))
         return True
     except Exception as e:
         logger.warning("set_itinerary_open failed for %s: %s", itinerary_id, e)
