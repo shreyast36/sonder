@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Globe, Check, Users } from 'lucide-react'
+import { ArrowLeft, Globe, Check } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
@@ -159,10 +159,12 @@ export default function TripPreferences() {
   const [departure, setDepart]        = useState('')
   const [returnDate, setReturn]       = useState('')
   const [styles, setStyles]           = useState([])
-  const [pace, setPace]               = useState('moderate')
+  // No default pace — make the user choose. A pre-selected pace
+  // colours every downstream recommendation, and almost everyone
+  // accepts the default without thinking; better to ask.
+  const [pace, setPace]               = useState('')
   const [budget, setBudget]           = useState('')
   const [currency, setCurrency]       = useState('USD')
-  const [nationality, setNationality] = useState('')
   const [groupSize, setGroupSize]     = useState(1)
   const [travelsWith, setTravelsWith] = useState('')
   // Solo-only — drives the same-gender hard filter for cotraveller
@@ -211,10 +213,9 @@ export default function TripPreferences() {
     : [
         destination.trim().length > 0,
         departure && returnDate,
-        styles.length > 0,
+        styles.length > 0 && pace.length > 0,
         budget.trim().length > 0,
         travelsWith.length > 0 &&
-          nationality.trim().length > 0 &&
           (
             travelsWith === 'solo'   ? (groupSize === 1 && (gender === 'male' || gender === 'female')) :
             travelsWith === 'couple' ? groupSize === 2 :
@@ -240,7 +241,6 @@ export default function TripPreferences() {
     const profile = {
       constraints: {
         destination_query:   destination,
-        nationality,
         start_date:          departure || null,
         end_date:            returnDate || null,
         budget_usd:          parseFloat(budget) || 0,
@@ -431,8 +431,6 @@ export default function TripPreferences() {
               </motion.div>
             )}
           </AnimatePresence>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Your nationality</p>
-          <ElegantInput value={nationality} onChange={setNationality} placeholder="British, Indian, Brazilian…" icon={Users}/>
         </div>
       ),
     },
