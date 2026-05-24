@@ -220,6 +220,27 @@ async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verif
                     dropped, style_value, len(candidates),
                 )
 
+        # Same-gender hard filter for SOLO travellers — solo women
+        # match only women, solo men only men. Safety default for
+        # cold-strangers matching. Couples are already gender-locked
+        # at the seed level (male+female pairs only), so this only
+        # gates solo. If the user hasn't told us their gender, we
+        # fall back to mixed matching — no gender = no filter —
+        # rather than returning zero matches.
+        user_gender = (getattr(constraints, "gender", "") or "").strip().lower()
+        if style_value == "solo" and user_gender in ("male", "female"):
+            before = len(candidates)
+            candidates = [
+                c for c in candidates
+                if (getattr(c, "gender", "") or "").strip().lower() == user_gender
+            ]
+            dropped = before - len(candidates)
+            if dropped:
+                logger.info(
+                    "cotraveller: dropped %d candidates outside gender=%s (kept %d)",
+                    dropped, user_gender, len(candidates),
+                )
+
         # Cap the surfaced list at the top 3. When the user denies one,
         # _session_filters drops it from `denied_ids` on the next call
         # and the next-best candidate slides into the third slot — so
@@ -314,14 +335,29 @@ async def regenerate_cotraveller_matches(body: RegenerateMatchesRequest, uid: st
         constraints = getattr(profile, "constraints", None)
         style = getattr(constraints, "who_travelling_with", None)
         style_value = getattr(style, "value", None) if style else None
-        raw_top_n = 12 if style_value in ("solo", "couple") else 3
+        user_gender = (getattr(constraints, "gender", "") or "").strip().lower()
+        # Over-fetch when filters apply so the top-3 contract still
+        # holds after dropping cross-style and cross-gender candidates.
+        # Solo with gender filter has the thinnest pool — bump higher.
+        if style_value == "solo" and user_gender in ("male", "female"):
+            raw_top_n = 24
+        elif style_value in ("solo", "couple"):
+            raw_top_n = 12
+        else:
+            raw_top_n = 3
         matches = await regenerate_matches(profile, excluded, feedback=feedback, top_n=raw_top_n)
         if style_value in ("solo", "couple"):
             matches = [
                 m for m in matches
                 if (getattr(getattr(m.profile, "travel_style", None), "value", None) or
                     getattr(m.profile, "travel_style", None)) == style_value
-            ][:3]
+            ]
+        if style_value == "solo" and user_gender in ("male", "female"):
+            matches = [
+                m for m in matches
+                if (getattr(m.profile, "gender", "") or "").strip().lower() == user_gender
+            ]
+        matches = matches[:3]
         # Analytics: regenerate is the "show me different matches" signal —
         # high rate means current matches aren't resonating. Excluded count
         # tells us how deep the user has dug.

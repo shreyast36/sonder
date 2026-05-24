@@ -171,6 +171,7 @@ async def get_cotraveller_by_id(profile_id: str) -> "CoTravellerProfile | None":
             pace         = PacePreference(md.get("pace", "moderate")),
             budget_style = BudgetStyle(md.get("budget_style", "mid_range")),
             travel_style = TravelStyle(md.get("travel_style", "solo")),
+            gender       = (md.get("gender") or "").strip().lower() or None,
             avatar_url   = md.get("avatar_url"),
             preferred_destination = md.get("preferred_destination"),
             persona_answers       = _json_decode(md.get("persona_answers_json")),

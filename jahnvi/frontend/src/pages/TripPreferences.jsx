@@ -165,6 +165,10 @@ export default function TripPreferences() {
   const [nationality, setNationality] = useState('')
   const [groupSize, setGroupSize]     = useState(1)
   const [travelsWith, setTravelsWith] = useState('')
+  // Solo-only — drives the same-gender hard filter for cotraveller
+  // matching. We only ask solo travellers; couples are male+female by
+  // design, family/friends matching is disabled.
+  const [gender, setGender]           = useState('')
 
   // Group size follows from travel style:
   //   solo    → locked at 1
@@ -212,7 +216,7 @@ export default function TripPreferences() {
         travelsWith.length > 0 &&
           nationality.trim().length > 0 &&
           (
-            travelsWith === 'solo'   ? groupSize === 1 :
+            travelsWith === 'solo'   ? (groupSize === 1 && (gender === 'male' || gender === 'female')) :
             travelsWith === 'couple' ? groupSize === 2 :
             groupSize >= 2 && groupSize <= MAX_PARTY_SIZE
           ),
@@ -243,6 +247,7 @@ export default function TripPreferences() {
         budget_currency:     currency,
         group_size:          groupSize,
         who_travelling_with: travelsWith || null,
+        gender:              travelsWith === 'solo' ? (gender || null) : null,
         pace,
         must_haves:          styles,
         avoid_list:          [],
@@ -375,6 +380,50 @@ export default function TripPreferences() {
                       <motion.button key={n} whileTap={{ scale: 0.92 }} onClick={() => setGroupSize(n)}
                         style={{ width: 52, height: 52, borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 16, fontWeight: 500, background: active ? `${ORANGE}18` : 'transparent', border: `1px solid ${active ? `${ORANGE}66` : HAIRLINE}`, color: active ? ORANGE : MUTE, transition: 'all 0.2s' }}>
                         {n}
+                      </motion.button>
+                    )
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {/* Solo-only — drives the same-gender hard filter for
+              cotraveller matching. Couples / family / friends skip
+              this because their matching pool doesn't need gender
+              (couples are male+female by seed design; family/friends
+              matching is disabled). */}
+          <AnimatePresence>
+            {travelsWith === 'solo' && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.25 }}
+                style={{ overflow: 'hidden' }}
+              >
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 10 }}>
+                  Your gender
+                </p>
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 11, color: DIM, marginBottom: 18, lineHeight: 1.5 }}>
+                  We only match solo travellers with the same gender for safety. Skipped for couples / groups.
+                </p>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 44 }}>
+                  {[{ key: 'female', label: 'Female' }, { key: 'male', label: 'Male' }].map(g => {
+                    const active = gender === g.key
+                    return (
+                      <motion.button
+                        key={g.key} whileTap={{ scale: 0.95 }} onClick={() => setGender(g.key)}
+                        style={{
+                          flex: 1, padding: '16px 0', borderRadius: 14,
+                          cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 12,
+                          background: active ? `${ORANGE}12` : 'transparent',
+                          border: `1px solid ${active ? `${ORANGE}55` : HAIRLINE}`,
+                          color: active ? ORANGE : MUTE,
+                          transition: 'all 0.2s',
+                          boxShadow: active ? `0 0 20px ${ORANGE}22` : 'none',
+                        }}
+                      >
+                        {g.label}
                       </motion.button>
                     )
                   })}

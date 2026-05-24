@@ -54,6 +54,10 @@ class CoTravellerProfile(BaseModel):
     pace:         PacePreference
     budget_style: BudgetStyle
     travel_style: TravelStyle
+    # "male" | "female" — used by the same-gender hard filter for solo
+    # travellers in mushahid/routes/cotraveller.py. Sidecar field on
+    # Pinecone metadata for seeded personas; optional on the schema.
+    gender:       Optional[str] = None
     avatar_url:   Optional[str] = None
     embedding:    Optional[list[float]] = None
 
