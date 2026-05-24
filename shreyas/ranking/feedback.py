@@ -88,6 +88,8 @@ def apply_text_feedback(
     current_weights: dict[str, float],
     text: str,
     policy: Any,
+    *,
+    boost_multiplier: float = 1.0,
 ) -> tuple[dict[str, float], list[str]]:
     """
     Apply a text-feedback update to a user's per-surface weights for this
@@ -99,6 +101,12 @@ def apply_text_feedback(
         text: free-text feedback like "make this cheaper" or "less packed".
         policy: the policy module whose `features` + `feedback_policy` drive
             this update.
+        boost_multiplier: scalar applied to the policy's boost_amount before
+            updating weights. Used by the revision loop to dampen
+            corrections after repeated rejections (e.g. 0.5 ** (turn-1))
+            so weights don't oscillate when the user keeps pushing back
+            on similar feedback. Default 1.0 preserves the original
+            behaviour for callers that don't track turns.
 
     Returns:
         (new_weights, boosted_feature_names) — new_weights is renormalised
@@ -110,7 +118,7 @@ def apply_text_feedback(
         return dict(current_weights or {}), []
 
     cfg = getattr(policy, "feedback_policy", {}) or {}
-    boost_amount  = float(cfg.get("boost_amount", 0.10))
+    boost_amount  = float(cfg.get("boost_amount", 0.10)) * max(0.0, boost_multiplier)
     reduce_amount = float(cfg.get("reduce_amount", 0.05))  # unused in V1 text path; kept for symmetry
     min_weight    = float(cfg.get("min_weight",   0.05))
     strategy      =       cfg.get("renormalization", "sum_to_one")

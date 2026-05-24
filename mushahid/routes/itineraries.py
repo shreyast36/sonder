@@ -236,15 +236,36 @@ async def approve_itinerary(itinerary_id: str, uid: str = Depends(verify_token))
     })
     await write_itinerary(updated)
 
-    # Snapshot the user's per-surface ranker weights as 'finalized'.
-    # Future revisions on a NEW trip can start from these as a warm
-    # prior rather than the uniform 1/N baseline.
+    # Reinforce the most-recent revision's boosted features one final
+    # time — explicit user acceptance is a stronger signal than a
+    # mid-loop revision, so we apply a small confirming nudge before
+    # freezing. Then snapshot the resulting weights to
+    # finalized_ranker_weights so the NEXT trip starts from them
+    # instead of the uniform 1/N baseline.
     try:
+        from shreyas.ranking import feedback as ranker_feedback
+        from shreyas.ranking.policies import activity as activity_policy
+
         prof = await get_user_profile(uid) or {}
         signals = dict(prof.get("compatibility_signals") or {})
-        live_weights = dict(signals.get("ranker_weights") or {})
-        if live_weights:
-            signals["finalized_ranker_weights"] = live_weights
+        rw = dict(signals.get("ranker_weights") or {})
+
+        # Confirming nudge on the last revision turn's feedback.
+        history = list(getattr(itinerary, "revision_history", []) or [])
+        last_applied = next((h for h in reversed(history) if h.get("status") == "applied" and h.get("feedback")), None)
+        if last_applied:
+            current_act = dict(rw.get("activity") or {})
+            new_act, boosted = ranker_feedback.apply_text_feedback(
+                current_act, last_applied.get("feedback", ""),
+                activity_policy, boost_multiplier=0.5,  # half-strength confirm
+            )
+            if boosted:
+                rw["activity"] = new_act
+                logger.info("approve reinforcement: boosted %s on confirm", boosted)
+
+        if rw:
+            signals["ranker_weights"] = rw
+            signals["finalized_ranker_weights"] = rw
             await update_user_profile(uid, {"compatibility_signals": signals})
     except Exception as e:
         logger.warning("approve_itinerary: weight snapshot failed: %s", e)
@@ -380,6 +401,32 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
     if latest is not None:
         revised = latest
 
+    # ── 3b. Update per-user ranker weights from this feedback turn ──
+    # Decay the boost on every repeat turn so weights don't oscillate
+    # when the user keeps pushing back on similar things. Turn 1 gets
+    # full strength; turn 2 → half; turn 3 → quarter; capped at 1/8.
+    weight_delta_logged: dict = {"boosted": [], "multiplier": 0.0}
+    try:
+        from shreyas.ranking import feedback as ranker_feedback
+        from shreyas.ranking.policies import activity as activity_policy
+        multiplier = max(0.125, 0.5 ** (turn_number - 1))
+        signals = dict(profile.get("compatibility_signals") or {})
+        rw = dict(signals.get("ranker_weights") or {})
+        current_act = dict(rw.get("activity") or {})
+        new_act, boosted = ranker_feedback.apply_text_feedback(
+            current_act, feedback, activity_policy,
+            boost_multiplier=multiplier,
+        )
+        if boosted:
+            rw["activity"] = new_act
+            signals["ranker_weights"] = rw
+            await update_user_profile(uid, {"compatibility_signals": signals})
+            weight_delta_logged = {"boosted": boosted, "multiplier": multiplier}
+            logger.info("revise turn %d → boosted %s (mult %.3f)",
+                        turn_number, boosted, multiplier)
+    except Exception as e:
+        logger.warning("revise: weight update failed: %s", e)
+
     # ── 4. Diff dropped activity titles (for next-turn dedupe) ──
     before_titles = {ia.activity.name.strip() for day in (itinerary.days or [])
                                                 for ia in (day.activities or [])
@@ -400,6 +447,8 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
         "preserve":       verdict["preserve"],
         "dropped_titles": dropped,
         "added_titles":   added,
+        "boosted_features": weight_delta_logged["boosted"],
+        "boost_multiplier": weight_delta_logged["multiplier"],
         "created_at":     datetime.now(timezone.utc).isoformat(),
         "status":         "applied",
     })
