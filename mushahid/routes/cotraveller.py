@@ -194,6 +194,30 @@ async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verif
         candidates = await search_cotravellers(profile, extra_text=extra)
         if denied_ids:
             candidates = [c for c in candidates if getattr(c, "profile_id", None) not in denied_ids]
+
+        # Hard travel-style filter — a couple should never see solo
+        # personas surfaced as matches, a friends-group should see
+        # other friends-style personas, and solo travellers see solo.
+        # The ranker has a style_match feature but it only nudges the
+        # score; without this hard filter cross-style candidates slip
+        # through because of high embedding similarity on other axes.
+        # We log the drop count instead of silently filtering so we
+        # can spot a seed-pool gap (e.g. zero couple personas left
+        # after filter).
+        if style_value in ("solo", "couple", "friends"):
+            before = len(candidates)
+            candidates = [
+                c for c in candidates
+                if (getattr(getattr(c, "travel_style", None), "value", None) or
+                    getattr(c, "travel_style", None)) == style_value
+            ]
+            dropped = before - len(candidates)
+            if dropped:
+                logger.info(
+                    "cotraveller: dropped %d candidates outside style=%s (kept %d)",
+                    dropped, style_value, len(candidates),
+                )
+
         # Cap the surfaced list at the top 3. When the user denies one,
         # _session_filters drops it from `denied_ids` on the next call
         # and the next-best candidate slides into the third slot — so
@@ -282,7 +306,20 @@ async def regenerate_cotraveller_matches(body: RegenerateMatchesRequest, uid: st
         excluded = list({*(body.excluded_profile_ids or []), *denied_ids})
         # Same top-3 cap as the main /cotraveller endpoint — keeps the
         # "always show 3 live candidates" invariant after regenerate too.
-        matches = await regenerate_matches(profile, excluded, feedback=feedback, top_n=3)
+        # Over-fetch then style-filter, so the top_n=3 contract still
+        # holds after dropping cross-style candidates. Mirrors the hard
+        # filter in /cotraveller above so couples never see solos etc.
+        constraints = getattr(profile, "constraints", None)
+        style = getattr(constraints, "who_travelling_with", None)
+        style_value = getattr(style, "value", None) if style else None
+        raw_top_n = 3 if style_value not in ("solo", "couple", "friends") else 12
+        matches = await regenerate_matches(profile, excluded, feedback=feedback, top_n=raw_top_n)
+        if style_value in ("solo", "couple", "friends"):
+            matches = [
+                m for m in matches
+                if (getattr(getattr(m.profile, "travel_style", None), "value", None) or
+                    getattr(m.profile, "travel_style", None)) == style_value
+            ][:3]
         # Analytics: regenerate is the "show me different matches" signal —
         # high rate means current matches aren't resonating. Excluded count
         # tells us how deep the user has dug.
