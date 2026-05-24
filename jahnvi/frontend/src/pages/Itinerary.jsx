@@ -267,11 +267,13 @@ export default function Itinerary() {
     try {
       const res = await approveItinerary(itinerary.itinerary_id)
       setItinerary(prev => prev ? { ...prev, approval_status: 'finalized', finalized_at: res.finalized_at } : prev)
-      // Best-effort: also mark this as the user's current trip so it
-      // shows on the dashboard, then navigate them into the shared-
-      // itinerary surface where revisions now happen collaboratively.
+      // Best-effort: mark this as the user's current trip so the
+      // /trip-locked-in reveal can read it back via getCurrentItinerary.
       try { await saveItineraryAsCurrent(itinerary.itinerary_id) } catch { /* noop */ }
-      setTimeout(() => navigate(`/shared/${encodeURIComponent(itinerary.itinerary_id)}`), 900)
+      // Reveal screen handles the destination flourish + co-traveller
+      // prompt; from there it either routes into the cotraveller intake
+      // or back to dashboard depending on the user's answer.
+      setTimeout(() => navigate(`/trip-locked-in/${encodeURIComponent(itinerary.itinerary_id)}`), 600)
     } catch (e) {
       setApproveError(e?.message || 'Could not approve')
     } finally {
@@ -1005,21 +1007,24 @@ export default function Itinerary() {
                 Revise
               </motion.button>
               <motion.button
-                whileHover={!approveBusy ? { scale: 1.04, boxShadow: '0 0 22px rgba(16,185,129,0.50)' } : {}}
+                whileHover={!approveBusy ? { scale: 1.03, boxShadow: '0 0 22px rgba(16,185,129,0.50)' } : {}}
                 whileTap={!approveBusy ? { scale: 0.97 } : {}}
                 onClick={handleApprove}
                 disabled={approveBusy}
                 style={{
-                  padding: '10px 22px',
+                  padding: '11px 22px',
                   background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
                   border: 'none', borderRadius: 18,
                   cursor: approveBusy ? 'wait' : 'pointer',
-                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em',
-                  textTransform: 'uppercase', color: '#0a0807', fontWeight: 600,
+                  // Longer sentence — keep sentence case + lower letter-spacing
+                  // so the copy reads naturally instead of shouting.
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 12,
+                  letterSpacing: '0.01em', color: '#0a0807', fontWeight: 600,
                   opacity: approveBusy ? 0.75 : 1,
+                  whiteSpace: 'nowrap',
                 }}
               >
-                {approveBusy ? 'Locking…' : 'Approve · Lock in'}
+                {approveBusy ? 'Locking…' : "I'm happy with the proposed itinerary and approve!"}
               </motion.button>
             </div>
             {approveError && (

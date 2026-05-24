@@ -15,6 +15,7 @@ import MatchDetail     from './pages/MatchDetail'
 import Chat            from './pages/Chat'
 import ApproveDeny     from './pages/ApproveDeny'
 import SharedItinerary from './pages/SharedItinerary'
+import TripLockedIn    from './pages/TripLockedIn'
 import Notes           from './pages/Notes'
 import Pulse                  from './pages/Pulse'
 import Inbox                  from './pages/Inbox'
@@ -69,6 +70,7 @@ export default function App() {
           <Route path="/chat/:sessionId"    element={<Page><Chat/></Page>}/>
           <Route path="/approve/:sessionId" element={<Page><ApproveDeny/></Page>}/>
           <Route path="/shared/:id"         element={<Page><SharedItinerary/></Page>}/>
+          <Route path="/trip-locked-in/:itineraryId" element={<Page><TripLockedIn/></Page>}/>
           <Route path="/notes/:id"          element={<Page><Notes/></Page>}/>
           {/* /discover is folded into the Dashboard as the Pulse section.
               Render Dashboard directly (not <Navigate>) — Navigate inside
