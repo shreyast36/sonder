@@ -333,7 +333,6 @@ def _coerce_llm_a(obj: dict, slot: dict) -> dict:
         "quirks":                quirks,
         "visual_cue":            str(obj.get("visual_cue") or "").strip(),
         # Slot-derived fields the downstream stages need:
-        "_couple_type":          slot["couple_type"],
     }
 
 
@@ -462,7 +461,7 @@ def build_metadata(
 ) -> dict:
     """Same Pinecone metadata shape as the singles seed so the same
     get_cotraveller_by_id decoder reads both. Couple-specific fields
-    (partner_name, couple_type) ride along as additional metadata."""
+    (partner_name, partner_age) ride along as additional metadata."""
     compat: dict = {
         "top_push":            tags.get("top_push", []),
         "top_interests":       tags.get("top_interests", []),
