@@ -12,6 +12,8 @@ def check_budget(itinerary: Itinerary, constraints: TripConstraints) -> bool:
 
 
 def check_duration(itinerary: Itinerary, constraints: TripConstraints) -> bool:
+    if constraints.start_date is None or constraints.end_date is None:
+        return True
     trip_days = (constraints.end_date - constraints.start_date).days
     return len(itinerary.days) == trip_days
 
