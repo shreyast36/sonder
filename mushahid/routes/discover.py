@@ -308,6 +308,9 @@ async def request_to_join(itinerary_id: str, body: JoinRequestBody, uid: str = D
             await ws_manager.notify_user(uid, {"type": "join_request_resolved", "request": req})
         except Exception as e:
             logger.debug("notify_user(join_request_resolved) failed: %s", e)
+        # Also web-push so the verdict reaches the requester even if
+        # they've closed the tab.
+        _push_join_resolved(uid, req, itin)
         return {"request": req, "duplicated": False, "auto_resolved": True}
 
     # Non-synthetic: persist as proposed, ping the human owner.
@@ -316,7 +319,50 @@ async def request_to_join(itinerary_id: str, body: JoinRequestBody, uid: str = D
         await ws_manager.notify_user(itin.user_id, {"type": "join_request_new", "request": req})
     except Exception as e:
         logger.debug("notify_user(join_request_new) failed: %s", e)
+    _push_join_new(itin.user_id, req, itin)
     return {"request": req, "duplicated": False}
+
+
+def _push_join_new(owner_uid: str, req: dict, itin) -> None:
+    """Fire-and-forget web push to the trip owner — reaches them when
+    the tab is closed. Falls through silently if web push isn't
+    configured or the user has no push subscriptions."""
+    if not owner_uid:
+        return
+    from mushahid.realtime.web_push import send_web_push
+    requester = req.get("requester_name") or "Someone"
+    where     = getattr(getattr(itin, "destination", None), "city", "") or "your trip"
+    import asyncio as _asyncio
+    _asyncio.create_task(send_web_push(owner_uid, {
+        "title": f"{requester} wants in",
+        "body":  f"They asked to join {where}. Open Sonder to decide.",
+        "url":   "/dashboard",
+        "tag":   f"sonder-join-{req.get('request_id')}",
+    }))
+
+
+def _push_join_resolved(requester_uid: str, req: dict, itin) -> None:
+    """Web push the verdict back to the requester. Important for the
+    synthetic-trip flow where the resolution is instant and the user
+    might not be looking at the modal anymore."""
+    if not requester_uid:
+        return
+    from mushahid.realtime.web_push import send_web_push
+    where    = getattr(getattr(itin, "destination", None), "city", "") or "the trip"
+    status   = req.get("status")
+    approved = status == "approved"
+    body     = (
+        f"You're in. {where} just got a new companion — open it to start planning."
+        if approved else
+        f"Not this time. {where} passed on your request — plenty more opening up right now."
+    )
+    import asyncio as _asyncio
+    _asyncio.create_task(send_web_push(requester_uid, {
+        "title": "You're in" if approved else "Not this time",
+        "body":  body,
+        "url":   f"/shared/{itin.itinerary_id}" if approved else "/dashboard",
+        "tag":   f"sonder-join-{req.get('request_id')}",
+    }))
 
 
 async def _synthetic_owner_snapshot(itinerary_id: str) -> dict | None:
@@ -506,5 +552,14 @@ async def respond_join_request(request_id: str, body: RespondJoinRequest, uid: s
                                      {"type": "join_request_resolved", "request": req})
     except Exception as e:
         logger.debug("notify_user(join_request_resolved) failed: %s", e)
+
+    # Also web-push so the requester learns the verdict even when
+    # they've left the tab.
+    try:
+        itin_for_push = await get_itinerary(req["itinerary_id"])
+        if itin_for_push is not None:
+            _push_join_resolved(req["requester_id"], req, itin_for_push)
+    except Exception as e:
+        logger.debug("respond: web push failed: %s", e)
 
     return {"request": req}
