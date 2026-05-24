@@ -9,8 +9,8 @@ import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
 import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
-import DashboardPulse from '../components/DashboardPulse'
 import InboxStrip from '../components/InboxStrip'
+import NavTabs from '../components/NavTabs'
 import { storage } from '../lib/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { updateProfile } from 'firebase/auth'
@@ -786,6 +786,7 @@ export default function Dashboard() {
       {/* nav */}
       <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
         <SonderNav3D markSize={32}/>
+        <NavTabs/>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           {/* Always-visible Plan-a-trip CTA — primary action from any
               dashboard state, replaces the old bottom-right button. */}
@@ -1406,8 +1407,9 @@ export default function Dashboard() {
             />
           </motion.section>
 
-        {/* Sonder Pulse — the discovery surface folded inline */}
-        <DashboardPulse selfUid={user?.uid}/>
+        {/* Sonder Pulse lives at /pulse now — keeps this view focused
+            on the user's trip. NavTabs in the top nav switches between
+            the two surfaces. */}
       </motion.div>
     </div>
   )

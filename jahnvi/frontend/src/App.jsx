@@ -16,6 +16,7 @@ import Chat            from './pages/Chat'
 import ApproveDeny     from './pages/ApproveDeny'
 import SharedItinerary from './pages/SharedItinerary'
 import Notes           from './pages/Notes'
+import Pulse                  from './pages/Pulse'
 import TravellerCompatibility from './pages/TravellerCompatibility'
 import LuxCursor              from './components/LuxCursor'
 import { ToastProvider } from './components/Toast'
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="/signin"             element={<Page><SignUp/></Page>}/>
           <Route path="/auth/action"        element={<Page><AuthAction/></Page>}/>
           <Route path="/dashboard"          element={<Page><Dashboard/></Page>}/>
+          <Route path="/pulse"              element={<Page><Pulse/></Page>}/>
           <Route path="/preferences"        element={<Page><TripPreferences/></Page>}/>
           <Route path="/persona-reveal"     element={<Page><PersonaReveal/></Page>}/>
           <Route path="/itinerary"          element={<Page><Itinerary/></Page>}/>
