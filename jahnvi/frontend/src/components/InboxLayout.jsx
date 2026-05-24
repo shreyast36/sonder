@@ -37,8 +37,25 @@ function initials(name) {
 // doesn't inherit someone else's reads.
 
 const READ_KEY_PREFIX = 'sonder:inbox:lastread'
+const ROWS_KEY_PREFIX = 'sonder:inbox:rows'
 
 function readKey(uid) { return `${READ_KEY_PREFIX}:${uid || 'anon'}` }
+function rowsKey(uid) { return `${ROWS_KEY_PREFIX}:${uid || 'anon'}` }
+
+function loadRows(uid) {
+  try {
+    const raw = localStorage.getItem(rowsKey(uid))
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return parsed
+    }
+  } catch { /* noop */ }
+  return []
+}
+
+function saveRows(uid, rows) {
+  try { localStorage.setItem(rowsKey(uid), JSON.stringify(rows || [])) } catch { /* noop */ }
+}
 
 function loadReadMap(uid) {
   try {
@@ -184,8 +201,13 @@ function InboxRow({ row, selfUid, unread, onClick, index }) {
 
 export default function InboxLayout({ selfUid }) {
   const navigate = useNavigate()
-  const [rows, setRows]       = useState([])
-  const [loading, setLoading] = useState(true)
+  // Stale-while-revalidate: hydrate from localStorage synchronously
+  // so reload shows last-known conversations immediately, before any
+  // network round-trip. Empty API responses never overwrite the
+  // cached state (transient backend hiccups / cold deploys preserve
+  // your last good view).
+  const [rows, setRows]       = useState(() => loadRows(selfUid))
+  const [loading, setLoading] = useState(() => loadRows(selfUid).length === 0)
   const [activeCat, setActiveCat] = useState('all')
   const [readMap, setReadMap] = useState(() => loadReadMap(selfUid))
   const pollRef = useRef(null)
@@ -193,13 +215,19 @@ export default function InboxLayout({ selfUid }) {
   const fetchInbox = useCallback(async () => {
     try {
       const res = await listInbox()
-      setRows(res?.sessions || [])
+      const next = res?.sessions || []
+      // Only overwrite cached state on a NON-empty response so a
+      // single 5xx / Firestore cold-start doesn't blank the inbox.
+      if (next.length > 0) {
+        setRows(next)
+        saveRows(selfUid, next)
+      }
     } catch (e) {
       console.warn('listInbox failed:', e?.message || e)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [selfUid])
 
   useEffect(() => {
     fetchInbox()
