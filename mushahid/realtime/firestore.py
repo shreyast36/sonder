@@ -154,13 +154,26 @@ async def write_itinerary(itinerary: Itinerary) -> None:
 
 
 async def get_itinerary(itinerary_id: str) -> Itinerary | None:
+    from pydantic import ValidationError as PydanticValidationError
     if LOCAL_MODE:
         data = _store.get(f"itinerary:{itinerary_id}")
-        return Itinerary.model_validate(data) if data else None
+        if not data:
+            return None
+        try:
+            return Itinerary.model_validate(data)
+        except PydanticValidationError as e:
+            logger.warning("get_itinerary: malformed local document for %s: %s", itinerary_id, e)
+            return None
     doc = await asyncio.to_thread(
         lambda: get_db().collection("itineraries").document(itinerary_id).get()
     )
-    return Itinerary.model_validate(doc.to_dict()) if doc.exists else None
+    if not doc.exists:
+        return None
+    try:
+        return Itinerary.model_validate(doc.to_dict())
+    except PydanticValidationError as e:
+        logger.warning("get_itinerary: malformed Firestore document for %s: %s", itinerary_id, e)
+        return None
 
 
 # ── Shared itinerary (collaborative negotiation surface) ──────────────────
