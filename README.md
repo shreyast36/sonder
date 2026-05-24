@@ -454,6 +454,38 @@ The `SharedItinerary.activity_log` is persisted in full server-side, but the fro
 
 Chat messages, join requests received, join verdicts, and comments on your posts ALL fire web push in addition to WS notify. The service worker (`public/sw.js`) renders an OS notification with the right deep-link. Broadcast events deliberately NOT pushed — fan-out × user_count would be spammy.
 
+### Prompt engineering
+
+Every persona-voiced surface (chat replies, proposal accept/counter, persona-initiated suggestions, synthetic posts + open-trip notes, topic chips, opener) shares the same anti-assistant doctrine: **the model is a person with taste, not a helper**. Concretely:
+
+**Persona chat system prompt** (`ali/generation/topics.py::_build_persona_system`) layers three scope blocks before the style rules:
+
+1. **Hard trip scope** — `STAY INSIDE THIS TRIP. The trip is to {dest}.` plus the itinerary digest. Explicit prohibitions: no mentioning the persona's home city, no past trips, no alternative destinations. Without this the model drifts into a Paris persona opening with "I see you're interested in Lisbon too?" on a Japan trip.
+2. **PPM private psychology** — push / pull / motivation passed as private framing, with `Never say "push", "pull", "motivation", "alignment", or "friction". Turn those into concrete behaviors, opinions, scenes, and instincts.`
+3. **Emotional signature** — the closed-taxonomy key + emotional tone, framed as `PRIVATE EMOTIONAL FRAMING (never expose these words). Let this shape cadence, warmth, pacing, what you notice — never the vocabulary.`
+
+**Chat-reply style rules** — a rotation of reply shapes (reaction, agreement-with-twist, tiny self-detail, observation, soft pushback, half-sentence, occasional question) plus an extensive banned-filler list (`oh nice`, `that's amazing`, `love that`, `honestly`, `bucket list`, `travel buddy`, em dashes...). Format hard caps: 1-2 short sentences, never more than 35 words, texting register, lowercase `i` fine, contractions yes.
+
+**Per-turn `breathe_hint`** — `generate_chat_reply` counts how many of the persona's recent turns ended with `?`. If 2+ in a row, the prompt injects "Your last few turns have been mostly questions — this one should react, observe, or share something small instead." Stops the model interrogating the user across long sessions.
+
+**Proposal evaluator** (`ali/generation/proposal_evaluator.py::_SYSTEM_PROMPT`) — the persona accepts or counters one user proposal. Key rules:
+
+- **No hard rejection state** — if you dislike a proposal you MUST offer a counterproposal, or accept. This keeps the negotiation always-collaborative instead of stuck.
+- **Reason-in-message rule** — every counter must surface a brief, conversational reason ("hakone feels far after the museum day"). Without a reason the counter reads arbitrary; the user can't engage.
+- **Dedupe rule** — never counter with an activity already on the itinerary, already accepted, or already rejected. Caller still runs a backend dedupe pass as the second safeguard.
+- **Five voice-calibrated few-shot examples** showing exact JSON shape + texting register, mapped to common scenarios (clean accept, too-packed counter, tone-mismatch counter, flexibility-after-recent-counter, etc).
+
+**Persona-initiated suggestion** (`suggest_proposal::_SUGGEST_SYSTEM_PROMPT`) — the persona proactively suggests ONE activity. Includes the trip rhythm, the dedupe constraint, and the cross-tastes pass: the user's profile is rendered into the prompt so the suggestion lands at the intersection of both parties' tastes rather than the persona's preferences in a vacuum.
+
+**Synthetic-social prompts** (`ali/generation/synthetic_social.py`):
+
+- `_POST_SYSTEM_PROMPT` — picks ONE of five post shapes (tiny memory / half-formed plan / small recommendation / candid observation / soft question) with examples for each. Forbids the same filler list as chat. Caps at 1-3 sentences.
+- `_OPEN_TRIP_SYSTEM_PROMPT` — one-line "open to companions" note. Bad examples shown explicitly (`"Join me for an unforgettable adventure!"`, `"Looking for like-minded travel buddies"`) to prevent sales-language regression.
+
+**"You ARE this person" framing** — every persona prompt opens with `You ARE {display_name}. You are NOT an assistant.` followed by the profile snapshot. Combined with the banned-filler list this keeps the model out of customer-service register on every surface.
+
+**Output shape discipline** — all structured outputs (proposal verdict, suggestion, post body, opener) require `Return ONLY valid JSON. No markdown fences.` plus a balanced-brace fallback parser in `_parse_json_object` for the inevitable code-fenced output. Posts and opener strip quote-wrapping defensively.
+
 ### Persona inference — five oblique questions
 
 Five questions designed to surface latent travel psychology without ever naming the dimensions:
