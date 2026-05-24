@@ -388,21 +388,24 @@ async def _emit_outreach_chat(persona) -> bool:
 
 
 async def _run_action(persona) -> None:
-    """One agent action: 50% posts, 25% open trips, 25% outreach (when
-    eligible users are available; falls through to post otherwise).
-    Swallows errors."""
+    """One agent action: 55% outreach (chat → push/email notif), 25%
+    posts, 20% open trips. Outreach is the only action that generates
+    a chat_notification for the user, so it dominates the mix when we
+    want 'more notifications'. Outreach returns False when no eligible
+    user exists OR every persona has already messaged the user; in
+    that case we fall back to a post so the cycle isn't wasted."""
     try:
         roll = random.random()
-        if roll < 0.50:
-            await _emit_post(persona)
-        elif roll < 0.75:
-            await _emit_open_trip(persona)
-        else:
-            # Outreach returns False when no eligible user exists; in
-            # that case fall back to a post so the cycle isn't wasted.
+        if roll < 0.55:
             sent = await _emit_outreach_chat(persona)
             if not sent:
+                # No eligible target → don't waste the cycle on silence,
+                # post something so /feed stays alive instead.
                 await _emit_post(persona)
+        elif roll < 0.80:
+            await _emit_post(persona)
+        else:
+            await _emit_open_trip(persona)
     except Exception as e:
         logger.warning("synthetic_agents: action failed: %s", e)
 

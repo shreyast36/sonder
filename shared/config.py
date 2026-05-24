@@ -118,8 +118,8 @@ SYNTHETIC_AGENTS_ENABLED       = os.getenv("SYNTHETIC_AGENTS_ENABLED", "true").l
 # Aggressive cadence: real users feel the surface as "alive" rather than
 # "auto-populated every couple of minutes". Tunable downward (cost) or
 # upward (feel) via env.
-SYNTHETIC_AGENTS_MIN_INTERVAL  = int(os.getenv("SYNTHETIC_AGENTS_MIN_INTERVAL", "15"))
-SYNTHETIC_AGENTS_MAX_INTERVAL  = int(os.getenv("SYNTHETIC_AGENTS_MAX_INTERVAL", "50"))
+SYNTHETIC_AGENTS_MIN_INTERVAL  = int(os.getenv("SYNTHETIC_AGENTS_MIN_INTERVAL", "8"))
+SYNTHETIC_AGENTS_MAX_INTERVAL  = int(os.getenv("SYNTHETIC_AGENTS_MAX_INTERVAL", "25"))
 # How many actions to fire in parallel on cold-start so the feed isn't
 # empty when the first real user lands. 0 = don't seed.
 SYNTHETIC_AGENTS_SEED_COUNT    = int(os.getenv("SYNTHETIC_AGENTS_SEED_COUNT", "6"))
