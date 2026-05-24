@@ -66,7 +66,7 @@ from mushahid.persona.emotional_signature import infer_emotional_signature
 from mushahid.persona.taxonomy import (
     EMOTIONAL_SIGNATURE_TAXONOMY, PERSONA_QUESTION_CATALOG,
 )
-from mushahid.realtime.storage import upload_avatar
+from mushahid.realtime.storage import upload_bytes
 from shared.config import OPENAI_API_KEY
 from shared.schemas import TripConstraints, PersonaQuestionAnswers
 from shreyas.ranking.salience import compute_answer_salience
@@ -625,7 +625,15 @@ async def process_slot(
         png_bytes = await generate_portrait(persona, slot, image_sem)
         if png_bytes is not None:
             try:
-                avatar_url = await upload_avatar(pid, png_bytes)
+                # New 'couples/' Firebase Storage folder, separate from
+                # the singles 'cotraveller_avatars/' namespace so the
+                # two pools don't share path conventions.
+                avatar_url = await upload_bytes(
+                    f"couples/{pid}.png",
+                    png_bytes,
+                    content_type="image/png",
+                    make_public=True,
+                )
             except Exception as e:
                 log.warning("  slot %s — Firebase Storage upload failed: %s", pid[-6:], e)
                 avatar_url = None
