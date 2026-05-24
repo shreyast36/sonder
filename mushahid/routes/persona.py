@@ -173,17 +173,21 @@ def _group_framing(constraints: TripConstraints) -> str:
         )
     if style.value == "family":
         return (
-            f"TRIP SHAPE: family trip of {n}.\n"
+            f"TRIP SHAPE: family trip of {n} — ASSUME CHILDREN ARE PRESENT.\n"
             "Read the persona answers as the role this person takes inside "
-            "the group. social_role + friction_response reveal how they "
-            "ABSORB or REGULATE the family's energy under stress; "
-            "ideal_atmosphere reveals what atmosphere they'd lobby the "
-            "family toward. The reveal should describe the trip 'your "
-            "family' would take with this person setting the tone. Use "
-            "'you' and 'your family' — not 'they'. Lean into anchors that "
-            "imply mixed ages and shared meals; avoid late-night / "
-            "high-stimulation framing unless the answers explicitly point "
-            "there."
+            "the group, specifically as someone travelling WITH KIDS. "
+            "social_role + friction_response reveal how they keep things "
+            "afloat when a kid melts down at 4pm; ideal_atmosphere reveals "
+            "what atmosphere they'd choose for a trip the kids will also "
+            "remember. The reveal should describe the trip 'your family' "
+            "would take with this person setting the tone — kid-aware, "
+            "patient, with built-in rest. Use 'you' and 'your family' — "
+            "never 'they'. Lean into anchors that imply mixed ages, "
+            "shared meals everyone can eat, mid-day breaks, and an "
+            "earlier rhythm. Never suggest late-night / bars / high-"
+            "stimulation / adult-only atmospheres even if the persona "
+            "chips lean there — those answers reveal what they'd want IN "
+            "ISOLATION, not what fits a family trip."
         )
     if style.value == "friends":
         return (

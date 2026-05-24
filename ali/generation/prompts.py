@@ -156,18 +156,36 @@ def _group_planning_hints(style: str, party_size: int) -> str:
             "neither has had) — anchors the trip in memory."
         )
     if style == "family":
+        # ASSUMPTION: kids are present in every family trip. We don't ask
+        # for ages — plan for "mixed ages, probably with at least one
+        # child under 12" as the default and let the user push back via
+        # feedback if it's an all-adult family trip.
         return (
+            f"- ASSUME CHILDREN ARE PRESENT in this party of {party_size}. "
+            "Plan for mixed ages with at least one child under 12.\n"
             f"- All restaurants must seat the FULL party of {party_size} at "
-            f"ONE table. No two-tables-near-each-other compromises.\n"
-            "- Mix in age-appropriate pacing: shorter walking blocks, "
-            "earlier dinners, mid-day breaks. Avoid late-night activities "
-            "and adult-only venues entirely.\n"
-            "- At least one activity per day that works across age ranges "
-            "(parks, museums with interactive exhibits, scenic transport "
-            f"rides) — not a sequence of activities one subset of {party_size} "
-            "would tolerate.\n"
-            "- Lodging prefers apartment / multi-room over hotel rooms; "
-            "shared common space matters more than individual amenities."
+            "ONE table AND have a kids-friendly menu (or at least mild, "
+            "non-spicy options every age can eat). No fine-dining tasting "
+            "menus, no bars, no adults-only or 21+ venues.\n"
+            "- Pacing rules: walking blocks under 30 min between stops, "
+            "dinner by 7pm, a mid-day break (nap window or hotel reset) "
+            "every day. No 8pm museum openings, no 10pm walking tours.\n"
+            "- At least one explicitly KID-FACING activity per day "
+            "(playground, interactive museum, aquarium, zoo, scenic train "
+            "ride, beach with calm water, hands-on workshop kids can join). "
+            "Adults' interests can be threaded in around these anchors, "
+            "not the other way around.\n"
+            "- Avoid: clubs / bars / late-night anything; long single-"
+            "sitting fine dining; activities with minimum-age rules the "
+            "kids would fail (wine tastings, certain hikes, certain water "
+            "sports); cities-as-walking-tour-marathon (kids tap out).\n"
+            "- Lodging: apartment or multi-bedroom hotel suite, not "
+            "single rooms. Kitchen access matters (kid breakfasts, late-"
+            "night snacks). A pool or outdoor space at the lodging is a "
+            "strong plus.\n"
+            "- Logistics: factor in stroller-friendly routes when the "
+            "destination has cobblestone / stairs reputation; flag if a "
+            "scheduled activity requires car seats / extra transit time."
         )
     if style == "friends":
         return (
