@@ -266,13 +266,143 @@ async def _emit_open_trip(persona) -> None:
                    itinerary_id, dest_meta["city"], dest_meta["country"])
 
 
+async def _emit_outreach_chat(persona) -> bool:
+    """Pick a real eligible user (solo / couple with a current trip),
+    start a chat session as `persona`, and drop an LLM-generated opener
+    anchored on the user's trip. Returns True if a chat was actually
+    created, False if no eligible user was available.
+
+    Skips users who already have an active chat session with this
+    persona — repeated cold-opens from the same profile would feel
+    spammy."""
+    from ali.generation.synthetic_social import generate_outreach_opener
+    from mushahid.realtime.firestore import (
+        list_outreach_eligible_users, get_itinerary,
+        list_chat_sessions_for_user, write_chat_session, append_chat_message,
+    )
+    from shreyas.cotraveller.chat import manager as ws_manager
+    from shared.schemas import ChatSession, ApprovalStatus
+
+    users = await list_outreach_eligible_users(limit=30)
+    if not users:
+        return False
+    random.shuffle(users)
+
+    persona_id = getattr(persona, "profile_id", "") or ""
+    persona_name = getattr(persona, "display_name", None) or "Traveller"
+
+    for target in users[:5]:
+        uid = target.get("user_id")
+        itinerary_id = target.get("current_itinerary_id")
+        if not uid or not itinerary_id:
+            continue
+        # Skip if a session already exists between this user and this persona.
+        try:
+            sessions = await list_chat_sessions_for_user(uid)
+        except Exception:
+            sessions = []
+        if any(s.get("profile_id") == persona_id for s in sessions):
+            continue
+
+        # Anchor the opener on the user's trip.
+        try:
+            itin = await get_itinerary(itinerary_id)
+        except Exception:
+            itin = None
+        if itin is None:
+            continue
+        dest = getattr(itin, "destination", None)
+        city    = (getattr(dest, "city", "") or "").strip() if dest else ""
+        country = (getattr(dest, "country", "") or "").strip() if dest else ""
+        if not city:
+            continue
+        days = getattr(itin, "days", None) or []
+        window = ""
+        if days and getattr(days[0], "trip_date", None) and getattr(days[-1], "trip_date", None):
+            window = f"{days[0].trip_date} → {days[-1].trip_date}"
+
+        opener = await generate_outreach_opener(persona, city, country, window)
+        if not opener:
+            continue
+
+        session_id = str(uuid.uuid4())
+        session = ChatSession(
+            session_id=session_id,
+            user_id=uid,
+            profile_id=persona_id,
+            itinerary_id=itinerary_id,
+            approval_status=ApprovalStatus.pending,
+            created_at=_now_iso(),
+            match_score=None,
+        )
+        try:
+            await write_chat_session(session)
+        except Exception as e:
+            logger.warning("outreach: write_chat_session failed: %s", e)
+            return False
+
+        msg_id = _new_id("msg")
+        message = {
+            "message_id": msg_id,
+            "session_id": session_id,
+            "sender_id":  persona_id,
+            "content":    opener,
+            "timestamp":  _now_iso(),
+        }
+        try:
+            await append_chat_message(session_id, message)
+        except Exception as e:
+            logger.warning("outreach: append_chat_message failed: %s", e)
+
+        # Notify the target via WS + web push so the inbox + dashboard
+        # banner light up instantly.
+        try:
+            await ws_manager.notify_user(uid, {
+                "type":           "chat_notification",
+                "session_id":     session_id,
+                "sender_id":      persona_id,
+                "sender_name":    persona_name,
+                "sender_is_seed": bool(getattr(persona, "is_seed", True)),
+                "preview":        opener[:140],
+                "timestamp":      message["timestamp"],
+            })
+        except Exception as e:
+            logger.debug("outreach: notify_user failed: %s", e)
+
+        try:
+            from mushahid.realtime.web_push import send_web_push
+            asyncio.create_task(send_web_push(uid, {
+                "title": persona_name,
+                "body":  opener[:140],
+                "url":   f"/chat/{session_id}",
+                "tag":   f"sonder-chat-{session_id}",
+            }))
+        except Exception as e:
+            logger.debug("outreach: web push failed: %s", e)
+
+        logger.warning("[synthetic_agents] outreach %s -> %s about %s",
+                       persona_name, uid, city)
+        return True
+
+    return False
+
+
 async def _run_action(persona) -> None:
-    """One agent action: 65% posts, 35% open trips. Swallows errors."""
+    """One agent action: 50% posts, 25% open trips, 25% outreach (when
+    eligible users are available; falls through to post otherwise).
+    Swallows errors."""
     try:
-        if random.random() < 0.65:
+        roll = random.random()
+        if roll < 0.50:
             await _emit_post(persona)
-        else:
+        elif roll < 0.75:
             await _emit_open_trip(persona)
+        else:
+            # Outreach returns False when no eligible user exists; in
+            # that case fall back to a post so the cycle isn't wasted.
+            sent = await _emit_outreach_chat(persona)
+            if not sent:
+                await _emit_post(persona)
     except Exception as e:
         logger.warning("synthetic_agents: action failed: %s", e)
 

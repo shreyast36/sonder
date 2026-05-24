@@ -12,6 +12,7 @@ from mushahid.utils.sanitize import sanitize_user_input
 from mushahid.realtime.firestore import (
     write_chat_session, append_chat_message, get_chat_session,
     list_chat_messages, get_presence, update_chat_message_content,
+    list_chat_sessions_for_user,
 )
 from shreyas.cotraveller.chat import manager
 from shreyas.cotraveller.presence import set_online, set_offline, is_online
@@ -271,6 +272,91 @@ async def get_messages(session_id: str, uid: str = Depends(verify_token)):
     if cached and not msgs:
         msgs = list(cached.get("messages", []))
     return {"messages": msgs}
+
+
+@router.get("/inbox")
+async def list_inbox(uid: str = Depends(verify_token)):
+    """Every chat session the user is in, summarised for the inbox panel.
+    Sorted newest-activity first. Each row pulls the persona snapshot
+    from Pinecone (synthetic personas) or falls back to display_name
+    fields stored on the session for real-user chats.
+
+    Returns: [{session_id, profile_id, other_name, other_avatar,
+               other_is_seed, last_message_preview, last_message_at,
+               last_sender_id, approval_status, message_count}]"""
+    sessions = await list_chat_sessions_for_user(uid)
+    if not sessions:
+        return {"sessions": []}
+
+    # Pre-fetch personas for all unique profile_ids in one pass — most
+    # users have <10 chats so this is cheap.
+    from shreyas.retrieval.search import get_cotraveller_by_id
+    profile_ids = {s.get("profile_id") for s in sessions if s.get("profile_id")}
+
+    persona_cache: dict[str, dict] = {}
+    async def _fetch(pid: str) -> None:
+        try:
+            p = await get_cotraveller_by_id(pid)
+            if p:
+                persona_cache[pid] = {
+                    "name":    getattr(p, "display_name", None) or pid,
+                    "avatar":  getattr(p, "avatar_url", None),
+                    "is_seed": bool(getattr(p, "is_seed", False)),
+                }
+        except Exception:
+            pass
+    await asyncio.gather(*(_fetch(pid) for pid in profile_ids), return_exceptions=True)
+
+    rows: list[dict] = []
+    for s in sessions:
+        sid = s.get("session_id")
+        if not sid:
+            continue
+        # Which side is THE OTHER from the viewer's POV?
+        if s.get("user_id") == uid:
+            other_id = s.get("profile_id")
+        else:
+            other_id = s.get("user_id")
+
+        persona = persona_cache.get(other_id or "") or {}
+        other_name   = persona.get("name") or other_id or "Traveller"
+        other_avatar = persona.get("avatar")
+        other_is_seed = persona.get("is_seed", False)
+
+        # Pull the most recent message for the preview. We don't store a
+        # denormalised last-message field on the session yet, so this is
+        # an N+1 read — fine at <10 sessions, swap to denormalised when
+        # we cross 50.
+        try:
+            msgs = await list_chat_messages(sid)
+        except Exception:
+            msgs = []
+        last_msg = msgs[-1] if msgs else None
+        last_message_preview = ""
+        last_message_at      = s.get("created_at")
+        last_sender_id       = None
+        if last_msg:
+            text = (last_msg.get("content") or "").strip()
+            last_message_preview = text[:140]
+            last_message_at = last_msg.get("timestamp") or last_message_at
+            last_sender_id  = last_msg.get("sender_id")
+
+        rows.append({
+            "session_id":        sid,
+            "profile_id":        other_id,
+            "other_name":        other_name,
+            "other_avatar":      other_avatar,
+            "other_is_seed":     other_is_seed,
+            "last_message_preview": last_message_preview,
+            "last_message_at":   last_message_at,
+            "last_sender_id":    last_sender_id,
+            "approval_status":   s.get("approval_status") or "pending",
+            "message_count":     len(msgs),
+            "itinerary_id":      s.get("itinerary_id"),
+        })
+
+    rows.sort(key=lambda r: r.get("last_message_at") or "", reverse=True)
+    return {"sessions": rows}
 
 
 @router.get("/chat/{session_id}/presence/{user_id}")

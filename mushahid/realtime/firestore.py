@@ -242,6 +242,67 @@ async def get_user_profile(user_id: str) -> dict | None:
         return None
 
 
+async def list_outreach_eligible_users(limit: int = 50) -> list[dict]:
+    """Return user_profile docs eligible for synthetic-persona outreach
+    chats. Eligibility:
+      - has a current_itinerary_id (something for the persona to anchor on)
+      - travel style is solo or couple (family / friends excluded)
+
+    Returns thin summaries: {user_id, current_itinerary_id, who, group}.
+    Cap is generous; the synthetic agents loop picks one at random per
+    cycle so even 50 candidates rotates enough."""
+    if LOCAL_MODE:
+        out: list[dict] = []
+        for key, val in _store.items():
+            if not key.startswith("profile:") or not isinstance(val, dict):
+                continue
+            current = val.get("current_itinerary_id")
+            if not current:
+                continue
+            constraints = val.get("constraints") or {}
+            who = (constraints.get("who_travelling_with") or "").lower()
+            if who not in ("solo", "couple"):
+                continue
+            out.append({
+                "user_id":              val.get("user_id") or key.split(":", 1)[1],
+                "current_itinerary_id": current,
+                "who":                  who,
+                "group_size":           constraints.get("group_size", 1),
+            })
+            if len(out) >= limit:
+                break
+        return out
+    try:
+        # Firestore "in" supports up to 30 values per query, so two
+        # round-trips is fine for the two eligible styles. We over-fetch
+        # since the next filter pass (has current_itinerary_id) happens
+        # in Python.
+        docs = await asyncio.to_thread(
+            lambda: list(
+                get_db().collection("user_profiles")
+                .where("constraints.who_travelling_with", "in", ["solo", "couple"])
+                .limit(limit).stream()
+            )
+        )
+        out: list[dict] = []
+        for d in docs:
+            data = d.to_dict() or {}
+            current = data.get("current_itinerary_id")
+            if not current:
+                continue
+            constraints = data.get("constraints") or {}
+            out.append({
+                "user_id":              data.get("user_id") or d.id,
+                "current_itinerary_id": current,
+                "who":                  constraints.get("who_travelling_with"),
+                "group_size":           constraints.get("group_size", 1),
+            })
+        return out
+    except Exception as e:
+        logger.warning("list_outreach_eligible_users failed: %s", e)
+        return []
+
+
 async def update_user_profile(user_id: str, updates: dict) -> None:
     if LOCAL_MODE:
         existing = _store.get(f"profile:{user_id}", {})

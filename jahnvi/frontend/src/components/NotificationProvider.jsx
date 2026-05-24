@@ -100,6 +100,9 @@ export default function NotificationProvider({ children }) {
       return
     }
     if (data?.type !== 'chat_notification') return
+    // Tell any mounted inbox panel to refetch — new sessions + previews
+    // need to surface even when the user isn't on the matching chat.
+    window.dispatchEvent(new CustomEvent('sonder:inbox:refresh'))
     const { session_id, sender_name, sender_is_seed, preview } = data
     // Suppress if the user is already on the chat page for this session —
     // they're literally looking at the message arrive.

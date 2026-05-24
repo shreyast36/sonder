@@ -10,6 +10,7 @@ import { useAuth } from '../hooks/useAuth'
 import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
 import DashboardPulse from '../components/DashboardPulse'
+import InboxStrip from '../components/InboxStrip'
 import { storage } from '../lib/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { updateProfile } from 'firebase/auth'
@@ -1263,8 +1264,10 @@ export default function Dashboard() {
           {/* Past trips moved to its own full-width strip below the grid */}
         </motion.div>
 
-        {/* RIGHT — companions + new trip */}
+        {/* RIGHT — inbox, companions */}
         <motion.div variants={reveal} style={{ padding: '52px 44px', display: 'flex', flexDirection: 'column', gap: 36 }}>
+
+          <InboxStrip selfUid={user?.uid}/>
 
           <div>
             <div style={{ marginBottom: 24 }}>
