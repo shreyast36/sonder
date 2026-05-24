@@ -8,10 +8,10 @@ The only differences are couple-specific:
   - LLM-A is told to write THE PAIR (display_name "Mira & Theo",
     voice_anchor in "we" voice, partner_name as a separate field,
     quirks describe the dynamic).
-  - Diversity matrix is 9 cities × 2 age buckets = 18 couples (the
-    user asked for 15-20). The "gender" axis becomes "couple_type"
-    (hetero / queer_women / queer_men) cycled per slot for visual
-    variety in portraits.
+  - Diversity matrix is 9 cities × 2 age buckets = 18 male+female
+    couples. Primary gender (the chatter — whose voice the chat
+    replies read as) alternates per slot so the pool isn't all
+    written from one side.
   - Portrait prompt is reframed for a candid couple snapshot
     (two people in the frame, same casual-iPhone register).
   - travel_style is hardcoded to "couple" — couple personas only
@@ -118,9 +118,9 @@ AGE_BUCKETS: list[tuple[int, int]] = [
     (24, 30), (30, 42),
 ]
 
-# Couple type instead of a single 'gender' — drives portrait diversity.
-# Cycled per slot so we end up with a mix across the 18.
-COUPLE_TYPES: list[str] = ["hetero", "queer_women", "queer_men"]
+# All couples are male + female. Primary gender (the chatter) cycles
+# per slot so the 18-couple pool isn't all written from one side.
+PRIMARY_GENDERS: list[str] = ["female", "male"]
 
 
 _openai_client: AsyncOpenAI | None = None
@@ -145,29 +145,20 @@ def _stable_id(*parts: str) -> str:
 
 
 def build_diversity_matrix() -> list[dict]:
-    """9 cities × 2 age buckets = 18 couple slots. Couple type cycles
-    deterministically through hetero / queer_women / queer_men so the
-    overall pool gets balanced portrait diversity without ballooning the
-    matrix dimensionality."""
+    """9 cities × 2 age buckets = 18 male+female couple slots. Primary
+    gender (the chatter, the persona whose voice the chat replies read
+    as) alternates across the pool so we don't end up with 18 voices
+    written from the same side."""
     slots: list[dict] = []
     i = 0
     for city in CITIES:
         for age_lo, age_hi in AGE_BUCKETS:
-            couple_type = COUPLE_TYPES[i % len(COUPLE_TYPES)]
-            # Primary gender = the persona who'd actually be doing the chatting.
-            # For hetero we cycle; for same-sex we lock to the matching gender.
-            if couple_type == "hetero":
-                primary_gender = "female" if (i % 2 == 0) else "male"
-            elif couple_type == "queer_women":
-                primary_gender = "female"
-            else:
-                primary_gender = "male"
+            primary_gender = PRIMARY_GENDERS[i % len(PRIMARY_GENDERS)]
             slots.append({
-                "profile_id":     _stable_id(city, f"{age_lo}-{age_hi}", couple_type, str(i)),
+                "profile_id":     _stable_id(city, f"{age_lo}-{age_hi}", "hetero", str(i)),
                 "city":           city,
                 "age_lo":         age_lo,
                 "age_hi":         age_hi,
-                "couple_type":    couple_type,
                 "primary_gender": primary_gender,
                 # Mirrors the singles slot shape so reused helpers (portrait
                 # prompt, voice_for) that read `gender` still work.
@@ -190,9 +181,9 @@ The goal is a pair who feels real on a profile card — not an archetype,
 not a marketing blurb, not a personality test result. Two people who
 have travelled together enough to have a rhythm.
 
-The user gives you a home city, age range, and couple type (hetero /
-queer_women / queer_men). You return ONE JSON object matching the
-schema below.
+The couple is a man and a woman. The user tells you the home city,
+age range, and which of the two is the "protagonist" (the one whose
+voice the chat replies will read as).
 
 Couple-voice rules:
 - display_name MUST be "X & Y" (their two first names, ampersand,
@@ -268,11 +259,12 @@ Output ONLY this JSON object — no preface, no markdown fences:
 
 
 def _llm_a_prompt(slot: dict) -> str:
+    partner_gender = "male" if slot["primary_gender"] == "female" else "female"
     return (
         f"HOME CITY: {slot['city']}\n"
         f"AGE RANGE: {slot['age_lo']}-{slot['age_hi']} (both partners roughly within)\n"
-        f"COUPLE TYPE: {slot['couple_type']}\n"
         f"PROTAGONIST GENDER (the chatter): {slot['primary_gender']}\n"
+        f"PARTNER GENDER: {partner_gender}\n"
         "\n"
         f"ALLOWED OPTIONS for chip selections:\n"
         f"  social_role:       {PERSONA_OPTION_KEYS['social_role']}\n"
@@ -372,9 +364,10 @@ _COUPLE_PORTRAIT_HEADER = """\
 You are generating a casual smartphone-style profile photo for a
 COUPLE — two people in the frame — on a modern social travel app.
 
-The image MUST contain two distinct people, both visibly within the
-{age_lo}-{age_hi} age range, in the SAME candid moment. Couple type:
-{couple_type}. Appearance reference (for both subjects): {appearance_descriptor}.
+The image MUST contain two distinct people — one man and one woman —
+both visibly within the {age_lo}-{age_hi} age range, in the SAME
+candid moment. Appearance reference (for both subjects):
+{appearance_descriptor}.
 
 The photo should NOT look like:
 - an engagement / wedding photo
@@ -402,7 +395,6 @@ def _portrait_prompt(persona: dict, slot: dict) -> str:
     header = _COUPLE_PORTRAIT_HEADER.format(
         age_lo=slot["age_lo"],
         age_hi=slot["age_hi"],
-        couple_type=slot["couple_type"].replace("_", " "),
         appearance_descriptor=persona.get("appearance_descriptor") or "two adults",
     )
     body = _PORTRAIT_PROMPT_TEMPLATE.format(
@@ -513,7 +505,6 @@ def build_metadata(
         "couple_protagonist":    persona.get("protagonist_name", ""),
         "couple_partner":        persona.get("partner_name", ""),
         "couple_partner_age":    persona.get("partner_age", persona["age"]),
-        "couple_type":           slot["couple_type"],
     }
 
 
@@ -526,6 +517,7 @@ async def process_slot(
     llm_a_sem: asyncio.Semaphore,
     persona_sem: asyncio.Semaphore,
     image_sem: asyncio.Semaphore,
+    local_out_dir: str | None = None,
 ) -> dict | None:
     pid = slot["profile_id"]
 
@@ -586,9 +578,25 @@ async def process_slot(
     # Stage 3: voice assignment — protagonist's voice only (they're the chatter).
     voice_profile = voice_for(persona.get("appearance_descriptor"), slot["primary_gender"])
 
-    # Stage 4: gpt-image-1 couple portrait + Firebase Storage upload.
+    # Stage 4: gpt-image-1 couple portrait + Firebase / local destination.
+    # local_out_dir takes priority over Firebase — used by the
+    # --out-dir test path so we can preview portraits without
+    # touching Storage or Pinecone.
     avatar_url: str | None = None
-    if not dry_run:
+    if local_out_dir:
+        png_bytes = await generate_portrait(persona, slot, image_sem)
+        if png_bytes is not None:
+            import os
+            os.makedirs(local_out_dir, exist_ok=True)
+            out_path = os.path.join(local_out_dir, f"{pid}.png")
+            try:
+                with open(out_path, "wb") as f:
+                    f.write(png_bytes)
+                avatar_url = f"file://{os.path.abspath(out_path)}"
+                log.info("  slot %s — portrait saved → %s", pid[-6:], out_path)
+            except Exception as e:
+                log.warning("  slot %s — local save failed: %s", pid[-6:], e)
+    elif not dry_run:
         png_bytes = await generate_portrait(persona, slot, image_sem)
         if png_bytes is not None:
             try:
@@ -610,7 +618,6 @@ async def process_slot(
         "log_preview": {
             "name":         persona["display_name"],
             "city":         slot["city"],
-            "couple_type":  slot["couple_type"],
             "ages":         f"{persona['age']} + {persona.get('partner_age', persona['age'])}",
             "archetype":    persona["archetype"],
             "signature":    signature.get("emotional_signature"),
@@ -620,7 +627,10 @@ async def process_slot(
     }
 
 
-async def main(dry_run: bool, do_purge: bool, do_resume: bool) -> None:
+async def main(
+    dry_run: bool, do_purge: bool, do_resume: bool,
+    limit: int | None = None, local_out_dir: str | None = None,
+) -> None:
     t0 = time.time()
 
     if do_purge and do_resume:
@@ -637,6 +647,11 @@ async def main(dry_run: bool, do_purge: bool, do_resume: bool) -> None:
     slots = build_diversity_matrix()
     log.info("Couple diversity matrix: %d slots (%d cities × %d age buckets)",
              len(slots), len(CITIES), len(AGE_BUCKETS))
+
+    if limit and limit > 0:
+        before = len(slots)
+        slots = slots[:limit]
+        log.info("--limit %d: processing %d of %d slots", limit, len(slots), before)
 
     skip_ids: set[str] = set()
     if do_resume:
@@ -659,7 +674,8 @@ async def main(dry_run: bool, do_purge: bool, do_resume: bool) -> None:
     t1 = time.time()
     raw_records = await asyncio.gather(*[
         process_slot(s, dry_run=dry_run, llm_a_sem=llm_a_sem,
-                     persona_sem=persona_sem, image_sem=image_sem)
+                     persona_sem=persona_sem, image_sem=image_sem,
+                     local_out_dir=local_out_dir)
         for s in slots
     ])
     records = [r for r in raw_records if r is not None]
@@ -668,6 +684,18 @@ async def main(dry_run: bool, do_purge: bool, do_resume: bool) -> None:
 
     if not records:
         log.warning("Zero usable couple records produced — bailing.")
+        return
+
+    # --out-dir means "preview only": never embed, never upsert.
+    if local_out_dir:
+        log.info("--out-dir set → skipping embeddings + Pinecone upsert. "
+                 "Portraits saved to %s", local_out_dir)
+        for r in records:
+            log.info("  %s", json.dumps(r["log_preview"], ensure_ascii=False))
+            md = r["metadata"]
+            log.info("    archetype=%s  appearance=%s  voice_anchor=%s",
+                     md["archetype"], md["appearance_descriptor"],
+                     (r["embed_text"][:200] + "…") if len(r["embed_text"]) > 200 else r["embed_text"])
         return
 
     log.info("Embedding %d couple persona texts…", len(records))
@@ -725,6 +753,16 @@ if __name__ == "__main__":
     parser.add_argument("--resume", action="store_true",
                         help="skip slots whose profile_id is already present "
                              "in Pinecone.")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="process at most N slots (from the start of the "
+                             "matrix). Useful for test runs and image previews.")
+    parser.add_argument("--out-dir", type=str, default=None,
+                        help="generate portraits and save PNGs to this local "
+                             "directory instead of uploading to Firebase Storage. "
+                             "Also skips Pinecone upsert entirely — pure local "
+                             "preview mode. Use with --limit for cheap test runs.")
     args = parser.parse_args()
 
-    asyncio.run(main(dry_run=args.dry_run, do_purge=args.purge, do_resume=args.resume))
+    asyncio.run(main(dry_run=args.dry_run, do_purge=args.purge,
+                     do_resume=args.resume, limit=args.limit,
+                     local_out_dir=args.out_dir))
