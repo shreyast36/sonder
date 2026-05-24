@@ -86,9 +86,13 @@ sonder/
 │   ├── data/                # persona_labels.py, dimensions.py, emotions.py
 │   └── frontend/            # React + Vite app
 │       ├── public/sw.js     # Web Push service worker
+│       ├── functions/api/[[path]].js   # Cloudflare Pages Function: proxies
+│       │                    #   every /api/* request to the Render backend
+│       │                    #   (Pages _redirects can't proxy to external origins)
 │       └── src/
 │           ├── pages/       # Dashboard, SharedItinerary, Chat, MatchDetail, ...
-│           ├── components/  # DashboardPulse, NotificationProvider, SonderMark3D, ...
+│           ├── components/  # DashboardPulse, InboxStrip, NotificationProvider,
+│           │                #   TripDetailModal, SonderMark3D, LuxCursor, ...
 │           └── hooks/       # useWebSocket, useAuth, useSSE
 │
 ├── shreyas/                 # Candidate selection + real-time
@@ -121,11 +125,14 @@ sonder/
 │   ├── pipeline/            # Orchestrator: runs all steps, streams SSE
 │   ├── validation/          # LLM critic + rule checks
 │   ├── refinement/          # Closed-loop regeneration
-│   └── realtime/            # firestore.py, sse.py, web_push.py
+│   └── realtime/            # firestore.py, sse.py, web_push.py,
+│                            #   notify.py (WS + push + email fan-out helper)
 │
 ├── scripts/
 │   ├── seed_pinecone.py             # Destinations + activities
-│   ├── seed_cotravellers.py         # LLM-designed personas + gpt-image-1 portraits
+│   ├── seed_cotravellers.py         # Singles: LLM-designed personas + gpt-image-1
+│   ├── seed_couple_cotravellers.py  # Couples: same blind-writer pipeline, ctcp_* IDs,
+│   │                                #   uploads to Firebase 'couples/' folder
 │   └── generate_vapid_keys.py       # One-time VAPID keypair generator
 │
 ├── .env.example
@@ -186,17 +193,22 @@ The router engine reads provider per tier from env; each provider client reads i
 | **Discover broadcasts** (`discover_trip_open` / `_close` / `discover_post_new`) | `ConnectionManager.broadcast_global` over `/ws/notifications` | Server → all users | Shreyas |
 | **Targeted social events** (`join_request_new`, `join_request_resolved`, `comment_new`) | `notify_user` over `/ws/notifications` | Server → one user | Mushahid |
 | **Web Push (offline-capable)** | VAPID + service worker | Server → device | Mushahid |
+| **Email** | Resend / SendGrid / SES via `shared/email.py` | Server → inbox | Mushahid |
 | Shared itinerary edits | Firestore + optimistic locking via `version` | Bidirectional | Shreyas |
 | Async persona evaluation result | WS `shared_responded` event | Server → user | Mushahid |
 | Approval status (live) | Firestore | Bidirectional | Shreyas |
 
-**Web push fans out for:**
-- New chat message (when tab is closed)
-- Join request received → trip owner
-- Join verdict → requester (deep-links to `/shared/{id}` on approve)
-- Comment on your post → post author
+**Every targeted user-facing event fans out via `mushahid/realtime/notify.notify_event`** through all three channels — WS (in-app banner) + Web Push (OS notification when tab closed) + Email (fallback). Events covered: chat messages, join requests received, join verdicts, comments on your post, **shared-itinerary proposals**, **shared-itinerary responses (accept/counter)**, **shared-itinerary finalize**. All three channels fire-and-forget; failure of one never blocks the others.
 
-WebSocket auth uses the first-message pattern (token in initial JSON payload, never in query string). Web push silently no-ops when VAPID keys aren't configured; in-app banners still work.
+| Channel | Best for | Throttling |
+|---|---|---|
+| WS notify_user | Instant in-app banner while a tab is open | None — every event delivers |
+| Web Push | OS notification with no Sonder tab open | Browser-side de-dup via `tag` field |
+| Email | Catching missed in-app + push, inbox archive | **5-min cool-down per `(uid, kind)`** so chatty threads don't flood inboxes |
+
+Email lookup uses the Firebase Admin SDK (cached 1h in-process). **Unverified Firebase emails are skipped** as an abuse + deliverability defense. Synthetic personas have no Firebase user record, so the email step silently no-ops for them while push + WS still fire.
+
+WebSocket auth uses the first-message pattern (token in initial JSON payload, never in query string). Web push silently no-ops when VAPID keys aren't configured; in-app banners still work. Same for email when `EMAIL_PROVIDER` / `EMAIL_API_KEY` isn't set.
 
 ### Shared Itinerary Negotiation
 
@@ -317,8 +329,10 @@ A **LiveTravellersStrip** in the trip-vault header subscribes to the same events
 `mushahid/background/synthetic_agents.py` runs a forever-loop kicked off in the FastAPI lifespan:
 
 - Every `SYNTHETIC_AGENTS_MIN_INTERVAL`..`MAX_INTERVAL` seconds (default 15-50s) picks a random persona and fires one action.
-- 65% chance → social post via `generate_synthetic_post` (SMALL-tier LLM, persona-voiced).
-- 35% chance → open a trip via `generate_synthetic_open_trip_note` against a curated destination pool. Mints a minimal `Itinerary` doc with the persona's `profile_id` as `user_id`, flips `is_open_to_join=True`.
+- **Action mix: 50% posts / 25% open-trips / 25% outreach** (falls back to a post if no eligible outreach target exists, so cycles aren't wasted).
+- `_emit_post` → persona-voiced social post via `generate_synthetic_post` (SMALL tier).
+- `_emit_open_trip` → mints a minimal `Itinerary` doc with the persona's `profile_id` as `user_id`, flips `is_open_to_join=True`, generates a one-line "open to companions" note via `generate_synthetic_open_trip_note`.
+- `_emit_outreach_chat` (**NEW**) → picks a real user from `list_outreach_eligible_users` (filtered to `who_travelling_with in (solo, couple)` with a `current_itinerary_id`), generates a cold-open message anchored on one specific thing about the user's trip via `generate_outreach_opener`, creates a `ChatSession` + first message via the same path real chats use, fires WS `chat_notification` + web push + email. Skips users who already have a session with this persona — no spam.
 - **Cold-start seed burst** (`SYNTHETIC_AGENTS_SEED_COUNT`, default 6) fires actions in parallel via `asyncio.gather` so the first user to land sees a populated feed.
 - **Persona fallback pool** — if Pinecone returns no seeded `CoTravellerProfile`s, falls back to a hardcoded 10-persona inline set (`Mira/Berlin`, `Theo/Lisbon`, `Aiko/Kyoto`, ...) so the loop always has someone to act as.
 - Persona snapshot (`synthetic_owner` dict) is denormalised onto the itinerary doc when opening a trip, so the join-request route can score the user against the persona without re-hitting Pinecone.
@@ -364,6 +378,48 @@ POST /discover/trips/{id}/join-request
 | `pages/SharedItinerary.jsx :: ActivityFeed` | Per-session activity log with resolution dedupe + orphan timeout |
 | `lib/push.js` | `ensurePushSubscribed` / `dropPushSubscription` / `pushSupported` — service worker subscription lifecycle |
 
+### Group selection & party-size logic
+
+`TripConstraints.who_travelling_with` (`solo | couple | family | friends`) and `TripConstraints.group_size` are bound by a pydantic `@model_validator` at the API boundary so downstream code can trust the pair:
+
+| Style | `group_size` | Matching pool | Persona / Itinerary framing |
+|---|---|---|---|
+| solo    | locked at 1 | active (solo↔solo) | Second-person singular; isolated instincts |
+| couple  | locked at 2 | active (couple↔couple) | "You both" framing; partner present in copy |
+| family  | 2..8 user-picked | **disabled** — surfaces straight to shared-itinerary | **Assumes kids present**: kids-friendly menus, dinner by 7pm, mid-day nap window, ≥1 kid-facing activity per day, apartment lodging, no bars / 21+ venues |
+| friends | 2..8 user-picked | **disabled** — friend-group persona is too hard to write as one voice in V1 | "Your group" framing; split-and-rejoin activities, nightlife on the table |
+
+**Cap is `MAX_PARTY_SIZE = 8`** — past that the trip-planning shape changes (multi-room logistics, separate itinerary tracks) and the generator + ranker aren't tuned for it. Mismatched values rewritten silently rather than 400'd: passing `solo` + size 5 coerces size to 1.
+
+**Cotraveller matching is hard-filtered by style.** The `style_match` ranker feature only nudges the score; without a hard filter cross-style candidates slipped through because of high embedding similarity on other axes (couples were seeing solo personas). `/cotraveller` and `/cotraveller/regenerate` now drop any candidate whose `travel_style` doesn't match the viewer's `who_travelling_with`. Regenerate over-fetches `top_n=12` then filters down to 3 so the cap still holds when seed-pool density is low. Family / friends short-circuit upstream with `matching_disabled: true` + a reason code the frontend renders into a dedicated empty-state card.
+
+**Per-group itinerary planning hints** — `ali/generation/prompts._group_planning_hints(style, party_size)` injects concrete activity-shaping rules into the itinerary prompt:
+
+| Style | Selected rules |
+|---|---|
+| solo    | counter-seating venues, walking-distance stops, no wasted-seat private transfers, 1-2 meet-others activities/day without forcing it |
+| couple  | every overnight private (no dorms), ≥1 slow shared activity/day, tables for two not bar-only, one shared-first experience as memory anchor |
+| family  | ALL restaurants seat full party at ONE table with kids-friendly menus, walking blocks <30 min, dinner by 7pm, mid-day reset window, ≥1 KID-FACING activity/day, no clubs / fine dining / min-age-fail activities, apartment with kitchen access |
+| friends | one-table reservations for N, ≥1 split-and-rejoin activity/day, nightlife on the table, apartment / villa over N separate rooms |
+
+### Inbox
+
+`GET /api/inbox` returns every chat session the user is in, persona-resolved into UI-ready cards. Each row: persona avatar (Pinecone-resolved with seed badge), last-message preview (with `you:` prefix on outbound), `timeAgo` timestamp, approval-status pill (green "Matched" / rose pending / muted denied), message count. Sorted newest-activity first.
+
+**Frontend `<InboxStrip>`** lives in the dashboard right column above matches. Polls every 25s and subscribes to a `sonder:inbox:refresh` window event that `NotificationProvider` dispatches on every `chat_notification`, so new sessions appear instantly without waiting for the poll.
+
+### Synthetic outreach chats — solo / couple only
+
+Beyond posts + open trips, synthetic personas now spontaneously start chat sessions with real users. Cadence: 25% of synthetic-agent cycles. Filters:
+
+- Target user must have `who_travelling_with in (solo, couple)` (family + friends already have their party)
+- Target user must have a `current_itinerary_id` (something for the persona to anchor on)
+- Persona must NOT already have a session with this user (no spam)
+- LLM-generated opener anchors on ONE specific thing about the user's trip (city + dates) — generic openers ("your trip sounds amazing!!", "travel buddy") are forbidden in the system prompt
+- Persists via the same `ChatSession` + message path real chats use, then fires WS + web push + email through `notify_event`
+
+Result: a real user logged in with an upcoming trip can land their inbox + dashboard + OS notifications populating with "hey, saw you're going to lisbon — i was there in feb, the rain was lighter than i expected" within seconds of opening the app.
+
 ### Synthetic Co-Travellers (Pinecone seed pool)
 
 The matching pool is seeded with LLM-designed personas (no randomuser.me / stock photos). For each diversity-matrix slot (emotional signature × age bracket × home city), the LARGE LLM writes a full persona JSON. Each persona gets:
@@ -374,6 +430,17 @@ The matching pool is seeded with LLM-designed personas (no randomuser.me / stock
 - A rich embedding text upserted to the `cotravellers` Pinecone namespace
 
 Every record carries `is_seed: True` for "Sonder Curated" disclosure. Seed cost is ~$2–4 for 50 personas (gpt-image-1 dominates).
+
+**Two seed scripts, same architecture:**
+
+| Script | Pool | Cohort | Matrix |
+|---|---|---|---|
+| `scripts/seed_cotravellers.py` | Singles (`travel_style="solo"` default) | 96 personas | 16 cities × 3 ages × 2 genders |
+| `scripts/seed_couple_cotravellers.py` | Couples (`travel_style="couple"` hard-locked) | 18 couples | 6 cities × 3 ages, primary-gender (chatter) alternates |
+
+Couples are male+female pairs by design. The couple LLM-A system prompt mirrors the singles prompt structure verbatim (Rules block, full `visual_cue` ban list including `golden hour` / `cherry blossoms` / `iconic landmark` / engagement framing, `NEVER` block) with couple-specific layering: `display_name` = "X & Y", `voice_anchor` in WE voice, `quirks` describe the COUPLE'S DYNAMIC ("she plans, he wings it"), `appearance_descriptor` in PROTAGONIST + PARTNER order. Portrait prompt prepends a couple-specific header (two people in the frame, candid not engagement-shoot). Profile IDs use `ctcp_` prefix so re-runs don't collide with singles. Avatars upload to a separate Firebase Storage folder (`couples/{pid}.png` vs `cotraveller_avatars/{pid}.png`).
+
+This pool exists so the cotraveller route's **hard style filter** (couple↔couple, solo↔solo) has real candidates to return for couple users — without it, a couple would see zero matches since the singles pool defaults to `travel_style="solo"`.
 
 ---
 
@@ -465,6 +532,7 @@ npm run dev
 | `GET`  | `/api/chat/{session_id}/presence/{user_id}` | Online + last_seen |
 | `POST` | `/api/chat/approve` | User approves → schedules persona's reciprocal decision (p = `match_score`) |
 | `POST` | `/api/chat/deny` | Both sides stamped denied (terminal) |
+| `GET`  | `/api/inbox` | Every chat session the user is in, persona-resolved (display name, avatar, seed badge, last-message preview, last-activity time, approval status, message count). Sorted newest-activity first. Drives the dashboard inbox strip. |
 | `WS`   | `/api/ws/chat/{session_id}` | Chat stream — first-message auth |
 | `WS`   | `/api/ws/notifications` | Global notification channel — first-message auth |
 
@@ -505,6 +573,7 @@ npm run dev
 | `GET`  | `/api/push/vapid-public-key` (public) | `{key}` — 503 when web push isn't configured |
 | `POST` | `/api/push/subscribe` | Upserts the browser's `PushSubscription` |
 | `POST` | `/api/push/unsubscribe` | Drops a subscription by endpoint |
+| `POST` | `/api/push/test` | Diagnostic: fires a test push to the caller's own browser. Returns `{vapid_configured, subscription_count, send_attempted, send_error}` so you can pinpoint which layer is broken when desktop pushes aren't arriving |
 
 ### Voice (TTS)
 | Method | Route | Returns |
@@ -843,17 +912,21 @@ A handful of bugs kept recurring and shaped how new UI work gets reviewed:
 1. Connect GitHub repo
 2. Build: `pip install -r requirements.txt`
 3. Start: `uvicorn mushahid.main:app --host 0.0.0.0 --port 8000`
-4. Add all env vars from `.env.example` (Firebase, OpenAI, Anthropic, Pinecone, VAPID, Sentry, PostHog, per-provider model names, synthetic-agent knobs)
+4. Add all env vars from `.env.example` (Firebase, OpenAI, Anthropic, Pinecone, VAPID, Sentry, PostHog, per-provider model names, synthetic-agent knobs, `EMAIL_PROVIDER` + `EMAIL_API_KEY` + `EMAIL_FROM` + `FRONTEND_BASE_URL` for transactional emails, `FIRESTORE_DATABASE_ID` if using a named DB)
 5. Health check path: `/health`
+
+> **Render env-var gotcha**: long values containing `-` chars (notably VAPID keys) can silently truncate at the first hyphen when pasted into the dashboard UI. After setting, verify via `curl https://<your-service>.onrender.com/api/push/vapid-public-key` returns the full key. If truncated, paste with surrounding quotes or use Render's multi-line value mode.
 
 `ConnectionManager` and the synthetic-agents loop both hold in-memory state. Single-container is fine; multi-container production needs Redis pub/sub for both (the `REDIS_URL` config is already in `shared/config.py`).
 
-### Frontend → Vercel
+### Frontend → Cloudflare Pages
 1. Root directory: `jahnvi/frontend`
-2. Framework: Vite
-3. Add all `VITE_` env vars
-4. Update `vercel.json` API rewrite URL to your Render backend URL
-5. **HTTPS required** for Web Push (Vercel + Render handle this by default)
+2. Build command: `npm run build`
+3. Build output directory: `dist`
+4. Add all `VITE_` env vars (Firebase config, etc.)
+5. **API proxy via Pages Function** — `jahnvi/frontend/functions/api/[[path]].js` forwards every `/api/*` request to the Render backend. Edit the `BACKEND` constant at the top to point at your Render URL. (Cloudflare Pages `_redirects` only supports SAME-domain rewrites, so you can't proxy via that file.)
+6. **HTTPS required** for Web Push (Cloudflare + Render handle this by default).
+7. SPA fallback for client-side routes is automatic when `index.html` exists at the build output root — no rule file needed.
 
 ### Synthetic-agents tuning on prod
 - Default cadence (15-50s) is built for "feels alive" demo state. For prod with real users, raise `SYNTHETIC_AGENTS_MIN_INTERVAL` / `MAX_INTERVAL` to thin the feed once organic content exists.
