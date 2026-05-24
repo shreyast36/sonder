@@ -206,6 +206,37 @@ def _group_planning_hints(style: str, party_size: int) -> str:
     return ""
 
 
+def build_targeted_day_refinement_prompt(
+    itinerary: Itinerary,
+    target_day_numbers: list[int],
+    feedback: str,
+    validation_result: ValidationResult,
+) -> str:
+    """Prompt for revising only specific days — avoids regenerating the full itinerary."""
+    import json
+    targeted_days = [d for d in itinerary.days if d.day_number in target_day_numbers]
+    days_json = json.dumps([d.model_dump() for d in targeted_days], indent=2)
+    suggestions = "\n".join(f"- {s}" for s in (validation_result.improvement_suggestions or []))
+    issues_str = (
+        f"{validation_result.feedback}\n{suggestions}".strip()
+        if validation_result.improvement_suggestions
+        else validation_result.feedback
+    )
+    return f"""Here is the current itinerary context:
+Destination: {itinerary.destination.city}, {itinerary.destination.country}
+Total trip: {len(itinerary.days)} day(s)
+
+The following day(s) need revision (day numbers: {target_day_numbers}):
+{days_json}
+
+User feedback: "{feedback}"
+
+Validation issues to fix:
+{issues_str}
+
+Revise ONLY the day(s) shown above to address the feedback. Output a JSON array of the revised day objects using exactly the same schema. Do not output the full itinerary — only the array of revised days."""
+
+
 def build_refinement_prompt(
     itinerary: Itinerary,
     feedback: str,

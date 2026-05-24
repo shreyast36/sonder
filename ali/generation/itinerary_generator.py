@@ -8,6 +8,7 @@ from ali.generation.prompts import (
     REFINEMENT_SYSTEM_PROMPT,
     build_itinerary_prompt,
     build_refinement_prompt,
+    build_targeted_day_refinement_prompt,
 )
 from ali.generation.output_parser import _patch_activity, parse_itinerary
 
@@ -51,6 +52,25 @@ async def generate_refined_itinerary(
     """
     prompt = build_refinement_prompt(itinerary, feedback, validation_result)
     async for chunk in stream_request(task_type, prompt, REFINEMENT_SYSTEM_PROMPT):
+        yield chunk
+
+
+async def generate_refined_days(
+    itinerary: Itinerary,
+    target_day_numbers: list[int],
+    feedback: str,
+    validation_result: ValidationResult,
+) -> AsyncIterator[str]:
+    """Stream revised day(s) only instead of the full itinerary.
+
+    Uses the targeted prompt so the LLM outputs a small JSON array (the revised
+    days only), dramatically reducing output token count and generation time
+    compared to a full itinerary rewrite.
+    """
+    prompt = build_targeted_day_refinement_prompt(
+        itinerary, target_day_numbers, feedback, validation_result
+    )
+    async for chunk in stream_request("complex_refinement", prompt, REFINEMENT_SYSTEM_PROMPT):
         yield chunk
 
 
