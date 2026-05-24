@@ -114,6 +114,19 @@ export async function getUserProfile() {
   return get('/api/users/profile')
 }
 
+// Backfill the user's gender on existing profiles that predate the
+// field. Used by /companions when the same-gender filter has nothing
+// to act on. Server validates the value against ^(male|female)$.
+export async function patchProfileGender(gender) {
+  const res = await fetch(`${BASE}/api/users/profile/gender`, {
+    method: 'PATCH',
+    headers: await authHeaders(),
+    body: JSON.stringify({ gender }),
+  })
+  if (!res.ok) throw Object.assign(new Error(await _readError(res)), { status: res.status })
+  return res.json()
+}
+
 export async function inferPersona(profile) {
   return post('/api/persona-infer', profile)
 }
