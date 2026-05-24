@@ -355,6 +355,21 @@ export default function Itinerary() {
   const isWide    = vw >= 1180
   const isCompact = vw < 720
 
+  // View mode — desktop-optimised layout vs. the phone-mockup view.
+  // Desktop is default on wider screens since the phone wastes the
+  // horizontal real estate; mobile mockup is still one toggle away.
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sonder:itinerary:view')
+      if (saved === 'mobile' || saved === 'desktop') return saved
+    } catch { /* noop */ }
+    return vw >= 900 ? 'desktop' : 'mobile'
+  })
+  function switchView(mode) {
+    setViewMode(mode)
+    try { localStorage.setItem('sonder:itinerary:view', mode) } catch { /* noop */ }
+  }
+
   const firstName = (() => {
     if (user?.displayName) return user.displayName.split(' ')[0]
     if (user?.email) {
@@ -555,8 +570,12 @@ export default function Itinerary() {
           natural page scroll automatically. */}
       <main ref={mainRef} style={{
         flex: 1, position: 'relative', zIndex: 1,
-        display: 'flex', alignItems: 'safe center', justifyContent: 'safe center',
-        padding: isCompact ? '20px 0' : '32px 0',
+        // Desktop view flows like a normal scrolling page; mobile view
+        // centres the phone mockup. Switch layout primitives per mode.
+        display: viewMode === 'desktop' && showingItinerary ? 'block' : 'flex',
+        alignItems: viewMode === 'desktop' && showingItinerary ? 'unset' : 'safe center',
+        justifyContent: viewMode === 'desktop' && showingItinerary ? 'unset' : 'safe center',
+        padding: isCompact ? '20px 0' : (viewMode === 'desktop' ? '0' : '32px 0'),
         overflowX: 'hidden', overflowY: 'auto',
       }}>
         <DestinationBackdrop city={dest?.city} visible={booted && showingItinerary}/>
@@ -564,32 +583,82 @@ export default function Itinerary() {
         <AtmosphericScene/>
         <GoldDust count={isCompact ? 6 : 12}/>
         <PaperGrain/>
-        {isWide && <EditionMark itinerary={itinerary || renderTarget}/>}
+        {isWide && viewMode === 'mobile' && <EditionMark itinerary={itinerary || renderTarget}/>}
 
-        <PhoneStage scale={phoneScale}>
-          <PhoneFrame onPowerButton={togglePower} powerButtonGlow={!booted && !booting}>
-            <PhoneStatusBar/>
-            {!showingItinerary ? (
-              <PhoneLoading phase={phase}/>
-            ) : (
-              <PhoneItinerary
-                dest={dest}
-                dateRange={dateRange}
-                days={days}
-                safeActiveDay={safeActiveDay}
-                setDay={setDay}
-                day={day}
-                isStreaming={isStreaming}
-                scrollRef={phoneScrollRef}
-              />
-            )}
-            <PhoneHomeIndicator/>
-            <AnimatePresence>
-              {!booted && !booting && <PhoneSleepScreen key="sleep" onWake={powerOn}/>}
-              {booting && <PhoneBootScreen key="boot"/>}
-            </AnimatePresence>
-          </PhoneFrame>
-        </PhoneStage>
+        {/* View tab toggle — Mobile (phone mockup) vs Desktop (full-
+            width layout). Floats at the top centre of <main>. */}
+        {showingItinerary && (
+          <div style={{
+            position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 10,
+            display: 'inline-flex', gap: 4, padding: 4, borderRadius: 999,
+            background: 'rgba(8,8,7,0.65)', backdropFilter: 'blur(16px)',
+            border: `1px solid ${HAIRLINE}`,
+          }}>
+            {[
+              { key: 'desktop', label: 'Desktop view' },
+              { key: 'mobile',  label: 'Mobile view'  },
+            ].map(t => {
+              const active = viewMode === t.key
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => switchView(t.key)}
+                  style={{
+                    padding: '6px 14px', borderRadius: 999,
+                    background: active
+                      ? `linear-gradient(135deg, ${SKY}28 0%, rgba(212,182,134,0.10) 100%)`
+                      : 'transparent',
+                    border: active ? `1px solid ${SKY}55` : '1px solid transparent',
+                    cursor: active ? 'default' : 'pointer',
+                    color: active ? BONE : MUTE,
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                    letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500,
+                    transition: 'all 0.18s',
+                  }}
+                >
+                  {t.label}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {viewMode === 'mobile' || !showingItinerary ? (
+          <PhoneStage scale={phoneScale}>
+            <PhoneFrame onPowerButton={togglePower} powerButtonGlow={!booted && !booting}>
+              <PhoneStatusBar/>
+              {!showingItinerary ? (
+                <PhoneLoading phase={phase}/>
+              ) : (
+                <PhoneItinerary
+                  dest={dest}
+                  dateRange={dateRange}
+                  days={days}
+                  safeActiveDay={safeActiveDay}
+                  setDay={setDay}
+                  day={day}
+                  isStreaming={isStreaming}
+                  scrollRef={phoneScrollRef}
+                />
+              )}
+              <PhoneHomeIndicator/>
+              <AnimatePresence>
+                {!booted && !booting && <PhoneSleepScreen key="sleep" onWake={powerOn}/>}
+                {booting && <PhoneBootScreen key="boot"/>}
+              </AnimatePresence>
+            </PhoneFrame>
+          </PhoneStage>
+        ) : (
+          <DesktopItinerary
+            dest={dest}
+            dateRange={dateRange}
+            days={days}
+            safeActiveDay={safeActiveDay}
+            setDay={setDay}
+            isStreaming={isStreaming}
+          />
+        )}
 
       </main>
 
@@ -1921,6 +1990,258 @@ function PhoneLoading({ phase }) {
     </div>
   )
 }
+
+// ── Desktop-optimised view ───────────────────────────────────────────────
+//
+// Same data as the phone view (destination, dateRange, days, active day,
+// streaming flag) rendered as a wide-screen editorial layout. Three
+// stacked sections:
+//   1. Hero header with Wikipedia destination photo + city + dates
+//   2. Sticky day-pill rail (horizontal scroll, matches phone register)
+//   3. Active day's activities in a 2-column timeline-card grid
+// No phone chrome, no power button, no swipe gestures — keyboard /
+// mouse first.
+
+function DesktopItinerary({ dest, dateRange, days, safeActiveDay, setDay, isStreaming }) {
+  const photo = useDestinationPhoto(dest?.city, dest?.country)
+  const activeDay = days[safeActiveDay] || null
+  const activities = activeDay?.activities || []
+
+  return (
+    <div style={{
+      width: '100%', maxWidth: 1180,
+      margin: '0 auto', padding: '60px 32px 80px',
+      position: 'relative', zIndex: 1,
+    }}>
+      {/* ─── Hero ─── */}
+      <div style={{
+        position: 'relative', borderRadius: 24, overflow: 'hidden',
+        marginBottom: 28,
+        background: 'linear-gradient(160deg, rgba(24,20,13,1) 0%, rgba(14,11,8,1) 100%)',
+        border: `1px solid ${HAIRLINE}`,
+        boxShadow: '0 28px 80px rgba(0,0,0,0.55)',
+        minHeight: 280,
+      }}>
+        {photo && (
+          <>
+            <img
+              src={photo}
+              alt={dest?.city || ''}
+              referrerPolicy="no-referrer"
+              style={{
+                position: 'absolute', inset: 0, width: '100%', height: '100%',
+                objectFit: 'cover',
+                filter: 'saturate(0.85) brightness(0.55)',
+                pointerEvents: 'none',
+              }}
+            />
+            <div style={{
+              position: 'absolute', inset: 0, pointerEvents: 'none',
+              background: 'linear-gradient(180deg, rgba(8,8,7,0.55) 0%, rgba(14,11,8,0.40) 35%, rgba(14,11,8,0.85) 100%)',
+            }}/>
+          </>
+        )}
+        <div style={{ position: 'relative', padding: '52px 48px 44px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <motion.span
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+              style={{ width: 7, height: 7, borderRadius: '50%', background: SKY, boxShadow: `0 0 10px ${SKY}` }}
+            />
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.32em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.65)', margin: 0 }}>
+              Your trip
+            </p>
+          </div>
+          <h1 style={{
+            fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
+            fontSize: 76, color: BONE, lineHeight: 0.95, margin: 0, letterSpacing: '-0.02em',
+            textShadow: '0 4px 20px rgba(0,0,0,0.5)',
+          }}>
+            {dest?.city || 'Destination'}
+          </h1>
+          {dest?.country && (
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: '10px 0 0' }}>
+              {dest.country}
+            </p>
+          )}
+          {dateRange && (
+            <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 18, color: 'rgba(244,237,224,0.78)', margin: '18px 0 0' }}>
+              {dateRange} · {days.length} {days.length === 1 ? 'day' : 'days'}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* ─── Day pill rail ─── */}
+      <div style={{
+        position: 'sticky', top: 12, zIndex: 5,
+        padding: '12px 16px', borderRadius: 16,
+        background: 'rgba(8,8,7,0.78)', backdropFilter: 'blur(20px)',
+        border: `1px solid ${HAIRLINE}`,
+        display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'thin',
+        marginBottom: 28,
+      }}>
+        {days.map((d, i) => {
+          const active = safeActiveDay === i
+          return (
+            <motion.button
+              key={d.day_number}
+              whileTap={{ scale: 0.96 }}
+              whileHover={!active ? { scale: 1.04 } : {}}
+              onClick={() => setDay(i)}
+              style={{
+                padding: '10px 18px', borderRadius: 14,
+                background: active ? `${SKY}1A` : 'rgba(232,212,168,0.04)',
+                border: `1px solid ${active ? `${SKY}55` : HAIRLINE}`,
+                cursor: 'pointer', flexShrink: 0,
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+                letterSpacing: '0.14em', color: active ? SKY : MUTE,
+                fontWeight: active ? 500 : 400,
+                transition: 'all 0.2s',
+                boxShadow: active ? `0 0 18px ${SKY}33` : 'none',
+              }}
+            >
+              Day {d.day_number}
+            </motion.button>
+          )
+        })}
+        {isStreaming && (
+          <motion.div
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 12px', flexShrink: 0 }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: SKY, boxShadow: `0 0 10px ${SKY}` }}/>
+            <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.20em', textTransform: 'uppercase', color: `${SKY}cc` }}>
+              streaming
+            </span>
+          </motion.div>
+        )}
+      </div>
+
+      {/* ─── Active day ─── */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={safeActiveDay}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        >
+          {activeDay?.theme && (
+            <p style={{
+              fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+              fontSize: 24, color: BONE, margin: '0 0 22px',
+              letterSpacing: '-0.01em',
+            }}>
+              {activeDay.theme}
+            </p>
+          )}
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+            gap: 18, alignItems: 'start',
+          }}>
+            {activities.map((ia, idx) => (
+              <DesktopActivityCard key={ia.activity?.activity_id || idx} ia={ia} index={idx}/>
+            ))}
+            {activities.length === 0 && (
+              <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 16, color: MUTE, padding: '20px 4px' }}>
+                {isStreaming ? 'Day still loading…' : 'No activities for this day yet.'}
+              </p>
+            )}
+          </div>
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  )
+}
+
+
+function DesktopActivityCard({ ia, index }) {
+  const a = ia?.activity || {}
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: 0.04 * index, ease: [0.16, 1, 0.3, 1] }}
+      whileHover={{ y: -3, borderColor: `${SKY}44` }}
+      style={{
+        padding: '22px 24px', borderRadius: 16,
+        background: 'linear-gradient(160deg, rgba(22,18,12,0.98) 0%, rgba(10,9,7,1) 100%)',
+        border: `1px solid ${HAIRLINE}`,
+        boxShadow: '0 10px 28px rgba(0,0,0,0.4)',
+        transition: 'all 0.2s',
+        display: 'flex', flexDirection: 'column', gap: 12,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+        {ia?.time && (
+          <span style={{
+            fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+            letterSpacing: '0.22em', textTransform: 'uppercase', color: SKY, fontWeight: 500,
+            padding: '3px 9px', borderRadius: 8,
+            background: `${SKY}10`, border: `1px solid ${SKY}33`,
+          }}>
+            {ia.time}
+          </span>
+        )}
+        {a.category && (
+          <span style={{
+            fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+            letterSpacing: '0.20em', textTransform: 'uppercase', color: MUTE,
+          }}>
+            {a.category}
+          </span>
+        )}
+      </div>
+      <h3 style={{
+        fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
+        fontSize: 22, color: BONE, margin: 0, lineHeight: 1.2, letterSpacing: '-0.01em',
+      }}>
+        {a.name || '—'}
+      </h3>
+      {(ia?.why_this || a.description) && (
+        <p style={{
+          fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13,
+          color: 'rgba(244,237,224,0.78)', margin: 0, lineHeight: 1.55,
+        }}>
+          {ia?.why_this || a.description}
+        </p>
+      )}
+      <div style={{
+        marginTop: 4, paddingTop: 12,
+        borderTop: `1px solid ${HAIRLINE}`,
+        display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+      }}>
+        {typeof a.cost_usd === 'number' && a.cost_usd > 0 && (
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: GOLD, fontWeight: 500 }}>
+            ${Math.round(a.cost_usd)}
+          </span>
+        )}
+        {typeof a.duration_hours === 'number' && a.duration_hours > 0 && (
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: MUTE }}>
+            {a.duration_hours}h
+          </span>
+        )}
+        {Array.isArray(a.tags) && a.tags.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {a.tags.slice(0, 3).map(t => (
+              <span key={t} style={{
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 9.5,
+                color: 'rgba(244,237,224,0.6)',
+                padding: '3px 9px', borderRadius: 999,
+                background: 'rgba(212,182,134,0.05)', border: `1px solid ${HAIRLINE}`,
+              }}>{t}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  )
+}
+
 
 function PhoneDestinationHeader({ dest, dateRange }) {
   // Wikipedia REST API photo for the destination, when we can find one.
