@@ -195,14 +195,25 @@ export async function approveItinerary(itineraryId) {
   return post(`/api/itineraries/${encodeURIComponent(itineraryId)}/approve`, {})
 }
 
-// Request changes on a draft itinerary. Backend runs one LLM regen + one
-// validate (single-pass), then returns the updated draft and the
-// validator verdict. 90s client-side timeout matches the backend's 75s
-// ceiling + network margin so a hung proxy surfaces as an error instead
-// of an infinite spinner.
-export async function reviseItinerary(itineraryId, feedback, targets = null) {
+// Stream a revision via SSE so the frontend can splice in revised days
+// the moment the LLM finishes each one — no more 60s spinner.
+//
+// Pass `handlers` like:
+//   {
+//     revising:           ({ scope, target_days, hint }) => {},
+//     day_revised:        ({ day_number, day })          => {},
+//     validating:         ()                              => {},
+//     revision_done:      (payload)                       => {},  // final
+//     revision_failed:    ({ message })                   => {},
+//     revision_persisted: ({ turn })                      => {},  // history written
+//   }
+//
+// Returns when the stream completes (or aborts on timeout). 120s client
+// timeout — generous since most revisions finish well under 60s and the
+// stream surfaces progress along the way.
+export async function streamReviseItinerary(itineraryId, feedback, targets = null, handlers = {}) {
   const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), 90_000)
+  const t = setTimeout(() => ctrl.abort(), 120_000)
   try {
     const res = await fetch(`/api/itineraries/${encodeURIComponent(itineraryId)}/revise`, {
       method: 'POST',
@@ -215,11 +226,39 @@ export async function reviseItinerary(itineraryId, feedback, targets = null) {
       _reportIfServerError(err, 'POST', '/api/itineraries/revise')
       throw err
     }
-    return res.json()
+
+    const reader  = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer    = ''
+    let eventName = null
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop()
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          eventName = line.slice(6).trim()
+        } else if (line.startsWith('data:')) {
+          const raw = line.slice(5).trim()
+          const handler = handlers[eventName]
+          if (handler) {
+            try { handler(raw ? JSON.parse(raw) : undefined) } catch { /* malformed */ }
+          }
+          eventName = null
+        } else if (line === '') {
+          eventName = null
+        }
+      }
+    }
   } catch (e) {
     if (e?.name === 'AbortError') {
-      throw new Error('Revision took too long — try a smaller change.')
+      handlers.revision_failed?.({ message: 'Revision took too long — try a smaller change.' })
+      return
     }
+    handlers.revision_failed?.({ message: e?.message || 'Revision failed' })
     throw e
   } finally {
     clearTimeout(t)

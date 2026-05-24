@@ -5,7 +5,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { ArrowLeft, Mail, Check, Bookmark } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D, SonderMark3D } from '../components/SonderMark3D'
-import { emailItinerary, saveItineraryAsCurrent, getCurrentItinerary, approveItinerary, reviseItinerary } from '../lib/api'
+import { emailItinerary, saveItineraryAsCurrent, getCurrentItinerary, approveItinerary, streamReviseItinerary } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
 import { useAuth } from '../hooks/useAuth'
 import { useSSE } from '../hooks/useSSE'
@@ -73,6 +73,19 @@ export default function Itinerary() {
   const [reviseText, setReviseText] = useState('')
   const [reviseBusy, setReviseBusy] = useState(false)
   const [approveError, setApproveError] = useState(null)
+  // Revision progress toast — { kind: 'progress' | 'done' | 'error', text, sub? }
+  const [reviseToast, setReviseToast] = useState(null)
+  const reviseToastTimerRef = useRef(null)
+  function showToast(kind, text, sub = null, ttl = null) {
+    if (reviseToastTimerRef.current) {
+      clearTimeout(reviseToastTimerRef.current)
+      reviseToastTimerRef.current = null
+    }
+    setReviseToast({ kind, text, sub })
+    if (ttl != null) {
+      reviseToastTimerRef.current = setTimeout(() => setReviseToast(null), ttl)
+    }
+  }
   const [error, setError]         = useState(null)
   const startedRef                = useRef(false)
   // Tracks which itinerary id we've auto-persisted, so the SSE 'done' and
@@ -271,14 +284,66 @@ export default function Itinerary() {
     const feedback = (text || reviseText).trim()
     if (!feedback) return
     setReviseBusy(true); setApproveError(null)
+    // Close the modal immediately — progress shows as a top-of-screen
+    // toast so the user can watch the days update live.
+    setReviseText('')
+    setReviseOpen(false)
+    showToast('progress', 'Starting revision…')
+
     try {
-      const res = await reviseItinerary(itinerary.itinerary_id, feedback)
-      if (res?.itinerary) setItinerary(res.itinerary)
-      setReviseText('')
-      setReviseOpen(false)
+      await streamReviseItinerary(itinerary.itinerary_id, feedback, null, {
+        revising: ({ hint }) => {
+          showToast('progress', hint || 'Rewriting…')
+        },
+        day_revised: ({ day_number, day }) => {
+          // Splice the revised day into the in-flight itinerary so it
+          // re-renders immediately. Match by day_number; preserve every
+          // other day untouched.
+          setItinerary(prev => {
+            if (!prev) return prev
+            const next_days = (prev.days || []).map(d =>
+              d.day_number === day_number ? day : d
+            )
+            return { ...prev, days: next_days }
+          })
+          showToast('progress', `Day ${day_number} updated`)
+        },
+        validating: () => {
+          showToast('progress', 'Checking constraints…')
+        },
+        revision_done: ({ itinerary: finalItin, dropped_titles, added_titles, validation }) => {
+          if (finalItin) setItinerary(finalItin)
+          // Build a friendly diff line. Prefer swap-style copy when
+          // there's exactly one drop and one add.
+          let line = 'Revision applied'
+          let sub = null
+          const d = dropped_titles || []
+          const a = added_titles || []
+          if (d.length === 1 && a.length === 1) {
+            line = `Swapped ${d[0]} → ${a[0]}`
+          } else if (d.length || a.length) {
+            line = `Updated ${(d.length + a.length)} ${(d.length + a.length) === 1 ? 'activity' : 'activities'}`
+            sub = [
+              d.length ? `removed: ${d.slice(0, 2).join(', ')}${d.length > 2 ? '…' : ''}` : null,
+              a.length ? `added: ${a.slice(0, 2).join(', ')}${a.length > 2 ? '…' : ''}`   : null,
+            ].filter(Boolean).join(' · ')
+          }
+          if (validation && validation.status === 'revise') {
+            sub = (sub ? sub + ' · ' : '') + 'validator: needs another pass'
+          }
+          showToast('done', line, sub, 6500)
+        },
+        revision_failed: ({ message }) => {
+          showToast('error', message || 'Revision failed', null, 5000)
+          setApproveError(message || 'Revision failed')
+        },
+        revision_persisted: () => { /* history written — nothing visible to do */ },
+      })
     } catch (e) {
       const isOffline = e instanceof TypeError && e.message === 'Failed to fetch'
-      setApproveError(isOffline ? 'No internet connection — please try again' : (e?.message || 'Could not log revision'))
+      const msg = isOffline ? 'No internet connection — please try again' : (e?.message || 'Could not log revision')
+      showToast('error', msg, null, 5000)
+      setApproveError(msg)
     } finally {
       setReviseBusy(false)
     }
@@ -761,6 +826,71 @@ export default function Itinerary() {
 
       </main>
 
+      {/* Revision progress toast — top-centre, narrates the SSE stream as
+          days are rewritten so the user sees "Day 3 updated" / "Swapped X → Y"
+          instead of staring at the approve gate wondering if anything changed. */}
+      <AnimatePresence>
+        {reviseToast && (
+          <motion.div
+            key={`toast-${reviseToast.text}`}
+            initial={{ y: -16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -12, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+            style={{
+              position: 'fixed', top: 84, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 120, pointerEvents: 'none',
+              maxWidth: 'min(560px, calc(100vw - 40px))',
+              padding: '12px 18px',
+              borderRadius: 14,
+              background: 'rgba(14,11,8,0.94)',
+              border: `1px solid ${reviseToast.kind === 'error' ? 'rgba(248,113,113,0.45)'
+                                : reviseToast.kind === 'done'  ? `${SKY}55`
+                                :                                'rgba(139,92,246,0.45)'}`,
+              boxShadow: `0 16px 48px rgba(0,0,0,0.55), 0 0 24px ${
+                reviseToast.kind === 'error' ? 'rgba(248,113,113,0.18)'
+              : reviseToast.kind === 'done'  ? `${SKY}22`
+              :                                'rgba(139,92,246,0.20)'
+              }`,
+              backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+              display: 'flex', alignItems: 'center', gap: 12,
+            }}
+          >
+            {reviseToast.kind === 'progress' && (
+              <motion.span
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1.1, repeat: Infinity, ease: 'linear' }}
+                style={{ width: 14, height: 14, borderRadius: '50%',
+                         border: `1.5px solid rgba(139,92,246,0.30)`,
+                         borderTopColor: '#8B5CF6', flexShrink: 0 }}
+              />
+            )}
+            {reviseToast.kind === 'done'  && <Check size={14} style={{ color: SKY, flexShrink: 0 }}/>}
+            {reviseToast.kind === 'error' && (
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#F87171', flexShrink: 0 }}/>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+              <span style={{
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 12,
+                letterSpacing: '0.02em', color: BONE, fontWeight: 500,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {reviseToast.text}
+              </span>
+              {reviseToast.sub && (
+                <span style={{
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                  color: MUTE, fontWeight: 300,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {reviseToast.sub}
+                </span>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Companion prompt — slides up when the pipeline 'done' event fires,
           asks Yes/No to meeting new people for this trip. Non-blocking. */}
       <AnimatePresence>
@@ -974,7 +1104,7 @@ export default function Itinerary() {
                   opacity: (reviseBusy || !reviseText.trim()) ? 0.5 : 1,
                 }}
               >
-                {reviseBusy ? 'Rewriting…' : 'Send feedback'}
+                {reviseBusy ? 'Sending…' : 'Send feedback'}
               </motion.button>
             </div>
           </motion.div>

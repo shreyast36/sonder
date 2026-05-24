@@ -74,6 +74,106 @@ async def generate_refined_days(
         yield chunk
 
 
+async def _stream_days_from_text(
+    text_stream: AsyncIterator[str],
+    activities: list[Activity],
+    *,
+    days_key: bool,
+):
+    """Forward-only JSON brace counter that yields ItineraryDay objects as
+    soon as each day's `{...}` closes in the stream.
+
+    `days_key=True`  → wait for the `"days"` field before counting day objects
+                       (full itinerary regen wraps days inside the itinerary).
+    `days_key=False` → the LLM is streaming a bare JSON array of day objects
+                       (targeted-day regen prompt format), so start counting
+                       day objects as soon as we enter the array.
+
+    Yields tuples of (ItineraryDay, raw_buffer_so_far) — the raw buffer is
+    kept by the caller so a streaming failure can fall back to a one-shot
+    parse without losing tokens already consumed.
+    """
+    buffer = ""
+    cursor = 0
+    started = not days_key   # bare-array form starts immediately
+    depth = 0
+    in_string = False
+    escape_next = False
+    current_string = ""
+    day_start_pos = None
+
+    async for chunk in text_stream:
+        buffer += chunk
+        while cursor < len(buffer):
+            c = buffer[cursor]
+            if escape_next:
+                escape_next = False
+            elif in_string:
+                if c == "\\":
+                    escape_next = True
+                elif c == '"':
+                    if days_key and not started and current_string == "days":
+                        started = True
+                    current_string = ""
+                    in_string = False
+                else:
+                    current_string += c
+            elif c == '"':
+                in_string = True
+            elif started:
+                if c == "{":
+                    depth += 1
+                    if depth == 1:
+                        day_start_pos = cursor
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0 and day_start_pos is not None:
+                        day_json = buffer[day_start_pos : cursor + 1]
+                        try:
+                            day_data = json.loads(day_json)
+                            day_data = _patch_day_in_place(day_data, activities)
+                            yield ItineraryDay.model_validate(day_data), buffer
+                        except Exception as e:
+                            logger.debug("Streaming day parse skipped: %s", e)
+                        day_start_pos = None
+            cursor += 1
+
+
+async def stream_refined_itinerary_by_day(
+    itinerary: Itinerary,
+    feedback: str,
+    validation_result: ValidationResult,
+):
+    """Full-itinerary refinement, yielded day-by-day as each one finishes
+    parsing. Mirrors `generate_itinerary_by_day` but for the refinement
+    prompt + tier.
+
+    Yields (ItineraryDay, raw_buffer_so_far) tuples; the caller can keep
+    the last raw_buffer to do a fallback whole-itinerary parse if the
+    streaming detector missed everything.
+    """
+    text = generate_refined_itinerary(itinerary, feedback, validation_result, task_type="complex_refinement")
+    activities = [ia.activity for day in itinerary.days for ia in day.activities]
+    async for item in _stream_days_from_text(text, activities, days_key=True):
+        yield item
+
+
+async def stream_refined_days_by_day(
+    itinerary: Itinerary,
+    target_day_numbers: list[int],
+    feedback: str,
+    validation_result: ValidationResult,
+):
+    """Targeted-day refinement, yielded day-by-day as each one finishes
+    parsing. Output prompt is a bare JSON array of day objects so we
+    don't wait for a `days` key.
+    """
+    text = generate_refined_days(itinerary, target_day_numbers, feedback, validation_result)
+    activities = [ia.activity for day in itinerary.days for ia in day.activities]
+    async for item in _stream_days_from_text(text, activities, days_key=False):
+        yield item
+
+
 async def generate_itinerary_by_day(
     user_profile: UserProfile,
     destination: Destination,
