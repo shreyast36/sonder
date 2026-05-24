@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 import {
   MapPin, Users, Send, Loader2, Trash2, MessageCircle,
-  Sparkles, Plus, Check, Radio,
+  Sparkles, Plus, Check, Radio, X,
 } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import {
-  listOpenTrips, requestToJoin,
+  listOpenTrips, requestToJoin, getTripPreview,
   listFeed, createPost, deletePost as apiDeletePost,
   listComments, addComment,
 } from '../lib/api'
@@ -233,16 +234,41 @@ function OpenTripCard({ trip, onRequestJoin }) {
   )
 }
 
-// ── Join request modal ───────────────────────────────────────────────────
+// ── Trip detail + instant-verdict modal ─────────────────────────────────
 
-function JoinModal({ trip, onClose, onSubmit, busy, error }) {
+function pctFromScore(s) {
+  if (typeof s !== 'number') return null
+  return Math.round(Math.max(0, Math.min(1, s)) * 100)
+}
+
+function fitLabel(score) {
+  const p = pctFromScore(score)
+  if (p == null) return null
+  if (p >= 75) return { label: 'Strong fit',   tone: GREEN }
+  if (p >= 55) return { label: 'Good fit',     tone: GOLD }
+  if (p >= 40) return { label: 'Borderline',   tone: AMBER }
+  return            { label: 'Long shot',    tone: ROSE }
+}
+
+function TripDetailModal({ trip, onClose, onSubmit, busy, error, preview, previewLoading, verdict }) {
   const [msg, setMsg] = useState('')
+  const owner = preview?.owner || {}
+  const fit = fitLabel(preview?.match_score)
+  const dest = preview?.destination || {}
+  const where = dest.city
+    ? dest.country ? `${dest.city}, ${dest.country}` : dest.city
+    : trip?.destination_city || 'Somewhere'
+
+  // Three-state UI: loading preview → confirmation → verdict
+  const stage = verdict ? 'verdict' : (previewLoading ? 'loading' : 'confirm')
+  const verdictApproved = verdict?.status === 'approved'
+
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       style={{
         position: 'fixed', inset: 0, zIndex: 200,
-        background: 'rgba(10,8,5,0.78)', backdropFilter: 'blur(8px)',
+        background: 'rgba(10,8,5,0.82)', backdropFilter: 'blur(10px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32,
       }}
       onClick={onClose}
@@ -252,69 +278,244 @@ function JoinModal({ trip, onClose, onSubmit, busy, error }) {
         transition={spring}
         onClick={e => e.stopPropagation()}
         style={{
-          padding: 1, borderRadius: 18,
-          background: `linear-gradient(135deg, ${VIOLET}55 0%, rgba(232,212,168,0.10) 100%)`,
-          boxShadow: `0 30px 80px rgba(0,0,0,0.6), 0 0 60px ${VIOLET}22`,
+          padding: 1, borderRadius: 22,
+          background: `linear-gradient(135deg, ${VIOLET}66 0%, rgba(232,212,168,0.12) 50%, ${GOLD}33 100%)`,
+          boxShadow: `0 36px 100px rgba(0,0,0,0.7), 0 0 80px ${VIOLET}22`,
+          maxWidth: 520, width: '100%',
         }}
       >
         <div style={{
-          padding: '28px 30px', borderRadius: 17,
-          background: 'linear-gradient(160deg, rgba(22,18,12,0.99) 0%, rgba(10,9,7,1) 100%)',
-          display: 'flex', flexDirection: 'column', gap: 16,
-          minWidth: 380, maxWidth: 480,
+          padding: '32px 34px', borderRadius: 21,
+          background: 'linear-gradient(160deg, rgba(24,19,13,0.99) 0%, rgba(10,9,7,1) 100%)',
+          display: 'flex', flexDirection: 'column', gap: 18,
+          position: 'relative', overflow: 'hidden',
         }}>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 500, letterSpacing: '0.24em', textTransform: 'uppercase', color: VIOLET, margin: 0 }}>
-            Request to join {trip?.owner_name}'s trip
-          </p>
-          <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 26, color: BONE, margin: 0, lineHeight: 1.1 }}>
-            {trip?.destination_city}{trip?.destination_country ? `, ${trip.destination_country}` : ''}
-          </p>
-          <textarea
-            value={msg}
-            onChange={e => setMsg(e.target.value)}
-            placeholder="A line about why this trip pulls you. Optional."
-            rows={4} maxLength={400} autoFocus
-            style={{
-              padding: '12px 14px', borderRadius: 12,
-              background: 'rgba(232,212,168,0.03)', border: `1px solid ${HAIRLINE}`,
-              color: BONE, outline: 'none', resize: 'none',
-              fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 300, lineHeight: 1.55,
-            }}
-          />
-          {error && <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: '#F87171', margin: 0 }}>{error}</p>}
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              disabled={busy}
-              onClick={() => onSubmit?.(msg.trim())}
-              style={{
-                padding: '11px 22px', borderRadius: 18,
-                background: `linear-gradient(135deg, ${VIOLET} 0%, #6D28D9 100%)`,
-                border: 'none', cursor: busy ? 'wait' : 'pointer', color: '#fff',
-                fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 500,
-                letterSpacing: '0.22em', textTransform: 'uppercase',
-                opacity: busy ? 0.7 : 1,
-                display: 'flex', alignItems: 'center', gap: 6,
-                boxShadow: `0 6px 20px ${VIOLET}55`,
-              }}
-            >
-              {busy
-                ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, ease: 'linear', repeat: Infinity }}><Loader2 size={11}/></motion.span>
-                : <Send size={11}/>}
-              Send
-            </button>
-            <button
-              onClick={onClose}
-              style={{
-                padding: '11px 22px', borderRadius: 18,
-                background: 'transparent', border: `1px solid ${HAIRLINE}`,
-                cursor: 'pointer', color: MUTE,
-                fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
-                letterSpacing: '0.22em', textTransform: 'uppercase',
-              }}
-            >
-              Cancel
-            </button>
-          </div>
+          <div style={{
+            position: 'absolute', top: -100, right: -80, width: 280, height: 280, borderRadius: '50%',
+            background: `radial-gradient(circle, ${VIOLET}18 0%, transparent 65%)`, pointerEvents: 'none',
+          }}/>
+
+          {stage === 'loading' && (
+            <div style={{ padding: '40px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+              <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.2, ease: 'linear', repeat: Infinity }}>
+                <Loader2 size={18} style={{ color: VIOLET }}/>
+              </motion.span>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE }}>
+                Reading the trip…
+              </span>
+            </div>
+          )}
+
+          {stage === 'confirm' && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, position: 'relative' }}>
+                {/* avatar with halo */}
+                <div style={{ position: 'relative', width: 64, height: 64, flexShrink: 0 }}>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
+                    style={{
+                      position: 'absolute', inset: -4, borderRadius: '50%',
+                      background: `conic-gradient(from 0deg, ${VIOLET}88, transparent 30%, ${GOLD}66 60%, transparent 100%)`,
+                      filter: 'blur(5px)', opacity: 0.75,
+                    }}
+                  />
+                  <div style={{
+                    position: 'relative',
+                    width: 64, height: 64, borderRadius: '50%', overflow: 'hidden',
+                    background: 'linear-gradient(160deg, rgba(212,182,134,0.10) 0%, rgba(20,15,10,1) 100%)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: `1px solid ${VIOLET}66`,
+                  }}>
+                    {owner.avatar_url
+                      ? <img src={owner.avatar_url} alt={owner.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                      : <span style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 24, color: VIOLET, fontStyle: 'italic' }}>
+                          {initials(owner.display_name || trip?.owner_name)}
+                        </span>}
+                  </div>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.24em', textTransform: 'uppercase', color: VIOLET, margin: 0, fontWeight: 500 }}>
+                    {owner.is_synthetic ? 'Curated companion' : 'Trip owner'}
+                  </p>
+                  <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 26, color: BONE, margin: '4px 0 2px', lineHeight: 1.05 }}>
+                    {owner.display_name || trip?.owner_name || 'Traveller'}
+                  </p>
+                  {owner.archetype && (
+                    <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: MUTE, margin: 0, letterSpacing: '0.04em' }}>
+                      {owner.archetype}{owner.location ? ` · ${owner.location}` : ''}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* destination strip */}
+              <div style={{
+                padding: '14px 16px', borderRadius: 12,
+                background: 'rgba(232,212,168,0.04)', border: `1px solid ${HAIRLINE}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+              }}>
+                <div>
+                  <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.24em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+                    Destination
+                  </p>
+                  <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 22, color: BONE, margin: '2px 0 0', lineHeight: 1 }}>
+                    {where}
+                  </p>
+                </div>
+                {preview?.day_count != null && (
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.24em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+                      Length
+                    </p>
+                    <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 22, color: BONE, margin: '2px 0 0', lineHeight: 1 }}>
+                      {preview.day_count}d
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* interests row */}
+              {owner.interests && owner.interests.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {owner.interests.slice(0, 6).map(i => (
+                    <span key={i} style={{
+                      fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: 'rgba(244,237,224,0.78)',
+                      padding: '5px 11px', borderRadius: 999,
+                      background: 'rgba(212,182,134,0.06)', border: `1px solid ${HAIRLINE}`,
+                    }}>{i}</span>
+                  ))}
+                </div>
+              )}
+
+              {/* compatibility readout */}
+              {preview?.match_score != null && fit && (
+                <div style={{
+                  padding: '14px 16px', borderRadius: 12,
+                  background: `linear-gradient(135deg, ${fit.tone}12 0%, ${fit.tone}04 100%)`,
+                  border: `1px solid ${fit.tone}44`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14,
+                }}>
+                  <div>
+                    <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.24em', textTransform: 'uppercase', color: fit.tone, margin: 0, fontWeight: 500 }}>
+                      Match preview
+                    </p>
+                    <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 20, color: BONE, margin: '2px 0 0', lineHeight: 1 }}>
+                      {fit.label}
+                    </p>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 36, color: fit.tone, lineHeight: 1 }}>
+                      {pctFromScore(preview.match_score)}
+                    </span>
+                    <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: fit.tone, marginLeft: 2 }}>%</span>
+                  </div>
+                </div>
+              )}
+
+              <textarea
+                value={msg}
+                onChange={e => setMsg(e.target.value)}
+                placeholder="A line about why this pulls you. Optional."
+                rows={3} maxLength={400}
+                style={{
+                  padding: '12px 14px', borderRadius: 12,
+                  background: 'rgba(232,212,168,0.03)', border: `1px solid ${HAIRLINE}`,
+                  color: BONE, outline: 'none', resize: 'none',
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 300, lineHeight: 1.5,
+                }}
+              />
+
+              {error && <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: '#F87171', margin: 0 }}>{error}</p>}
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  disabled={busy}
+                  onClick={() => onSubmit?.(msg.trim())}
+                  style={{
+                    flex: 1, padding: '13px 22px', borderRadius: 18,
+                    background: `linear-gradient(135deg, ${VIOLET} 0%, #6D28D9 100%)`,
+                    border: 'none', cursor: busy ? 'wait' : 'pointer', color: '#fff',
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 10, fontWeight: 500,
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                    opacity: busy ? 0.7 : 1,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                    boxShadow: `0 8px 22px ${VIOLET}55`,
+                  }}
+                >
+                  {busy
+                    ? <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, ease: 'linear', repeat: Infinity }}><Loader2 size={12}/></motion.span>
+                    : <Send size={12}/>}
+                  Send request
+                </button>
+                <button
+                  onClick={onClose}
+                  style={{
+                    padding: '13px 22px', borderRadius: 18,
+                    background: 'transparent', border: `1px solid ${HAIRLINE}`,
+                    cursor: 'pointer', color: MUTE,
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                  }}
+                >
+                  Not now
+                </button>
+              </div>
+            </>
+          )}
+
+          {stage === 'verdict' && (
+            <div style={{ padding: '14px 0', display: 'flex', flexDirection: 'column', gap: 18, alignItems: 'center', textAlign: 'center' }}>
+              <motion.div
+                initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 240, damping: 18 }}
+                style={{
+                  width: 72, height: 72, borderRadius: '50%',
+                  background: verdictApproved
+                    ? `radial-gradient(circle, ${GREEN}44 0%, transparent 70%)`
+                    : `radial-gradient(circle, ${MUTE} 0%, transparent 70%)`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: verdictApproved ? `0 0 40px ${GREEN}55` : 'none',
+                }}
+              >
+                {verdictApproved
+                  ? <Check size={32} style={{ color: GREEN }}/>
+                  : <X size={28} style={{ color: MUTE }}/>}
+              </motion.div>
+              <div>
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase', color: verdictApproved ? GREEN : MUTE, margin: 0, fontWeight: 500 }}>
+                  {verdictApproved ? 'You\'re in' : 'Not this time'}
+                </p>
+                <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 26, color: BONE, margin: '6px 0 0', lineHeight: 1.15 }}>
+                  {verdictApproved
+                    ? `${owner.display_name || 'They'} said yes.`
+                    : `${owner.display_name || 'They'} passed.`}
+                </p>
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 12, color: MUTE, margin: '10px 0 0', maxWidth: 360, lineHeight: 1.55 }}>
+                  {verdictApproved
+                    ? `Match score ${pctFromScore(verdict?.match_score)}%. You're now on the trip — open the shared itinerary to start planning together.`
+                    : `Match score ${pctFromScore(verdict?.match_score)}% — not quite there this time. Other travellers are opening trips at all hours; the next one might be the one.`}
+                </p>
+              </div>
+              <button
+                onClick={onClose}
+                style={{
+                  padding: '12px 26px', borderRadius: 18,
+                  background: verdictApproved
+                    ? `linear-gradient(135deg, ${GREEN} 0%, #059669 100%)`
+                    : 'transparent',
+                  border: verdictApproved ? 'none' : `1px solid ${HAIRLINE}`,
+                  cursor: 'pointer',
+                  color: verdictApproved ? '#fff' : MUTE,
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10, fontWeight: 500,
+                  letterSpacing: '0.22em', textTransform: 'uppercase',
+                  boxShadow: verdictApproved ? `0 8px 22px ${GREEN}55` : 'none',
+                }}
+              >
+                {verdictApproved ? 'Open trip' : 'Close'}
+              </button>
+            </div>
+          )}
         </div>
       </motion.div>
     </motion.div>
@@ -592,6 +793,7 @@ function Composer({ onCreated }) {
 // ── The full section ─────────────────────────────────────────────────────
 
 export default function DashboardPulse({ selfUid }) {
+  const navigate = useNavigate()
   const [trips, setTrips] = useState([])
   const [posts, setPosts] = useState([])
   const [loadingTrips, setLoadingTrips] = useState(true)
@@ -599,6 +801,9 @@ export default function DashboardPulse({ selfUid }) {
   const [joinTarget, setJoinTarget] = useState(null)
   const [joinBusy, setJoinBusy] = useState(false)
   const [joinErr, setJoinErr] = useState(null)
+  const [tripPreview, setTripPreview] = useState(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [verdict, setVerdict] = useState(null)
 
   // initial + slow background poll (real-time WS fills the gap)
   const tripsPollRef = useRef(null)
@@ -669,18 +874,47 @@ export default function DashboardPulse({ selfUid }) {
     }
   }, [selfUid])
 
+  async function openJoinModal(trip) {
+    setJoinTarget(trip); setJoinErr(null); setVerdict(null); setTripPreview(null)
+    setPreviewLoading(true)
+    try {
+      const preview = await getTripPreview(trip.itinerary_id)
+      setTripPreview(preview)
+    } catch (e) {
+      // Preview is non-fatal — modal still works without the persona detail.
+      console.warn('getTripPreview failed:', e?.message || e)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  function closeJoinModal() {
+    // If the verdict was approved, take the user to the shared itinerary.
+    if (verdict?.status === 'approved' && joinTarget?.itinerary_id) {
+      navigate(`/shared/${encodeURIComponent(joinTarget.itinerary_id)}`)
+    }
+    setJoinTarget(null); setVerdict(null); setTripPreview(null); setJoinErr(null)
+  }
+
   async function submitJoin(message) {
     if (!joinTarget) return
     setJoinBusy(true); setJoinErr(null)
     try {
       const res = await requestToJoin(joinTarget.itinerary_id, message)
-      const newStatus = res?.request?.status || 'proposed'
+      const req = res?.request || {}
+      const newStatus = req.status || 'proposed'
       setTrips(prev => prev.map(t =>
         t.itinerary_id === joinTarget.itinerary_id
           ? { ...t, your_request_status: newStatus }
           : t,
       ))
-      setJoinTarget(null)
+      // Auto-resolved (synthetic trip): show verdict inline.
+      if (res?.auto_resolved && (newStatus === 'approved' || newStatus === 'denied')) {
+        setVerdict({ status: newStatus, match_score: req.match_score })
+      } else {
+        // Non-synthetic: close modal, the request sits as proposed.
+        setJoinTarget(null)
+      }
     } catch (e) {
       setJoinErr(e?.message || 'Could not send request')
     } finally {
@@ -708,7 +942,8 @@ export default function DashboardPulse({ selfUid }) {
       borderTop: `1px solid ${HAIRLINE}`,
       background: `linear-gradient(180deg, transparent 0%, rgba(212,182,134,0.025) 50%, transparent 100%)`,
       position: 'relative',
-    }}>
+      scrollMarginTop: 80,
+    }} data-pulse-anchor>
       {/* ambient drift */}
       <motion.div
         animate={{ opacity: [0.06, 0.14, 0.06] }}
@@ -836,7 +1071,7 @@ export default function DashboardPulse({ selfUid }) {
                 <OpenTripCard
                   key={t.itinerary_id}
                   trip={t}
-                  onRequestJoin={(trip) => { setJoinTarget(trip); setJoinErr(null) }}
+                  onRequestJoin={openJoinModal}
                 />
               ))}
             </AnimatePresence>
@@ -878,12 +1113,15 @@ export default function DashboardPulse({ selfUid }) {
 
       <AnimatePresence>
         {joinTarget && (
-          <JoinModal
+          <TripDetailModal
             trip={joinTarget}
-            onClose={() => setJoinTarget(null)}
+            onClose={closeJoinModal}
             onSubmit={submitJoin}
             busy={joinBusy}
             error={joinErr}
+            preview={tripPreview}
+            previewLoading={previewLoading}
+            verdict={verdict}
           />
         )}
       </AnimatePresence>

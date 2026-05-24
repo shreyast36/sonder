@@ -109,6 +109,147 @@ function _fmtTripDate(v) {
   } catch { return '' }
 }
 
+// ── Live travellers strip ────────────────────────────────────────────────
+// Sits to the right of the trip-vault header. Subscribes to the same
+// discover_trip_open / discover_post_new events the Pulse uses so every
+// burst of synthetic activity surfaces as a fresh avatar without polling.
+// Hover an avatar for the persona's name + city, click to jump down to
+// Pulse for the full feed.
+
+function LiveTravellersStrip({ onJump }) {
+  const [actors, setActors] = useState([])   // [{ key, name, location, accent }]
+  const [hovered, setHovered] = useState(null)
+
+  useEffect(() => {
+    function pushActor(entry) {
+      setActors(prev => {
+        const next = [entry, ...prev.filter(a => a.key !== entry.key)]
+        return next.slice(0, 8)
+      })
+    }
+    function onTrip(e) {
+      const t = e.detail
+      if (!t?.owner_uid) return
+      pushActor({
+        key:      `trip:${t.owner_uid}:${t.itinerary_id}`,
+        name:     t.owner_name || 'Traveller',
+        location: t.destination_city || '',
+        accent:   '#8B5CF6',
+        kind:     'trip',
+      })
+    }
+    function onPost(e) {
+      const p = e.detail
+      if (!p?.author_id) return
+      pushActor({
+        key:      `post:${p.author_id}:${p.post_id}`,
+        name:     p.author_name || 'Traveller',
+        location: '',
+        accent:   '#D4B686',
+        kind:     'post',
+      })
+    }
+    window.addEventListener('sonder:discover:trip_open', onTrip)
+    window.addEventListener('sonder:discover:post_new',  onPost)
+    return () => {
+      window.removeEventListener('sonder:discover:trip_open', onTrip)
+      window.removeEventListener('sonder:discover:post_new',  onPost)
+    }
+  }, [])
+
+  if (actors.length === 0) {
+    return (
+      <button
+        onClick={onJump}
+        style={{
+          padding: '10px 18px', borderRadius: 999,
+          background: 'rgba(232,212,168,0.03)',
+          border: `1px solid ${HAIRLINE}`, cursor: 'pointer',
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+          letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE,
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+        }}
+      >
+        <motion.span
+          animate={{ opacity: [0.3, 1, 0.3] }}
+          transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+          style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 8px #10B981' }}
+        />
+        Listening for activity…
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12, position: 'relative' }}>
+      <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+        Right now
+      </p>
+      <div style={{ display: 'flex', paddingLeft: 12, position: 'relative' }}>
+        <AnimatePresence initial={false}>
+          {actors.map((a, i) => (
+            <motion.button
+              key={a.key}
+              layout
+              initial={{ opacity: 0, scale: 0.5, x: -10 }}
+              animate={{ opacity: 1, scale: 1, x: 0 }}
+              exit={{ opacity: 0, scale: 0.5 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 22 }}
+              whileHover={{ y: -3, scale: 1.08, zIndex: 50 }}
+              onClick={onJump}
+              onMouseEnter={() => setHovered(a.key)}
+              onMouseLeave={() => setHovered(null)}
+              style={{
+                marginLeft: i === 0 ? 0 : -12,
+                width: 36, height: 36, borderRadius: '50%',
+                background: `linear-gradient(160deg, rgba(212,182,134,0.12) 0%, rgba(20,15,10,1) 100%)`,
+                border: `2px solid ${a.accent}`,
+                boxShadow: `0 0 12px ${a.accent}55`,
+                cursor: 'pointer', padding: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                position: 'relative',
+              }}
+            >
+              <span style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 13, color: a.accent, fontStyle: 'italic' }}>
+                {(a.name || '?').split(/\s+/).slice(0, 1).map(s => s[0]?.toUpperCase()).join('')}
+              </span>
+            </motion.button>
+          ))}
+        </AnimatePresence>
+      </div>
+      <AnimatePresence>
+        {hovered && (() => {
+          const a = actors.find(x => x.key === hovered)
+          if (!a) return null
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}
+              transition={{ duration: 0.15 }}
+              style={{
+                position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+                padding: '8px 12px', borderRadius: 10,
+                background: 'rgba(20,16,12,0.96)', border: `1px solid ${a.accent}55`,
+                backdropFilter: 'blur(20px)',
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: BONE,
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+                boxShadow: `0 10px 30px rgba(0,0,0,0.5)`,
+                zIndex: 60,
+              }}
+            >
+              <span style={{ fontWeight: 500 }}>{a.name}</span>
+              {a.location && <span style={{ color: MUTE }}> · {a.location}</span>}
+              <span style={{ color: a.accent, marginLeft: 8, fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+                {a.kind === 'trip' ? 'opened a trip' : 'posted'}
+              </span>
+            </motion.div>
+          )
+        })()}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 function PastTripsRow({ trips, onSelect, switching }) {
   if (!trips || trips.length === 0) return null
   return (
@@ -1221,23 +1362,13 @@ export default function Dashboard() {
                   Every trip you've planned.
                 </h2>
               </div>
-              <motion.button
-                whileHover={{ y: -2, borderColor: 'rgba(245,158,11,0.40)' }} whileTap={{ scale: 0.97 }}
-                onClick={() => navigate('/preferences')}
-                style={{
-                  padding: '11px 20px', borderRadius: 999,
-                  background: `linear-gradient(135deg, rgba(245,158,11,0.10) 0%, rgba(245,158,11,0.04) 100%)`,
-                  border: `1px solid rgba(245,158,11,0.30)`,
-                  cursor: 'pointer', color: AMBER,
-                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10, fontWeight: 500,
-                  letterSpacing: '0.22em', textTransform: 'uppercase',
-                  display: 'inline-flex', alignItems: 'center', gap: 7,
-                  boxShadow: `0 6px 18px rgba(245,158,11,0.18)`,
-                  transition: 'all 0.2s',
-                }}
-              >
-                <Plus size={11}/> New trip
-              </motion.button>
+              {/* Live travellers — hovered avatar shows the persona's
+                  name + city. Click scrolls to the Pulse feed. */}
+              <LiveTravellersStrip onJump={() => {
+                document.querySelector('[data-pulse-anchor]')?.scrollIntoView({
+                  behavior: 'smooth', block: 'start',
+                })
+              }}/>
             </div>
             <PastTripsRow
               trips={pastTrips}

@@ -322,6 +322,10 @@ export async function requestToJoin(itineraryId, message = '') {
   return post(`/api/discover/trips/${encodeURIComponent(itineraryId)}/join-request`, { message })
 }
 
+export async function getTripPreview(itineraryId) {
+  return get(`/api/discover/trips/${encodeURIComponent(itineraryId)}/preview`)
+}
+
 export async function listMyJoinRequests({ asOwner = false } = {}) {
   const q = asOwner ? '?as=owner' : ''
   return get(`/api/discover/join-requests${q}`)

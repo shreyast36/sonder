@@ -210,22 +210,42 @@ async def _emit_open_trip(persona) -> None:
     await write_itinerary(itinerary)
     await set_itinerary_open(itinerary_id, is_open=True, join_capacity=itinerary.join_capacity)
 
-    # Persist the note via the same raw merge path the real /open route
-    # uses, so the trip card carries the same `open_join_note` field.
+    # Persist note + synthetic-owner snapshot. The latter lets the join-
+    # request route reconstruct the persona for instant match scoring
+    # without re-hitting Pinecone (the fallback personas don't live there
+    # anyway).
+    owner_snapshot = {
+        "profile_id":   getattr(persona, "profile_id", "") or "",
+        "display_name": getattr(persona, "display_name", "") or "",
+        "location":     getattr(persona, "location", "") or "",
+        "archetype":    getattr(persona, "archetype", "") or "",
+        "interests":    list(getattr(persona, "interests", []) or [])[:10],
+        "pace":         str(getattr(getattr(persona, "pace", ""), "value", "") or getattr(persona, "pace", "") or "moderate"),
+        "budget_style": str(getattr(getattr(persona, "budget_style", ""), "value", "") or getattr(persona, "budget_style", "") or "mid_range"),
+        "travel_style": str(getattr(getattr(persona, "travel_style", ""), "value", "") or getattr(persona, "travel_style", "") or "solo"),
+        "quirks":       list(getattr(persona, "quirks", []) or [])[:5],
+        "avatar_url":   getattr(persona, "avatar_url", None),
+        "is_seed":      bool(getattr(persona, "is_seed", True)),
+    }
+    merge_payload: dict = {
+        "is_synthetic":    True,
+        "synthetic_owner": owner_snapshot,
+    }
     if note:
-        try:
-            from mushahid.realtime.firestore import get_db, LOCAL_MODE, _store
-            if LOCAL_MODE:
-                key = f"itinerary:{itinerary_id}"
-                if key in _store:
-                    _store[key] = {**_store[key], "open_join_note": note, "is_synthetic": True}
-            else:
-                await asyncio.to_thread(
-                    lambda: get_db().collection("itineraries").document(itinerary_id)
-                                    .set({"open_join_note": note, "is_synthetic": True}, merge=True)
-                )
-        except Exception as e:
-            logger.debug("synthetic_agents: note persist failed: %s", e)
+        merge_payload["open_join_note"] = note
+    try:
+        from mushahid.realtime.firestore import get_db, LOCAL_MODE, _store
+        if LOCAL_MODE:
+            key = f"itinerary:{itinerary_id}"
+            if key in _store:
+                _store[key] = {**_store[key], **merge_payload}
+        else:
+            await asyncio.to_thread(
+                lambda: get_db().collection("itineraries").document(itinerary_id)
+                                .set(merge_payload, merge=True)
+            )
+    except Exception as e:
+        logger.debug("synthetic_agents: merge persist failed: %s", e)
 
     # Shape the broadcast card. Recipients render is_yours themselves.
     raw_dict = itinerary.model_dump(mode="json")

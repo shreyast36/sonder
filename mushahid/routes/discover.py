@@ -33,6 +33,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from mushahid.auth import verify_token
+import random
+
 from mushahid.realtime.firestore import (
     get_itinerary, write_itinerary,
     list_open_trips, set_itinerary_open,
@@ -269,16 +271,174 @@ async def request_to_join(itinerary_id: str, body: JoinRequestBody, uid: str = D
         "status":           "proposed",
         "created_at":       _now_iso(),
     }
+    # Synthetic trips have no human owner to approve, so resolve the
+    # request inline using the same match-score signal we use for
+    # mutual approval on chat. The persona was snapshotted onto the
+    # trip doc at open time; if it isn't there (older synth trips),
+    # we treat the request as a normal pending one for the (absent)
+    # owner. Probability = match_score directly — same calibration as
+    # the chat persona decision.
+    snapshot = await _synthetic_owner_snapshot(itinerary_id)
+    if snapshot:
+        match_score = await _score_against_synthetic(uid, snapshot)
+        p_approve   = float(match_score) if match_score is not None else 0.5
+        roll        = random.random()
+        verdict     = "approved" if roll < p_approve else "denied"
+        req["status"]      = verdict
+        req["match_score"] = match_score
+        req["auto_resolved"] = True
+        req["resolved_at"] = _now_iso()
+        await write_join_request(req)
+
+        if verdict == "approved":
+            try:
+                companions = list(itin.co_traveller_ids or [])
+                if uid not in companions:
+                    companions.append(uid)
+                updated = itin.model_copy(update={"co_traveller_ids": companions})
+                await write_itinerary(updated)
+            except Exception as e:
+                logger.warning("synthetic auto-approve: write_itinerary failed: %s", e)
+
+        logger.info(
+            "synthetic join %s score=%.3f p=%.2f roll=%.2f -> %s",
+            itinerary_id, match_score or 0.0, p_approve, roll, verdict,
+        )
+        try:
+            await ws_manager.notify_user(uid, {"type": "join_request_resolved", "request": req})
+        except Exception as e:
+            logger.debug("notify_user(join_request_resolved) failed: %s", e)
+        return {"request": req, "duplicated": False, "auto_resolved": True}
+
+    # Non-synthetic: persist as proposed, ping the human owner.
     await write_join_request(req)
-    # Push to the trip owner's global notification socket so the
-    # incoming-requests panel on their dashboard surfaces this
-    # without a refresh. Failure is logged and ignored — the poll-
-    # on-mount path is the fallback.
     try:
         await ws_manager.notify_user(itin.user_id, {"type": "join_request_new", "request": req})
     except Exception as e:
         logger.debug("notify_user(join_request_new) failed: %s", e)
     return {"request": req, "duplicated": False}
+
+
+async def _synthetic_owner_snapshot(itinerary_id: str) -> dict | None:
+    """Read the synthetic-owner persona snapshot off the itinerary doc.
+    Returns None when the trip isn't synthetic or the snapshot wasn't
+    persisted (older synth trips). Bypasses the Itinerary pydantic
+    model since `synthetic_owner` isn't a schema field."""
+    try:
+        from mushahid.realtime.firestore import get_db, LOCAL_MODE, _store
+        if LOCAL_MODE:
+            doc = _store.get(f"itinerary:{itinerary_id}")
+            if isinstance(doc, dict) and doc.get("is_synthetic"):
+                snap = doc.get("synthetic_owner")
+                return snap if isinstance(snap, dict) else None
+            return None
+        import asyncio as _asyncio
+        snapshot = await _asyncio.to_thread(
+            lambda: get_db().collection("itineraries").document(itinerary_id).get()
+        )
+        if not snapshot.exists:
+            return None
+        data = snapshot.to_dict() or {}
+        if not data.get("is_synthetic"):
+            return None
+        snap = data.get("synthetic_owner")
+        return snap if isinstance(snap, dict) else None
+    except Exception as e:
+        logger.warning("synthetic_owner_snapshot failed for %s: %s", itinerary_id, e)
+        return None
+
+
+async def _score_against_synthetic(viewer_uid: str, snap: dict) -> float | None:
+    """Compute a [0,1] match score between the signed-in viewer and the
+    snapshotted synthetic persona using the same compatibility engine
+    that powers the matches list. Returns None on failure so the caller
+    can fall back to a neutral default."""
+    try:
+        from shared.schemas import UserProfile, CoTravellerProfile
+        from jahnvi.schemas.enums import PacePreference, BudgetStyle, TravelStyle
+        from shreyas.cotraveller.matching import score_compatibility
+
+        prof = await get_user_profile(viewer_uid) or {}
+        viewer = UserProfile(
+            user_id      = viewer_uid,
+            display_name = prof.get("display_name") or "",
+            constraints  = prof.get("constraints"),
+            persona_answers      = prof.get("persona_answers"),
+            compatibility_signals= prof.get("compatibility_signals"),
+            travel_style_embedding = prof.get("travel_style_embedding") or [],
+        )
+        candidate = CoTravellerProfile(
+            profile_id   = snap.get("profile_id") or "ct_synth",
+            display_name = snap.get("display_name") or "Traveller",
+            age          = 28,
+            location     = snap.get("location") or "",
+            archetype    = snap.get("archetype") or "Traveller",
+            interests    = list(snap.get("interests") or []),
+            pace         = PacePreference(snap.get("pace") or "moderate"),
+            budget_style = BudgetStyle(snap.get("budget_style") or "mid_range"),
+            travel_style = TravelStyle(snap.get("travel_style") or "solo"),
+            avatar_url   = snap.get("avatar_url"),
+            quirks       = list(snap.get("quirks") or []),
+            is_seed      = bool(snap.get("is_seed", True)),
+        )
+        result = score_compatibility(viewer, candidate)
+        return float(result.match_score)
+    except Exception as e:
+        logger.warning("_score_against_synthetic failed: %s", e)
+        return None
+
+
+@router.get("/discover/trips/{itinerary_id}/preview")
+async def trip_preview(itinerary_id: str, uid: str = Depends(verify_token)):
+    """Lightweight detail payload for the trip-detail modal. Returns
+    the persona snapshot (if any) + the user's match preview so the
+    UI can render compatibility hints before the user commits to a
+    request."""
+    itin = await get_itinerary(itinerary_id)
+    if itin is None:
+        raise HTTPException(status_code=404, detail="Itinerary not found")
+
+    snap = await _synthetic_owner_snapshot(itinerary_id)
+    owner_summary: dict
+    match_score: float | None = None
+    if snap:
+        owner_summary = {
+            "display_name": snap.get("display_name"),
+            "location":     snap.get("location"),
+            "archetype":    snap.get("archetype"),
+            "interests":    list(snap.get("interests") or [])[:6],
+            "quirks":       list(snap.get("quirks") or [])[:3],
+            "pace":         snap.get("pace"),
+            "budget_style": snap.get("budget_style"),
+            "travel_style": snap.get("travel_style"),
+            "avatar_url":   snap.get("avatar_url"),
+            "is_synthetic": True,
+        }
+        match_score = await _score_against_synthetic(uid, snap)
+    else:
+        name, avatar = await _profile_summary(itin.user_id) if itin.user_id else ("Traveller", None)
+        owner_summary = {
+            "display_name": name, "avatar_url": avatar, "is_synthetic": False,
+        }
+
+    dest = itin.destination
+    days = itin.days or []
+    return {
+        "itinerary_id": itinerary_id,
+        "owner":        owner_summary,
+        "destination":  {
+            "city":    dest.city if dest else "",
+            "country": dest.country if dest else "",
+            "tags":    list(dest.tags or []) if dest else [],
+        },
+        "trip_start":   str(days[0].trip_date) if days and days[0].trip_date else None,
+        "trip_end":     str(days[-1].trip_date) if days and days[-1].trip_date else None,
+        "day_count":    len(days),
+        "note":         snap and snap.get("open_join_note") or "",
+        "match_score":  match_score,
+        "is_synthetic": bool(snap),
+        "is_open_to_join": bool(getattr(itin, "is_open_to_join", False)),
+    }
 
 
 @router.get("/discover/join-requests")
