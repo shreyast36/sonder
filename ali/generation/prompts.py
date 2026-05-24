@@ -215,7 +215,7 @@ def build_targeted_day_refinement_prompt(
     """Prompt for revising only specific days — avoids regenerating the full itinerary."""
     import json
     targeted_days = [d for d in itinerary.days if d.day_number in target_day_numbers]
-    days_json = json.dumps([d.model_dump() for d in targeted_days], indent=2)
+    days_json = json.dumps([d.model_dump(mode='json') for d in targeted_days], indent=2)
     suggestions = "\n".join(f"- {s}" for s in (validation_result.improvement_suggestions or []))
     issues_str = (
         f"{validation_result.feedback}\n{suggestions}".strip()
