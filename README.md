@@ -224,6 +224,82 @@ Optimistic locking: every write checks `client_version == current_version`. Mism
 
 The frontend `/shared/{id}` page renders a live activity feed (filtered to entries created after the page mounted, so reload gives a clean slate) and a per-day card grid with inline Accept / Counter / Replace / Move actions.
 
+### Chat latency engineering (<5s target)
+
+The persona-chat round-trip was 5-9s on the LARGE tier; it now lands in ~1-2s:
+
+- **Routed `chat_reply` to the SMALL tier** in `ali/routing/classifier.py`. 1-3 sentence text-message responses don't need Sonnet/GPT-4o for persona voice; Haiku/4o-mini gives the same quality 3× faster, which the user actively feels under the live typing indicator.
+- **Parallel I/O** in `_send_synthetic_reply`. The three pre-LLM fetches (Pinecone candidate, Firestore itinerary, Firestore message history) used to serialise via `await` for ~0.6-1s of cumulative round-trip. Now `await asyncio.gather(...)` runs them concurrently; total wait = the slowest single call.
+- **History window cap** — `_CHAT_HISTORY_TURN_CAP = 20` (was 40 implicitly). Half is enough for multi-turn persona consistency and roughly halves prompt-token latency.
+- **Trimmed cosmetic delays** — `_REPLY_BEFORE_TYPING_S = (0.1, 0.25)` and `_REPLY_AFTER_REPLY_S = (0.05, 0.15)` (was 0.6-1.8s). With the LLM call now sub-2s, longer pacing felt like lag rather than realism. A `_TYPING_KEEPALIVE_S = 2.0` task re-emits typing every 2s so the indicator doesn't vanish mid-call (frontend clears typing after 3.5s).
+
+### Chat signal scanner — live match-score updates from conversation
+
+`_apply_chat_signals` is a fire-and-forget task that runs after every user message in the chat WS handler. It:
+
+1. Scans the message for PPM-keyword cues via `shreyas/cotraveller/chat_signal_scanner.py` (`scan_and_apply`).
+2. If any signals fire, updates the session's `live_weights` (a per-session weight overlay).
+3. Re-runs `score_compatibility(viewer, candidate)` against the persona with the new weights spliced into `compatibility_signals.ranker_weights["cotraveller"]`.
+4. Writes the refreshed `match_score` back onto the `ChatSession`.
+
+This is the same number that drives the persona's reciprocal approval (`p_approve = match_score`) and the synthetic-trip auto-resolve verdict — so as the user reveals more in chat, both calibrations track the live conversation instead of a frozen prior. Failures are swallowed; the chat reply itself is never blocked on the scan.
+
+### Activity feed dedupe (shared itinerary)
+
+The raw `activity_log` accumulates `evaluating` entries every time someone proposes — they're useful for "X is reviewing your proposal" but become noise once the verdict lands. `<ActivityFeed>` runs three filters before render:
+
+1. **Per-session filter** — drop entries created before `pageOpenedAtRef`. Reload = clean slate.
+2. **Resolution dedupe** — strip `evaluating` entries that have a follow-up resolution (`accepted` / `countered` / `proposed`) from the same actor within 90s. The verdict line carries the same information.
+3. **Orphan timeout** — strip `evaluating` entries older than 60s with no follow-up. These are dropped LLM calls (`suggest_proposal` returning None, etc) that would otherwise linger forever.
+
+Persona-suggest also tracks its `evaluating` entry by ID and `_drop_evaluating()` removes it on the two no-result paths (no suggestion / dedupe rejection) so the no-op cases never leave orphan rows server-side either.
+
+### Matches list — top 3, denied filter, paired suppression
+
+- **Capped at top 3** — denser quality bar than the old top-10. When the user denies one, the next regenerate call slots in a fresh candidate so the list always shows 3.
+- **Denied profiles filtered** — `cotraveller` route excludes any `profile_id` that's appeared in a `denied` `ChatSession` for the viewer. Prevents the same persona showing up two days after you said no.
+- **Already-paired suppression** — if the viewer has an `approved` chat session for the current trip, the matches list returns `{ matches: [], active_pair: {...} }` and the dashboard renders an "Open your shared itinerary" card instead of the carousel. Avoids the awkward "match with someone else while you're mid-negotiation" UX.
+- **Auto-redirect after denial** — denying a match triggers a regenerate + redirect on the dashboard so the user lands on the fresh matches view instead of staring at an empty slot.
+
+### Dashboard reorganisation
+
+The dashboard reads top-to-bottom as a single editorial scroll, every section sharing the same visual rhythm:
+
+| Section | What |
+|---|---|
+| Greeting | Time-of-day greeting + serif italic first name in gold gradient with breathing drop-shadow |
+| **Live stats strip** | Glass pill — `{n} trips planned · {n} curated matches · {n} awaiting you` (pulsing violet when join requests are pending) |
+| **Top nav** | Always-visible amber-gradient **"Plan a trip"** CTA |
+| LEFT col | Trip hero card (destination photo bg, dates, days-away) + action row (Journal / Notes / Open to companions) + incoming join-requests panel |
+| RIGHT col | Curated matches with the same pulsing-dot eyebrow + serif italic headline as Pulse |
+| **Trip vault** | Full-width section, gold gradient hairline ornament centred above. Carousel of every saved trip with the current one badged. To the right of the header: **LiveTravellersStrip** — avatars that bubble in for each `discover_trip_open` / `discover_post_new` event (violet for trips, gold for posts). Hover for `name · city · action`, click to smooth-scroll to Pulse. |
+| **Sonder Pulse** | Full-width discovery section with hero header (live-status pill, breathing drop-shadow on the 52px serif headline, glass live-counts strip) |
+
+Each major section opens with the same pulsing-dot ornament + uppercase tracked eyebrow + serif italic headline so the rhythm is consistent across the entire page.
+
+### Past-trips fallback (defensive)
+
+`listSavedItineraries` returns the user's `saved_itinerary_ids` — empty for brand-new profiles or transient Firestore reads. The dashboard catches this and synthesises a single vault entry from, in order: the just-fetched `getCurrentItinerary` result → `storedItinerary` React state → `localStorage['sonder_last_itinerary']` cache. So if there's any itinerary anywhere, the vault renders. Crucial subtlety: uses a local `currentIt` variable instead of the closure value (which would be stale — `setStoredItinerary` doesn't update the closure that ran `refresh`).
+
+### Incoming join requests panel
+
+Trip owners see a panel on Dashboard between the trip-action row and the past trips, listing every pending request on their open trips (`listMyJoinRequests({asOwner: true})`). Each row: requester avatar + name + message + Approve / Pass buttons. The panel listens for `sonder:join_request:new` window events from NotificationProvider, so requests pop in real-time without a refresh. Approving a request triggers the same write_itinerary + co_traveller_ids append as the synthetic auto-resolve path.
+
+### NotificationProvider — fan-out hub
+
+The single global `/ws/notifications` socket lives in `NotificationProvider` (mounted at App root). Its job is two things:
+
+1. **Show banners** for chat messages (rose), discover trip opens (violet, suppressed on /dashboard), new posts (gold, suppressed on /dashboard). Each kind has its own icon (`MessageCircle` / `MapPin` / `Sparkles`), accent colour, and deep-link URL.
+2. **Re-dispatch WS events as window `CustomEvent`s** so every page can listen without coupling to the provider:
+   - `join_request_new` → `sonder:join_request:new`
+   - `join_request_resolved` → `sonder:join_request:resolved`
+   - `comment_new` → `sonder:comment:new`
+   - `discover_trip_open` → `sonder:discover:trip_open`
+   - `discover_trip_close` → `sonder:discover:trip_close`
+   - `discover_post_new` → `sonder:discover:post_new`
+
+This pattern lets DashboardPulse / SharedItinerary / Discover panels each attach their own listeners with one-line `useEffect` hooks. The provider itself stays focused on WS connection management + banner rendering.
+
 ### Sonder Pulse (Dashboard discovery surface)
 
 The former standalone `/discover` page is folded into Dashboard as a full-width section under the trip grid. Two columns:
@@ -263,6 +339,29 @@ POST /discover/trips/{id}/join-request
 ```
 
 `p_approve = match_score` directly — same calibration as chat-side mutual approval. No hardcoded thresholds. The frontend `TripDetailModal` shows the persona snapshot + match-preview percentage with a colour-coded fit label ("Strong fit" / "Good fit" / "Borderline" / "Long shot"), then flips to a verdict screen with a deep-link to `/shared/{id}` on approve.
+
+### New schemas + extensions
+
+| Schema | Where | Why |
+|---|---|---|
+| `SocialPost`, `SocialComment` | `jahnvi/schemas/social.py` | Feed posts + threaded comments — denormalised `author_name` / `author_avatar` so the feed reader doesn't N+1 join against user profiles |
+| `JoinRequest` | `jahnvi/schemas/social.py` | Join-to-trip flow — `proposed` / `approved` / `denied` / `withdrawn` status, `auto_resolved` + `match_score` populated by the synthetic auto-resolve path |
+| `OpenTripCard` | `jahnvi/schemas/social.py` | Discover card payload — `is_yours`, `your_request_status`, `confirmed_companions / join_capacity` |
+| `Itinerary.is_open_to_join` + `Itinerary.join_capacity` + `Itinerary.co_traveller_ids` | `ali/schemas/trip.py` | Open-to-companions flag and confirmed-companion list; capacity independent of how many are confirmed |
+| `is_synthetic`, `synthetic_owner`, `open_join_note` on itinerary doc | raw Firestore merge | Not in Pydantic schema (they sidecar the model) — flags synthetic-agent-created trips and stores the persona snapshot for instant-resolve scoring |
+| `ChatSession.match_score`, `ChatSession.live_weights` | `jahnvi/schemas/chat.py` | Persisted match score (live-updated by chat signal scanner) + per-session weight overlay |
+
+### Frontend hooks + helpers
+
+| File | Purpose |
+|---|---|
+| `hooks/useWebSocket.js` | Drives the chat WS — first-message auth, ping every 30s, typing/seen/presence/message/`message_edited` handlers. Auto-reconnect on close. |
+| `components/NotificationProvider.jsx` | Single global `/ws/notifications` socket; fan-out to banners + window CustomEvents |
+| `components/DashboardPulse.jsx` | The Pulse section — trips + feed + composer + TripDetailModal + realtime subscriptions |
+| `pages/Dashboard.jsx :: PastTripsRow` | Trip vault carousel with current-trip badge |
+| `pages/Dashboard.jsx :: LiveTravellersStrip` | Avatar bubbles for live discover events, hover tooltips, smooth-scroll-to-pulse |
+| `pages/SharedItinerary.jsx :: ActivityFeed` | Per-session activity log with resolution dedupe + orphan timeout |
+| `lib/push.js` | `ensurePushSubscribed` / `dropPushSubscription` / `pushSupported` — service worker subscription lifecycle |
 
 ### Synthetic Co-Travellers (Pinecone seed pool)
 
@@ -521,6 +620,20 @@ Per-provider model env vars (`ANTHROPIC_SMALL_MODEL` / `OPENAI_SMALL_MODEL`) so 
 ### Multi-currency
 
 All internal cost fields (`budget_usd`, `cost_usd`, `avg_daily_cost_usd`) are always USD. Conversion happens once at the input boundary in `capture_constraints()` via `shared/currency.py`.
+
+### Token-Jaccard dedupe on proposals
+
+Both the LLM prompt rule and a backend pass guard against duplicate proposals. `_is_duplicate(title, existing, accepted, rejected)` normalises titles to lowercase tokens and runs Jaccard similarity (default threshold 0.6) against every item already on the itinerary, every previously accepted change, and every previously rejected one. If the persona LLM still returns a near-duplicate counter despite the dedupe rule in the prompt, the verdict gets flipped to `accept` with a fallback message ("yeah okay, let's go with yours") rather than circulating the same idea with slightly different wording.
+
+### Notable bug-fix patterns
+
+A handful of bugs kept recurring and shaped how new UI work gets reviewed:
+
+- **`<Navigate>` inside `<AnimatePresence mode="wait">`** leaves the screen blank because the redirect target isn't wrapped in `<Page>`, so the exit/enter cycle stalls. Fix: render the same component for both routes instead of `<Navigate to=...>`.
+- **Stale closure on `setState` then read** — code like `setStoredItinerary(it); if (storedItinerary) { ... }` reads the OLD value because `setState` doesn't update local closure scope. Always use a local variable for the just-fetched value.
+- **Conditionally rendered sections hide adjacent content** — wrapping a section in `{data.length > 0 && ...}` can also hide non-data-driven UI rendered inside it (headers, action strips). Render the section unconditionally and let the inner row return null.
+- **Stale React state inside `useCallback` deps** — `fetchTrips` / `fetchFeed` use empty-deps `useCallback` to keep references stable; that means anything they close over must come from the API response, not React state.
+- **`LOCAL_MODE` is dead** in this repo. The branch still exists in `mushahid/realtime/firestore.py` helpers for compatibility, but new code should treat Firestore as the only persistence layer.
 
 ---
 
