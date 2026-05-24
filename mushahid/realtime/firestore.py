@@ -157,17 +157,21 @@ async def delete_itinerary_and_related(itinerary_id: str) -> dict:
     """Hard-delete an itinerary and every doc bound to it.
 
     Cleans up: the itinerary doc, its shared-itinerary twin (if any),
-    its companion_prefs doc, and every journal entry tagged to it.
+    its companion_prefs doc, every journal entry tagged to it, and
+    every chat_session anchored to it (along with each session's
+    messages subcollection). Cotraveller matches are unique per trip
+    — when the trip is deleted, the conversation context is gone too,
+    so the match goes with it.
+
     Returns a count breakdown so the caller can log / surface what
     was removed. Caller is responsible for purging the user_profile
     pointer (saved_itinerary_ids / current_itinerary_id) since that
     requires the uid, which this helper doesn't take.
-
-    Chats are intentionally NOT deleted — they're conversations with
-    people, not trip data, and the persona's side of the history is
-    independent of which trip was the anchor.
     """
-    removed = {"itinerary": 0, "shared_itinerary": 0, "companion_prefs": 0, "journal_entries": 0}
+    removed = {
+        "itinerary": 0, "shared_itinerary": 0, "companion_prefs": 0,
+        "journal_entries": 0, "chat_sessions": 0, "chat_messages": 0,
+    }
     if LOCAL_MODE:
         if _store.pop(f"itinerary:{itinerary_id}", None) is not None:
             removed["itinerary"] = 1
@@ -180,6 +184,18 @@ async def delete_itinerary_and_related(itinerary_id: str) -> dict:
         for k in j_keys:
             _store.pop(k, None)
         removed["journal_entries"] = len(j_keys)
+        # Chat sessions in LOCAL_MODE are stored under "chat:{session_id}"
+        # with the session data at the top level (see write_chat_session).
+        c_keys = []
+        for k, v in list(_store.items()):
+            if not k.startswith("chat:"):
+                continue
+            if isinstance(v, dict) and v.get("itinerary_id") == itinerary_id:
+                c_keys.append(k)
+        for k in c_keys:
+            v = _store.pop(k, {}) or {}
+            removed["chat_messages"] += len(v.get("messages") or [])
+        removed["chat_sessions"] = len(c_keys)
         return removed
 
     db = get_db()
@@ -216,6 +232,51 @@ async def delete_itinerary_and_related(itinerary_id: str) -> dict:
                 logger.warning("delete journal entry %s failed: %s", d.id, e)
     except Exception as e:
         logger.warning("query journal entries for delete failed: %s", e)
+
+    # Chat sessions tied to this trip — and their messages subcollection.
+    # Cotraveller matches are unique per trip; the session anchors the
+    # conversation to the trip's context (itinerary digest, persona-
+    # weights snapshot, match score), so deleting the trip removes the
+    # match too. We page through messages in 200-doc batches to bound
+    # the worst-case round-trip count on long threads.
+    try:
+        sess_docs = await asyncio.to_thread(
+            lambda: list(db.collection("chat_sessions")
+                           .where("itinerary_id", "==", itinerary_id)
+                           .stream())
+        )
+        for sd in sess_docs:
+            sid = sd.id
+            # Delete messages subcollection in batches.
+            try:
+                while True:
+                    msg_batch = await asyncio.to_thread(
+                        lambda: list(db.collection("chat_sessions")
+                                       .document(sid)
+                                       .collection("messages")
+                                       .limit(200)
+                                       .stream())
+                    )
+                    if not msg_batch:
+                        break
+                    for m in msg_batch:
+                        try:
+                            await asyncio.to_thread(lambda r=m.reference: r.delete())
+                            removed["chat_messages"] += 1
+                        except Exception as e:
+                            logger.warning("delete chat message %s/%s failed: %s", sid, m.id, e)
+                    if len(msg_batch) < 200:
+                        break
+            except Exception as e:
+                logger.warning("paged delete of messages for session %s failed: %s", sid, e)
+            # Then the session doc itself.
+            try:
+                await asyncio.to_thread(lambda r=sd.reference: r.delete())
+                removed["chat_sessions"] += 1
+            except Exception as e:
+                logger.warning("delete chat session %s failed: %s", sid, e)
+    except Exception as e:
+        logger.warning("query chat_sessions for delete failed: %s", e)
 
     return removed
 

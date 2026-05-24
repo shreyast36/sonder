@@ -634,8 +634,9 @@ export default function Dashboard() {
     const ok = window.confirm(
       `Delete your trip to ${city || 'this destination'}?\n\n` +
       `This removes the itinerary, journal entries, companion preferences, ` +
-      `and any shared-itinerary state for this trip. Your chats with people ` +
-      `you matched with are preserved. This cannot be undone.`
+      `shared-itinerary state, AND every co-traveller match + chat tied to ` +
+      `this trip. Cotraveller matches are unique per trip — deleting the ` +
+      `trip deletes the match. This cannot be undone.`
     )
     if (!ok) return
     setDeletingId(itineraryId); setDeleteError(null)
@@ -1440,8 +1441,11 @@ export default function Dashboard() {
 
         </motion.div>
 
-        {/* Your trips — always rendered so the Live Travellers strip
-            and the section context never disappear with state changes. */}
+        {/* Your trips — only rendered when the user actually has saved
+            trips. Empty vault is uninteresting noise; deleting the last
+            trip should collapse the section entirely (not leave a
+            decorated empty card). */}
+        {pastTrips.length > 0 && (
         <motion.section
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1503,6 +1507,7 @@ export default function Dashboard() {
               </p>
             )}
           </motion.section>
+        )}
 
         {/* Sonder Pulse lives at /pulse now — keeps this view focused
             on the user's trip. NavTabs in the top nav switches between

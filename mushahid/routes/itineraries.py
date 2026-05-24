@@ -204,16 +204,13 @@ async def delete_itinerary(itinerary_id: str, uid: str = Depends(verify_token)):
       - the shared-itinerary twin (if collaboration was started)
       - the companion_prefs intake answers for this trip
       - all journal_entries tagged to this trip
+      - every chat_session anchored to this trip + its messages
+        subcollection (cotraveller matches are unique per trip)
       - the itinerary_id from the user's saved_itinerary_ids
       - the current_itinerary_id pointer if it pointed here
 
-    Chats are intentionally preserved — they're records of conversations
-    with people, not data about the trip. If we deleted chat sessions
-    on trip delete the user would lose history with co-travellers they
-    actually matched with.
-
-    Returns a count breakdown so the dashboard can show "Removed N
-    journal entries with this trip." if it wants to."""
+    Returns a count breakdown so the dashboard can surface what was
+    removed if it wants to."""
     itinerary = await get_itinerary(itinerary_id)
     if itinerary is None:
         # Idempotent — if the doc is already gone (race / double-click),
