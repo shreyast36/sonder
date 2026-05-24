@@ -8,7 +8,7 @@ import { BG, BONE, HAIRLINE } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import NavTabs from '../components/NavTabs'
-import InboxStrip from '../components/InboxStrip'
+import InboxLayout from '../components/InboxLayout'
 import { useAuth } from '../hooks/useAuth'
 
 const AMBER = '#F59E0B'
@@ -50,12 +50,13 @@ export default function Inbox() {
         </motion.button>
       </nav>
 
-      {/* Centered column to match Pulse's reading width */}
+      {/* Wider container — sidebar + rows need room. Centered, capped
+          at 1080 to match Pulse's reading width. */}
       <div style={{
         flex: 1, padding: '40px 24px 80px',
-        maxWidth: 640, margin: '0 auto', width: '100%',
+        maxWidth: 1080, margin: '0 auto', width: '100%',
         position: 'relative', zIndex: 1,
-        display: 'flex', flexDirection: 'column', gap: 24,
+        display: 'flex', flexDirection: 'column', gap: 28,
       }}>
         <div>
           <div style={{
@@ -82,9 +83,7 @@ export default function Inbox() {
           </h2>
         </div>
 
-        {/* Higher limit on the dedicated page — dashboard strip caps
-            at 8, this surface shows everything. */}
-        <InboxStrip selfUid={user?.uid} limit={50}/>
+        <InboxLayout selfUid={user?.uid}/>
       </div>
     </div>
   )
