@@ -714,6 +714,86 @@ All internal cost fields (`budget_usd`, `cost_usd`, `avg_daily_cost_usd`) are al
 
 Both the LLM prompt rule and a backend pass guard against duplicate proposals. `_is_duplicate(title, existing, accepted, rejected)` normalises titles to lowercase tokens and runs Jaccard similarity (default threshold 0.6) against every item already on the itinerary, every previously accepted change, and every previously rejected one. If the persona LLM still returns a near-duplicate counter despite the dedupe rule in the prompt, the verdict gets flipped to `accept` with a fallback message ("yeah okay, let's go with yours") rather than circulating the same idea with slightly different wording.
 
+### Per-module design notes (the rest)
+
+A sweep across every code file surfaced a long tail of load-bearing decisions worth recording. Grouped by module:
+
+**`ali/routing/engine.py`** — fallback order is hardcoded `["openai", "anthropic"]`; `route_request_structured()` detects Anthropic clients and routes through `complete_with_tools()` with tool-use enum constraints derived at call-time from `jahnvi.data.dimensions`, preventing hallucinated dimension IDs. Non-Anthropic providers gracefully fall back to plain completion.
+
+**`ali/clients/anthropic_client.py`** — 16k token ceiling on streaming itineraries (Sonnet supports 64k but 16k is safe for 7-14 day trips). `cost_per_1k_tokens` is an abstract property on `BaseLLMClient` but no caller uses it for cost-aware routing yet — it's there for V2.
+
+**`ali/generation/itinerary_generator.py`** — `generate_itinerary_by_day()` streams JSON with a forward-only cursor; yields a parsed `ItineraryDay` the moment `{...}` depth returns to zero. If zero days are detected at stream end, falls back to `parse_itinerary()` on the full buffer to catch markdown fences and key-order quirks. `_patch_day_in_place` + `_patch_activity` backfill cost / duration / category / tags from a known-activities lookup; unknown activities get synthetic UUIDs.
+
+**`ali/generation/output_parser.py`** — **server-side `itinerary_id` is non-negotiable**. LLM-generated IDs risk Firestore collision / overwrites, so every itinerary / destination / activity gets a fresh `uuid.uuid4()` at parse time regardless of what the LLM returned.
+
+**`ali/rag/retriever.py` + `explainer.py`** — Pinecone queries hardcode `filter={"type": "activity_context" | "destination_context"}` against a pre-tagged corpus. `_build_explain_prompt()` repeats the private-framing rule: `emotional_signature` + `emotional_tone` shape cadence, never vocabulary; system prompt explicitly bans self-referential constructions like "as someone who is X".
+
+**`ali/vector/client.py`** — lazy-load + `async.Lock` singleton for the Pinecone index; auto-creates the index if missing. `embed_texts()` coerces empty strings → space to avoid OpenAI 400s on blank inputs.
+
+**`ali/voice/elevenlabs.py` + `mushahid/routes/voice.py`** — cache key is `sha256(text)[:16]` so the same text from the same persona always lands at the same Storage path. `make_public` is idempotent + cheap, called on every cache check. 600-char input cap with truncate-and-ellipsis (friendlier than rejecting a paste). On-disk cost: $0 for cache hits, ~$0.001-0.003 per first play.
+
+**`mushahid/pipeline/orchestrator.py`** — **itinerary is written to Firestore BEFORE validation/matching**, so the UI can save it from the SSE `itinerary_generated` event without waiting for downstream steps. If validation / matching fails, the itinerary is still recoverable. Day-by-day stream + `explain_day()` inline before each `day_ready` event, so the user sees explained days one at a time rather than waiting for the full itinerary + a separate explanation pass.
+
+**`mushahid/refinement/loop.py`** — every refinement attempt calls `build_refined_query(user_profile, feedback)` and re-runs `embed_text()` to update `travel_style_embedding` before re-retrieving. So the LLM gets fresh, feedback-aware context each retry instead of grinding on the original query. Loop is score-maximising: keeps the best itinerary by validator score and breaks early on `ValidationStatus.approved`.
+
+**`mushahid/validation/validator_engine.py`** — repair loop has **oscillation detection**: if a repaired reply equals the input or drops below min length, the loop bails to the fallback rather than looping forever.
+
+**`mushahid/persona/taxonomy.py` + `emotional_signature.py`** — closed-key taxonomy (8 keys), order is stable so the fallback always picks the first key. `EmotionalSignatureResult` carries **dual evidence**: GoEmotions (weak signal) + the user's persona answers (strong signal) + a `confidence: low|medium|high` field. If inference fails and `allow_fallback=True`, returns the first taxonomy key with `low` confidence rather than erroring out.
+
+**`mushahid/realtime/firestore.py`** — Firestore writes use **dotted-path nested merges** for `compatibility_signals` so a single ranker-weight overwrite doesn't replace the whole signals dict. `LOCAL_MODE` swaps Firestore for an in-memory `_store` dict so the entire app can run without Firebase creds (used in tests; not for prod).
+
+**`mushahid/realtime/sse.py`** — `format_event(name, data)` is the only SSE emitter; callers never construct event strings manually. Centralises the `event:\ndata:\n\n` wire format.
+
+**`mushahid/routes/itineraries.py`** — **stale pointer recovery**: if `profile.current_itinerary_id` points to a deleted itinerary, `/current` returns `{itinerary: null}` instead of 404 so the dashboard doesn't break. Save is dedup'd via a `first_save` flag — re-saving the same `id` doesn't duplicate the history.
+
+**`mushahid/routes/cotraveller.py`** — companion intake answers from `TravellerCompatibility` (rhythm / food_priority / recharge / social_energy / mood_handling / budget_style / novelty / documentation) are converted to a natural-language paragraph by `_extra_text_from_prefs()` and **appended to the user's persona text before embedding**, so retrieval skews toward compatible matches without changing the schema.
+
+**`mushahid/auth.py`** — `LOCAL_MODE=true` bypasses Firebase entirely; any token is accepted and the token string itself becomes the uid. `verify_ws_token()` extracts from query params (WebSocket can't set Authorization headers); both paths share the same underlying `_verify()`.
+
+**`mushahid/utils/sanitize.py`** — ~13 lightweight prompt-injection patterns + 2000-char cap enforced before pattern matching (so attempts can't hide in massive pastes). Flagged input is replaced with `"[input removed]"` and logged. Production should layer an LLM classifier on top.
+
+**`shreyas/cotraveller/chat_signal_scanner.py`** — **sarcasm detection** blocks entire-message boosts on high-confidence markers (`/s`, "said no one ever", eye-roll emoji, "love how" clause-openers). **Negation zones** extend 5 words or to the next clause break (whichever first), so "I don't love crowded places" doesn't boost crowded-tag interest. Re-rank is fire-and-forget from the WS handler; user message broadcast is never blocked.
+
+**`shreyas/ranking/salience.py`** — keyword density is **raw count**, not ratio. Longer / more revealing answers get higher weight intentionally. Chip labels (from `PERSONA_LABELS`) count toward density so chip-only users aren't penalised. Uniform `1/N` fallback when every answer is empty (avoids multiplying by zero in the ranker).
+
+**`shreyas/ranking/features.py`** — ordinal alignment is `1.0` exact / `0.5` one-step / `0.0` two-steps-or-more; `None` inputs treated as `0.5` neutral. Pure scoring functions, no policy constants leak in.
+
+**`shreyas/ranking/filters.py`** — filter drops are fire-and-forget logged to `feature_logging` so V2 gradient learning can learn from "what we wouldn't even consider" data, not just from accept/reject events.
+
+**`shreyas/retrieval/search.py`** — Pinecone metadata stores `persona_answers` / `compatibility_signals` as JSON strings; defensive decode falls through to `{}` on parse failure. Flat `voice_id` field is preferred; falls back to nested `voice_profile_json` for backward compatibility with pre-flat seed records. **`search_destinations` is explicitly `NotImplementedError`** — V1 has no corpus discovery flow; the user always types the destination on the form.
+
+**`shreyas/cotraveller/presence.py`** — heartbeat writes ONLY `last_seen`, never rewrites a boolean `online` flag (which would go stale on dropped connections). `is_online` is always derived from `last_seen < TTL`.
+
+**`shared/currency.py`** — live rates from `exchangerate-api.com` with a **3-second timeout**, hardcoded `FALLBACK_RATES` table for 30 currencies used in `LOCAL_MODE` or when the API is unreachable. Format is units-per-1-USD (inverted from the API's USD-per-1-unit) so all conversions are a single multiplication.
+
+**`shared/email.py`** — provider abstraction over `resend | sendgrid | ses`. `LOCAL_MODE` silently logs instead of sending; test endpoints set `force=True` to bypass. Pre-flight raises a concrete `"set EMAIL_API_KEY"` error before reaching the provider rather than surfacing an opaque 401.
+
+**`shared/cities.py`** — on-demand city context via Nominatim + OpenWeather + Wikipedia (all keyless / free). Disk-cached to `.cache/cities.json` so repeats are instant.
+
+**`shared/config.py`** — per-provider model IDs (`ANTHROPIC_SMALL_MODEL` / `OPENAI_SMALL_MODEL` / etc.) with a **3-tier fallback hierarchy**: dedicated env var → legacy single-name var (if provider matches) → hardcoded sensible default. Prevents accidentally sending an Anthropic model ID to OpenAI on provider failover.
+
+**`jahnvi/data/classify_emotions.py`** — GoEmotions classifier embeds each of 27 emotion glosses ONCE per process behind an `async.Lock`. Scores are real cosine values from the embedding space, not LLM confidences — defensible signal even when not calibrated probabilities. The glosses themselves are **tone-anchored, not dictionary-like** ("realization = a quiet click — coming to understand something") to keep the embedding space crisp.
+
+**`jahnvi/data/dimensions.py`** — keywords are substring-matched, not word-tokenised, so "out of comfort zone" counts as ONE signal, not three. `MIN_TOP_PUSH` / `MAX_TOP_PUSH` auto-derive from vocabulary length so adding / removing dimensions never requires script edits.
+
+**`jahnvi/data/voice_catalog.py`** — voice assignment chain: `appearance_descriptor → accent bucket → gender → voice_id`. Japanese / Korean personas map to Southeast Asian voices (nearest substitute) due to ElevenLabs catalog gaps; documented in the file for when the catalog expands.
+
+**`jahnvi/pipeline/module3_persona.py`** — `infer_persona()` only embeds and returns pose / pace. Dimension labels (`top_push`, `top_interests`) and reveal copy come from the LLM in `mushahid/routes/persona.py`; this module returns empty lists for those fields to keep schema shape stable for legacy callers.
+
+**`jahnvi/frontend/src/hooks/useSSE.js`** — manually parses `event:` + `data:` lines because `EventSource` can't set Authorization headers. Tracks `eventName` state across lines and buffers incomplete fragments.
+
+**`jahnvi/frontend/src/lib/destinationPhoto.js`** — Wikipedia REST API with `"City, Country"` → `"City"` fallback for disambiguation. 14-day localStorage TTL with **negative caching** (remembers when an article wasn't found so we don't re-query it). Free, CORS-permissive, no API key.
+
+**`jahnvi/frontend/src/pages/Itinerary.jsx`** — auto-saves generated trips via `autoSavedIdRef` double-persist guard. `PHASE_COPY` map intentionally returns `null` for transient internal events (`persona_inferred`, `retrieval_done`, `ranked`) so the UI label only updates on user-meaningful phases.
+
+**`jahnvi/frontend/src/pages/PersonaReveal.jsx`** — caches persona in localStorage keyed by a deterministic hash of the trip profile JSON. Changing answers automatically changes the hash and invalidates the cache; no explicit clear needed.
+
+**`jahnvi/frontend/src/components/SonderMark3D.jsx`** — manually transforms SVG viewBox coordinates (200×280, centre 100/140) to Three.js space with scale + flip. Extrude geometry + high-metalness physical material gives the gilded 3D logo feel.
+
+**`jahnvi/frontend/src/components/LuxCursor.jsx`** — dual-layer ring (spring lag) + dot (direct follow). Decoupling visual feedback phases gives the cursor a "trailing" feel without sluggishness.
+
+**`jahnvi/frontend/public/sw.js`** — **Web Push only**, no caching strategies. Deliberately scoped narrow — caching adds invalidation risk we haven't earned yet. Notification clicks prefer focusing an existing tab over opening a new one.
+
 ### Notable bug-fix patterns
 
 A handful of bugs kept recurring and shaped how new UI work gets reviewed:
