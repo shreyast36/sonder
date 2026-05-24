@@ -103,6 +103,9 @@ def build_itinerary_prompt(
             f"for {destination.city}, {destination.country}. Use real venues where you can."
         )
 
+    style_value = c.who_travelling_with.value if (c and c.who_travelling_with) else "solo"
+    group_hints = _group_planning_hints(style_value, group_size)
+
     return f"""Plan a {trip_days}-day trip to {destination.city}, {destination.country} for {group_size} person(s).
 
 User ID: {user_profile.user_id}
@@ -116,9 +119,73 @@ Pull interests: {interest_str}
 Mood: {mood}
 Something they said: {small_thing or "—"}
 
+GROUP SHAPE: {style_value} (party of {group_size}).
+{group_hints}
+
 {activity_block}
 
 Output the full itinerary as JSON."""
+
+
+def _group_planning_hints(style: str, party_size: int) -> str:
+    """Activity-shaping guidance per group type. The generator already
+    knows the headcount; this tells it what KIND of trip a party of N
+    in this style wants — single-table-for-N at dinner for a family,
+    private rooms not dorms for a couple, splittable groups for
+    friends, etc. Without this the LLM defaults to a generic
+    solo-friendly trip regardless of group shape."""
+    if style == "solo":
+        return (
+            "- Favour solo-friendly venues: counter seating, walking-distance "
+            "stops, communal tables OK, no booth-for-two-with-no-bar.\n"
+            "- Mix in 1-2 activities per day where meeting other travellers "
+            "is plausible (walking tours, cooking classes, hostel-bar "
+            "evenings) — don't force it, but don't engineer isolation.\n"
+            "- No private-car transfers when one seat is wasted; default to "
+            "trains / walking / metro."
+        )
+    if style == "couple":
+        return (
+            "- Every overnight is a private room (no shared dorms).\n"
+            "- At least one slow shared activity per day: a long meal, a "
+            "spa, a walk somewhere romantic at dusk. Avoid stacking "
+            "high-stimulation activities back-to-back.\n"
+            "- One restaurant per meal that takes a table for two; skip "
+            "places with only counter seating unless explicitly atmospheric.\n"
+            "- One activity per trip that's a shared first (an experience "
+            "neither has had) — anchors the trip in memory."
+        )
+    if style == "family":
+        return (
+            f"- All restaurants must seat the FULL party of {party_size} at "
+            f"ONE table. No two-tables-near-each-other compromises.\n"
+            "- Mix in age-appropriate pacing: shorter walking blocks, "
+            "earlier dinners, mid-day breaks. Avoid late-night activities "
+            "and adult-only venues entirely.\n"
+            "- At least one activity per day that works across age ranges "
+            "(parks, museums with interactive exhibits, scenic transport "
+            f"rides) — not a sequence of activities one subset of {party_size} "
+            "would tolerate.\n"
+            "- Lodging prefers apartment / multi-room over hotel rooms; "
+            "shared common space matters more than individual amenities."
+        )
+    if style == "friends":
+        return (
+            f"- Default to shared experiences for the full group of "
+            f"{party_size} (group reservations, group classes, single-table "
+            f"meals). Restaurant bookings should take {party_size} at one "
+            "table.\n"
+            "- At least one activity per day where the group can SPLIT and "
+            "rejoin (museum with multiple wings, shopping district, beach "
+            "day with optional water sports). Honours that friend groups "
+            "want time apart inside a shared trip.\n"
+            "- Nightlife is on the table unless explicitly avoided — "
+            "include 1-2 evening anchor venues across the trip.\n"
+            f"- Lodging prefers apartment / villa over {party_size} separate "
+            "hotel rooms; shared common space is the point."
+        )
+    # Unknown / None → no extra hints; the generic prompt is fine.
+    return ""
 
 
 def build_refinement_prompt(
