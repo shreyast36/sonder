@@ -385,7 +385,32 @@ export default function Dashboard() {
     }
     try {
       const res = await listSavedItineraries()
-      setPastTrips(Array.isArray(res?.trips) ? res.trips : [])
+      const trips = Array.isArray(res?.trips) ? res.trips : []
+      // Fallback: if the API returns nothing (no profile.saved_itinerary_ids
+      // yet, brand-new user, or transient Firestore hiccup) but we DO have a
+      // current itinerary in state or cache, synthesize a single-trip vault
+      // entry so the user always sees their trip rather than an empty section.
+      if (trips.length === 0) {
+        const fromState = storedItinerary
+        let raw = fromState
+        if (!raw) {
+          try { raw = JSON.parse(localStorage.getItem('sonder_last_itinerary') || 'null') } catch { /* noop */ }
+        }
+        if (raw && raw.itinerary_id) {
+          const days = raw.days || []
+          trips.push({
+            itinerary_id:    raw.itinerary_id,
+            is_current:      true,
+            city:            raw.destination?.city || '',
+            country:         raw.destination?.country || '',
+            day_count:       days.length,
+            trip_start:      days[0]?.trip_date || null,
+            trip_end:        days[days.length - 1]?.trip_date || null,
+            total_budget_usd: raw.total_budget_usd || 0,
+          })
+        }
+      }
+      setPastTrips(trips)
     } catch (err) {
       console.warn('listSavedItineraries failed:', err?.message || err)
     }

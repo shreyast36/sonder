@@ -58,26 +58,71 @@ _DESTINATIONS: list[dict] = [
 ]
 
 
+_FALLBACK_PERSONAS_CACHE: list = []
+
+
+def _fallback_personas() -> list:
+    """Inline persona pool used when Pinecone returns nothing. These are
+    plain SimpleNamespace instances quacking like CoTravellerProfile —
+    enough for the LLM prompts and the open-trip schema to render. The
+    loop should always have *someone* to act as, even with no Pinecone."""
+    from types import SimpleNamespace
+    global _FALLBACK_PERSONAS_CACHE
+    if _FALLBACK_PERSONAS_CACHE:
+        return _FALLBACK_PERSONAS_CACHE
+    seed = [
+        ("Mira",    "Berlin",     "Quiet wanderer",   ["food", "vintage shops", "walking"],     "moderate",  "mid_range",  "solo",     ["lingers in cafes", "skips museums she's seen photos of"]),
+        ("Theo",    "Lisbon",     "Slow opportunist", ["coast", "music", "wine"],               "slow",      "mid_range",  "couple",   ["always asks the bartender", "naps at 4pm"]),
+        ("Aiko",    "Kyoto",      "Patterned drifter",["temples", "stationery", "tea"],         "slow",      "mid_range",  "solo",     ["writes postcards she never sends"]),
+        ("Luca",    "Milan",      "Romantic planner", ["design", "aperitivo", "tailoring"],     "moderate",  "luxury",     "couple",   ["over-orders at every meal"]),
+        ("Noor",    "Marrakesh",  "Curious haggler",  ["souks", "spice", "rooftops"],           "fast",      "budget",     "friends",  ["talks to every shopkeeper"]),
+        ("Sasha",   "Tbilisi",    "Mountain person",  ["wine", "hiking", "ruins"],              "moderate",  "budget",     "solo",     ["always has a jacket in the bag"]),
+        ("Ren",     "Taipei",     "Late-night eater", ["night markets", "scooters", "rain"],    "fast",      "budget",     "friends",  ["maps every dessert shop"]),
+        ("Esme",    "Mexico City","Neighbourhood crawler", ["mezcal", "murals", "tacos"],        "moderate",  "mid_range",  "couple",   ["takes the wrong bus on purpose"]),
+        ("Kai",     "Reykjavik",  "Roadtrip type",    ["geysers", "long drives", "cold air"],   "moderate",  "mid_range",  "solo",     ["plays the same album the whole trip"]),
+        ("Priya",   "Hanoi",      "Street-food first", ["food", "coffee", "alleys", "humidity"], "fast",      "budget",     "friends",  ["orders the same dish twice"]),
+    ]
+    out = []
+    for i, (name, location, archetype, interests, pace, budget, style, quirks) in enumerate(seed):
+        out.append(SimpleNamespace(
+            profile_id   = f"ct_synth_{i:02d}_{name.lower()}",
+            display_name = name,
+            location     = location,
+            archetype    = archetype,
+            interests    = interests if isinstance(interests, list) else [interests],
+            pace         = pace,
+            budget_style = budget,
+            travel_style = style,
+            quirks       = quirks if isinstance(quirks, list) else [quirks],
+            avatar_url   = None,
+            is_seed      = True,
+        ))
+    _FALLBACK_PERSONAS_CACHE = out
+    return out
+
+
 async def _pick_personas(n: int = 8) -> list:
-    """Fetch a handful of seeded personas from Pinecone. We over-fetch
-    so a single LLM call can choose from variety; the caller picks one
-    at random. Returns [] if Pinecone is unreachable — the loop logs
-    and skips the cycle."""
+    """Fetch a handful of seeded personas from Pinecone, falling back to
+    a hardcoded persona pool when Pinecone is unreachable or empty so
+    the loop always has someone to act as."""
     from shreyas.retrieval.search import search_cotravellers
     from shared.schemas import UserProfile
     try:
-        # A neutral query — we just want anyone seeded. The cotraveller
-        # pool is small enough that top_k gives us decent variety.
         viewer = UserProfile(user_id="__synthetic_agent__", display_name="traveller")
         profiles = await search_cotravellers(viewer, top_k=40)
         seeded = [p for p in profiles if getattr(p, "is_seed", False)]
-        if not seeded:
-            return profiles[:n]
-        random.shuffle(seeded)
-        return seeded[:n]
+        pool = seeded or profiles
+        if pool:
+            random.shuffle(pool)
+            return pool[:n]
     except Exception as e:
-        logger.warning("synthetic_agents: persona fetch failed: %s", e)
-        return []
+        logger.warning("synthetic_agents: persona fetch failed (using fallback): %s", e)
+
+    # Pinecone returned nothing or errored — use the hardcoded pool so
+    # the feed/discover still feels alive.
+    fb = list(_fallback_personas())
+    random.shuffle(fb)
+    return fb[:n]
 
 
 def _now_iso() -> str:
@@ -115,7 +160,7 @@ async def _emit_post(persona) -> None:
         await ws_manager.broadcast_global({"type": "discover_post_new", "post": post})
     except Exception as e:
         logger.debug("synthetic_agents: broadcast post failed: %s", e)
-    logger.info("synthetic_agents: posted as %s (%s chars)",
+    logger.warning("[synthetic_agents] posted as %s (%s chars)",
                 post["author_name"], len(text))
 
 
@@ -193,8 +238,8 @@ async def _emit_open_trip(persona) -> None:
         await ws_manager.broadcast_global({"type": "discover_trip_open", "trip": card})
     except Exception as e:
         logger.debug("synthetic_agents: broadcast trip failed: %s", e)
-    logger.info("synthetic_agents: opened trip %s -> %s, %s",
-                itinerary_id, dest_meta["city"], dest_meta["country"])
+    logger.warning("[synthetic_agents] opened trip %s -> %s, %s",
+                   itinerary_id, dest_meta["city"], dest_meta["country"])
 
 
 async def _run_action(persona) -> None:
@@ -233,8 +278,11 @@ async def synthetic_agents_loop() -> None:
 
     lo = max(8, SYNTHETIC_AGENTS_MIN_INTERVAL)
     hi = max(lo + 10, SYNTHETIC_AGENTS_MAX_INTERVAL)
-    logger.info("synthetic_agents: loop starting (interval %d-%ds, seed=%d)",
-                lo, hi, SYNTHETIC_AGENTS_SEED_COUNT)
+    logger.warning(
+        "[synthetic_agents] LOOP STARTED — interval %d-%ds, seed=%d. "
+        "Watch for '[synthetic_agents] posted ...' / 'opened trip ...' lines.",
+        lo, hi, SYNTHETIC_AGENTS_SEED_COUNT,
+    )
 
     # Tiny stagger so the seed burst doesn't fight cold-start work,
     # then prime the feed immediately so users don't land on empty.
