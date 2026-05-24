@@ -182,6 +182,19 @@ export async function denyMatch(sessionId) {
   return post('/api/chat/deny', { session_id: sessionId })
 }
 
+// Approval lifecycle: user explicitly signs off on a draft itinerary,
+// locking it and transitioning into the shared-itinerary surface.
+export async function approveItinerary(itineraryId) {
+  return post(`/api/itineraries/${encodeURIComponent(itineraryId)}/approve`, {})
+}
+
+// Request changes on a draft itinerary. Phase-1: logs feedback into
+// revision_history; Phase-2 wires the targeted revision pipeline.
+export async function reviseItinerary(itineraryId, feedback, targets = null) {
+  return post(`/api/itineraries/${encodeURIComponent(itineraryId)}/revise`,
+              targets ? { feedback, targets } : { feedback })
+}
+
 export async function saveItineraryAsCurrent(itineraryId) {
   return post(`/api/itineraries/${encodeURIComponent(itineraryId)}/save`, {})
 }

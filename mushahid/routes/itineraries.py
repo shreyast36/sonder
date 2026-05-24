@@ -11,9 +11,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from datetime import datetime, timezone
+
 from mushahid.auth import verify_token
 from mushahid.realtime.firestore import (
-    get_itinerary, get_user_profile, update_user_profile,
+    get_itinerary, get_user_profile, update_user_profile, write_itinerary,
     get_companion_prefs, write_companion_prefs,
 )
 from mushahid.utils.sanitize import sanitize_user_input
@@ -190,6 +192,130 @@ async def set_current_itinerary(body: SetCurrentBody, uid: str = Depends(verify_
         pass
 
     return {"current_itinerary_id": body.itinerary_id}
+
+
+# ── Approval lifecycle (draft → finalized) ────────────────────────────────────
+#
+# Every generated itinerary lands as a draft. The user reviews it on
+# /itinerary and either approves (locks the itinerary, snapshots the
+# ranker weights, transitions to shared-itinerary mode) or revises
+# (loops through targeted edits until satisfied). Until approval, the
+# itinerary is mutable and ranker weights keep updating per user
+# feedback. After approval it's frozen.
+
+
+class ReviseBody(BaseModel):
+    feedback: str
+    # Optional structured per-activity feedback. When set, the targeted
+    # revision path uses these instead of free-text classification.
+    targets: Optional[list[dict]] = None
+
+
+@router.post("/itineraries/{itinerary_id}/approve")
+async def approve_itinerary(itinerary_id: str, uid: str = Depends(verify_token)):
+    """User signs off on the draft. Locks the itinerary, snapshots the
+    user's current ranker weights as 'finalized' (frozen — no more
+    online updates from feedback), and clears any in-flight revision
+    state. The trip is now the canonical shared-itinerary state.
+
+    Idempotent: re-calling on an already-finalized itinerary is a no-op."""
+    itinerary = await _verify_itinerary_owner(itinerary_id, uid)
+
+    if getattr(itinerary, "approval_status", "draft") == "finalized":
+        return {
+            "itinerary_id":   itinerary_id,
+            "approval_status": "finalized",
+            "finalized_at":    getattr(itinerary, "finalized_at", None),
+            "already_finalized": True,
+        }
+
+    finalized_at = datetime.now(timezone.utc).isoformat()
+    updated = itinerary.model_copy(update={
+        "approval_status": "finalized",
+        "finalized_at":    finalized_at,
+    })
+    await write_itinerary(updated)
+
+    # Snapshot the user's per-surface ranker weights as 'finalized'.
+    # Future revisions on a NEW trip can start from these as a warm
+    # prior rather than the uniform 1/N baseline.
+    try:
+        prof = await get_user_profile(uid) or {}
+        signals = dict(prof.get("compatibility_signals") or {})
+        live_weights = dict(signals.get("ranker_weights") or {})
+        if live_weights:
+            signals["finalized_ranker_weights"] = live_weights
+            await update_user_profile(uid, {"compatibility_signals": signals})
+    except Exception as e:
+        logger.warning("approve_itinerary: weight snapshot failed: %s", e)
+
+    try:
+        from mushahid.monitoring import capture
+        capture(uid, "itinerary_finalized", {
+            "itinerary_id": itinerary_id,
+            "revision_turns": len(getattr(itinerary, "revision_history", []) or []),
+        })
+    except Exception:
+        pass
+
+    return {
+        "itinerary_id":    itinerary_id,
+        "approval_status": "finalized",
+        "finalized_at":    finalized_at,
+        "already_finalized": False,
+        "shared_url":      f"/shared/{itinerary_id}",
+    }
+
+
+@router.post("/itineraries/{itinerary_id}/revise")
+async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depends(verify_token)):
+    """User wants changes. Phase-1 implementation: log the feedback into
+    revision_history, return current itinerary (the actual targeted
+    revision pipeline lands in Chunk 2 — feedback router + small/large
+    model routing + validator gate). Approval status stays at 'draft'.
+
+    The route exists now so the frontend approval gate can wire up
+    end-to-end without waiting on the full revision engine."""
+    itinerary = await _verify_itinerary_owner(itinerary_id, uid)
+
+    if getattr(itinerary, "approval_status", "draft") == "finalized":
+        raise HTTPException(
+            status_code=409,
+            detail="Itinerary is finalised. Revisions need a new edit session via /shared.",
+        )
+
+    feedback = sanitize_user_input(body.feedback or "")[:1000].strip()
+    if not feedback and not body.targets:
+        raise HTTPException(status_code=400, detail="Feedback or targets required")
+
+    history = list(getattr(itinerary, "revision_history", []) or [])
+    history.append({
+        "turn":        len(history) + 1,
+        "feedback":    feedback,
+        "targets":     body.targets or [],
+        "created_at":  datetime.now(timezone.utc).isoformat(),
+        "status":      "pending",   # Chunk 2 flips to "applied" after the revision runs
+    })
+
+    updated = itinerary.model_copy(update={"revision_history": history})
+    await write_itinerary(updated)
+
+    try:
+        from mushahid.monitoring import capture
+        capture(uid, "itinerary_revision_requested", {
+            "itinerary_id": itinerary_id,
+            "turn":         len(history),
+            "has_targets":  bool(body.targets),
+        })
+    except Exception:
+        pass
+
+    return {
+        "itinerary_id":    itinerary_id,
+        "approval_status": "draft",
+        "revision_turn":   len(history),
+        "itinerary":       updated.model_dump(mode="json"),
+    }
 
 
 # ── Companion preferences (per-trip) ──────────────────────────────────────────

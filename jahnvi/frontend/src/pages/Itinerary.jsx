@@ -5,7 +5,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { ArrowLeft, Mail, Check, Bookmark } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D, SonderMark3D } from '../components/SonderMark3D'
-import { emailItinerary, saveItineraryAsCurrent, getCurrentItinerary } from '../lib/api'
+import { emailItinerary, saveItineraryAsCurrent, getCurrentItinerary, approveItinerary, reviseItinerary } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
 import { useAuth } from '../hooks/useAuth'
 import { useSSE } from '../hooks/useSSE'
@@ -65,6 +65,14 @@ export default function Itinerary() {
   const [saved, setSaved]         = useState(false)
   const [showCompanionPrompt, setShowCompanionPrompt] = useState(false)
   const [companionPromptDismissed, setCompanionPromptDismissed] = useState(false)
+  // Approval-gate state: every itinerary lands as a draft. User must
+  // explicitly approve or request revisions before it locks. Until
+  // they choose, the gate sticks at the bottom of the page.
+  const [approveBusy, setApproveBusy] = useState(false)
+  const [reviseOpen, setReviseOpen] = useState(false)
+  const [reviseText, setReviseText] = useState('')
+  const [reviseBusy, setReviseBusy] = useState(false)
+  const [approveError, setApproveError] = useState(null)
   const [error, setError]         = useState(null)
   const startedRef                = useRef(false)
   // Tracks which itinerary id we've auto-persisted, so the SSE 'done' and
@@ -238,6 +246,41 @@ export default function Itinerary() {
       }
     }
     navigate(`/companions/${itinerary.itinerary_id}`)
+  }
+
+  async function handleApprove() {
+    if (!itinerary?.itinerary_id || approveBusy) return
+    setApproveBusy(true); setApproveError(null)
+    try {
+      const res = await approveItinerary(itinerary.itinerary_id)
+      setItinerary(prev => prev ? { ...prev, approval_status: 'finalized', finalized_at: res.finalized_at } : prev)
+      // Best-effort: also mark this as the user's current trip so it
+      // shows on the dashboard, then navigate them into the shared-
+      // itinerary surface where revisions now happen collaboratively.
+      try { await saveItineraryAsCurrent(itinerary.itinerary_id) } catch { /* noop */ }
+      setTimeout(() => navigate(`/shared/${encodeURIComponent(itinerary.itinerary_id)}`), 900)
+    } catch (e) {
+      setApproveError(e?.message || 'Could not approve')
+    } finally {
+      setApproveBusy(false)
+    }
+  }
+
+  async function handleRevise(text) {
+    if (!itinerary?.itinerary_id || reviseBusy) return
+    const feedback = (text || reviseText).trim()
+    if (!feedback) return
+    setReviseBusy(true); setApproveError(null)
+    try {
+      const res = await reviseItinerary(itinerary.itinerary_id, feedback)
+      if (res?.itinerary) setItinerary(res.itinerary)
+      setReviseText('')
+      setReviseOpen(false)
+    } catch (e) {
+      setApproveError(e?.message || 'Could not log revision')
+    } finally {
+      setReviseBusy(false)
+    }
   }
 
   async function handleEmailExport() {
@@ -608,6 +651,162 @@ export default function Itinerary() {
                 }}
               >
                 Yes
+              </motion.button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Approval gate — sticks at the bottom until the user explicitly
+          locks the itinerary. Approve → finalize + transition to /shared.
+          Revise → free-text feedback into the revision loop. Old itineraries
+          without approval_status are treated as draft for back-compat —
+          they only finalize after explicit approval. */}
+      <AnimatePresence>
+        {itinerary && itinerary.approval_status !== 'finalized' && !reviseOpen && (
+          <motion.div
+            key="approval-gate"
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 60, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 240, damping: 26 }}
+            style={{
+              position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 110,
+              maxWidth: 'min(560px, calc(100vw - 32px))',
+              padding: '20px 24px',
+              background: 'rgba(20,16,11,0.97)',
+              border: `1px solid rgba(139,92,246,0.40)`,
+              borderRadius: 18,
+              backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+              boxShadow: '0 24px 70px rgba(0,0,0,0.6), 0 0 40px rgba(139,92,246,0.18)',
+              display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
+            }}
+          >
+            <span style={{
+              flex: '1 1 240px',
+              fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+              fontSize: 18, color: BONE, lineHeight: 1.35,
+            }}>
+              Does this feel right, or would you change anything?
+            </span>
+            <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+              <motion.button
+                whileHover={!approveBusy ? { scale: 1.04 } : {}}
+                whileTap={!approveBusy ? { scale: 0.97 } : {}}
+                onClick={() => setReviseOpen(true)}
+                disabled={approveBusy}
+                style={{
+                  padding: '10px 20px', background: 'none',
+                  border: `1px solid ${HAIRLINE}`, borderRadius: 18,
+                  cursor: 'pointer',
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.20em',
+                  textTransform: 'uppercase', color: MUTE,
+                }}
+              >
+                Revise
+              </motion.button>
+              <motion.button
+                whileHover={!approveBusy ? { scale: 1.04, boxShadow: '0 0 22px rgba(16,185,129,0.50)' } : {}}
+                whileTap={!approveBusy ? { scale: 0.97 } : {}}
+                onClick={handleApprove}
+                disabled={approveBusy}
+                style={{
+                  padding: '10px 22px',
+                  background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                  border: 'none', borderRadius: 18,
+                  cursor: approveBusy ? 'wait' : 'pointer',
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em',
+                  textTransform: 'uppercase', color: '#0a0807', fontWeight: 600,
+                  opacity: approveBusy ? 0.75 : 1,
+                }}
+              >
+                {approveBusy ? 'Locking…' : 'Approve · Lock in'}
+              </motion.button>
+            </div>
+            {approveError && (
+              <p style={{ flex: '1 1 100%', margin: 0, fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: '#F87171' }}>
+                {approveError}
+              </p>
+            )}
+          </motion.div>
+        )}
+
+        {/* Revise sheet — feedback textarea when user clicks Revise. */}
+        {itinerary && itinerary.approval_status !== 'finalized' && reviseOpen && (
+          <motion.div
+            key="revise-sheet"
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 60, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 240, damping: 26 }}
+            style={{
+              position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 110,
+              maxWidth: 'min(600px, calc(100vw - 32px))', width: '100%',
+              padding: '22px 24px',
+              background: 'rgba(20,16,11,0.97)',
+              border: `1px solid rgba(139,92,246,0.40)`,
+              borderRadius: 18,
+              backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+              boxShadow: '0 24px 70px rgba(0,0,0,0.6), 0 0 40px rgba(139,92,246,0.18)',
+              display: 'flex', flexDirection: 'column', gap: 14,
+            }}
+          >
+            <span style={{
+              fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+              fontSize: 17, color: BONE, lineHeight: 1.35,
+            }}>
+              What specifically should change — pacing, activities, budget, food, neighborhoods, timing, or the overall vibe?
+            </span>
+            <textarea
+              value={reviseText}
+              onChange={(e) => setReviseText(e.target.value)}
+              placeholder="e.g. 'Day 2 feels too packed' or 'less touristy, more local food'"
+              rows={3}
+              maxLength={1000}
+              autoFocus
+              style={{
+                padding: '12px 14px', borderRadius: 12,
+                background: 'rgba(232,212,168,0.04)', border: `1px solid ${HAIRLINE}`,
+                color: BONE, outline: 'none', resize: 'none',
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 300, lineHeight: 1.55,
+              }}
+            />
+            {approveError && (
+              <p style={{ margin: 0, fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: '#F87171' }}>
+                {approveError}
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <motion.button
+                whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+                onClick={() => { setReviseOpen(false); setReviseText(''); setApproveError(null) }}
+                style={{
+                  padding: '10px 20px', background: 'none',
+                  border: `1px solid ${HAIRLINE}`, borderRadius: 18, cursor: 'pointer',
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.20em',
+                  textTransform: 'uppercase', color: MUTE,
+                }}
+              >
+                Cancel
+              </motion.button>
+              <motion.button
+                whileHover={!reviseBusy && reviseText.trim() ? { scale: 1.04, boxShadow: '0 0 22px rgba(139,92,246,0.55)' } : {}}
+                whileTap={!reviseBusy && reviseText.trim() ? { scale: 0.97 } : {}}
+                onClick={() => handleRevise(reviseText)}
+                disabled={reviseBusy || !reviseText.trim()}
+                style={{
+                  padding: '10px 22px',
+                  background: 'linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%)',
+                  border: 'none', borderRadius: 18,
+                  cursor: (reviseBusy || !reviseText.trim()) ? 'not-allowed' : 'pointer',
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em',
+                  textTransform: 'uppercase', color: '#fff', fontWeight: 600,
+                  opacity: (reviseBusy || !reviseText.trim()) ? 0.5 : 1,
+                }}
+              >
+                {reviseBusy ? 'Logging…' : 'Send feedback'}
               </motion.button>
             </div>
           </motion.div>

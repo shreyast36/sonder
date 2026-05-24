@@ -116,3 +116,17 @@ class Itinerary(BaseModel):
     # tracks already-confirmed companions).
     is_open_to_join:  bool = False
     join_capacity:    int  = 1
+
+    # Lifecycle: draft → finalized. Every generated itinerary starts as
+    # a draft and only flips to finalized after the user hits the
+    # explicit approval gate on /itinerary. Finalized itineraries are
+    # locked: no more automatic regeneration, ranker weights are
+    # frozen, the trip transitions into the shared-itinerary surface
+    # for collaborative editing.
+    approval_status:  str  = "draft"   # "draft" | "finalized"
+    finalized_at:     Optional[str] = None
+    # Append-only record of revision turns — each entry stores the
+    # feedback string, what changed, the dropped/replaced titles, and
+    # the validator outcome. Used as the dedupe memory so a future
+    # revision never resurfaces a title the user already rejected.
+    revision_history: list[dict] = []
