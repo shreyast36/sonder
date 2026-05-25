@@ -1121,6 +1121,103 @@ A sweep across every code file surfaced a long tail of load-bearing decisions wo
 | `scripts/progress.py` | Auto-updates `TASKS.md` checkboxes based on actual implementation state. A Python file task is checked off when none of its public functions raise `NotImplementedError`. Non-Python tasks (Figma, deployment, JS) are left unchanged. Runs in CI on every push that touches a `.py`. |
 | `scripts/sync_trello.py` | Mirrors `TASKS.md` sections to a Trello board. Creates one card per section, moves cards to Done / Doing / per-person To Do based on checkbox state. Mostly used for stakeholder visibility. |
 
+### Frontend hooks
+
+| Hook | Purpose |
+|---|---|
+| `useAuth` | Firebase `onAuthStateChanged` wrapper. On sign-in, auto-creates the backend `user_profile` if it 404s (covers brand-new accounts). Exposes `{user, loading, signIn, signUp, signOut, requestPasswordReset}`. Mounted via context implicitly — every page calls it; first call boots the listener. |
+| `useSSE` | Manual SSE parser for `/plan-trip`. Uses `fetch` + `ReadableStream` instead of `EventSource` (which can't set Authorization headers). Tracks `eventName` across lines, buffers incomplete fragments, and dispatches to a `handlers` map keyed by event name (`persona_inferring`, `day_ready`, `done`, etc.). |
+| `useWebSocket` | Chat WS lifecycle: first-message auth (token in initial JSON, never query string), 30s ping keep-alive, auto-reconnect on close. Exposes typing / seen / presence / message / `message_edited` event hooks for the chat UI. |
+| `useFirestore` | Firestore listener wrapper for the shared-itinerary surface. Subscribes to `shared_itineraries/{id}` and re-fires on every update with the latest doc — drives the bidirectional sync without polling. |
+
+### Frontend lib helpers
+
+| File | Purpose |
+|---|---|
+| `lib/firebase.js` | Firebase app + Auth init. Reads `VITE_FIREBASE_*` env vars. Single shared `auth` export used by every API call (for ID tokens) and every page (for sign-in state). |
+| `lib/push.js` | Web Push subscription lifecycle. `ensurePushSubscribed()` registers the service worker (`public/sw.js`), requests permission, subscribes with the VAPID public key from `/api/push/vapid-public-key`, and POSTs the subscription to `/api/push/subscribe`. `dropPushSubscription()` reverses it. `pushSupported()` gates the prompt UI so unsupported browsers (Safari < 16, etc.) never see a broken button. |
+| `lib/sentry.js` | Sentry init with `Failed to fetch` and 4xx HTTP filtering — only 5xx + non-`TypeError` network errors get captured. Keeps the error feed clean of expected client-side noise. |
+| `lib/tokens.js` | Design tokens — colours (`BG`, `BONE`, `GOLD`, `MUTE`, `DIM`, `HAIRLINE`), `GRAIN` SVG, `GOLD_GRAD` linear, `ease` cubic bezier. Single source of truth for every page's style block. |
+| `lib/api.js` | Every backend call. Centralises auth-header attachment, error reporting, network-error classification, and SSE/AbortController plumbing for the streaming routes. |
+| `lib/destinationPhoto.js` | Wikipedia + Pixabay multi-photo lookup (covered above). |
+
+### Environment variables — complete list
+
+`.env.example` is the source of truth (135 lines, 62 vars). Groups:
+
+| Group | Vars |
+|---|---|
+| Firebase | `FIREBASE_PROJECT_ID`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_CLIENT_EMAIL`, `FIRESTORE_DATABASE_ID` (blank = default DB; named DB e.g. `sonder-db1`) |
+| LLM providers | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `NVIDIA_API_KEY` |
+| Voice | `ELEVENLABS_API_KEY`, `ELEVENLABS_MODEL_ID` (default `eleven_multilingual_v2`) |
+| Pinecone | `PINECONE_API_KEY`, `PINECONE_ENVIRONMENT`, `PINECONE_INDEX_NAME` |
+| Embeddings | `EMBED_MODEL_PROVIDER`, `EMBED_MODEL`, `EMBED_DIMENSIONS` (must match the model's output dim — 1536 for `text-embedding-3-small`) |
+| Model selection — tier provider | `SMALL_MODEL_PROVIDER`, `LARGE_MODEL_PROVIDER` (`anthropic` or `openai`) |
+| Model selection — per-provider IDs | `ANTHROPIC_SMALL_MODEL`, `ANTHROPIC_LARGE_MODEL`, `OPENAI_SMALL_MODEL`, `OPENAI_LARGE_MODEL`. Cross-provider fallback safety — the engine never sends a model id to the wrong provider. |
+| Model selection — legacy | `SMALL_MODEL_NAME`, `LARGE_MODEL_NAME` (kept for backward compatibility; new code reads per-provider vars). |
+| Validators | `SMALL_VALIDATOR_PROVIDER`, `LARGE_VALIDATOR_PROVIDER`, `*_VALIDATOR_MODEL` for each provider |
+| Refinement | `MAX_REFINEMENT_ATTEMPTS` (default 3; only affects the orchestrator quality loop, not user-initiated `/revise`) |
+| Email | `EMAIL_PROVIDER` (`resend` / `sendgrid` / `ses`), `EMAIL_API_KEY`, `EMAIL_FROM`, `FRONTEND_BASE_URL` (used in email link generation) |
+| Web Push | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (must be `mailto:...` or a URL — RFC 8292) |
+| Pixabay | `PIXABAY_API_KEY` — destination photos route silently no-ops when blank |
+| Real-time | `REDIS_URL` (required for multi-container production — single-container falls back to in-memory `ConnectionManager`); `PRESENCE_TTL_SECONDS` (default 90) |
+| Synthetic agents | `SYNTHETIC_AGENTS_ENABLED` (default true), `SYNTHETIC_AGENTS_MIN_INTERVAL` / `MAX_INTERVAL` (default 15-50s), `SYNTHETIC_AGENTS_SEED_COUNT` (cold-start burst, default 20) |
+| Rate limiting | `UPDATE_TRIP_RATE_LIMIT` (slowapi format, e.g. `5/minute`) |
+| Monitoring | `SENTRY_DSN`, `POSTHOG_API_KEY`, `POSTHOG_HOST` |
+| Frontend (Vite) | `VITE_FIREBASE_*` (mirror of Firebase config but client-safe values only), `VITE_API_BASE_URL` (blank in prod — proxied via Cloudflare Pages Function) |
+
+### GitHub Actions / CI
+
+Two workflows in `.github/workflows/`:
+
+| File | Trigger | What |
+|---|---|---|
+| `update-progress.yml` | Push that touches a `.py` file | Runs `scripts/progress.py` to auto-update `TASKS.md` checkboxes based on whether public functions still raise `NotImplementedError`. Commits the updated `TASKS.md` back so the README's "what's done" view stays in sync with code. |
+| `sync-trello.yml` | Push to `main` | Runs `scripts/sync_trello.py`. Pushes `TASKS.md` sections to a Trello board (one card per section, lane = Done/Doing/per-person To Do) for stakeholder visibility. |
+
+There is no test workflow — the repo relies on local `pytest` runs + the validator engine catching LLM regressions in prod telemetry rather than a CI test suite. (Most of the surface is LLM-dependent and hard to unit-test deterministically.)
+
+### Prompt injection sanitisation
+
+`mushahid/utils/sanitize.py :: sanitize_user_input()` runs on every free-text user field before it reaches an LLM (feedback strings, chat messages, journal notes, persona answers, proposal reasons, etc.). Pipeline:
+
+1. Hard cap at 2000 characters — attempts can't hide in massive pastes that exceed the pattern scanner's effective window.
+2. Lowercase the text for pattern matching only (the original casing is preserved in the returned string if nothing matches).
+3. Check against `_INJECTION_PATTERNS` — ~13 lightweight regexes covering common jailbreak / instruction-override / role-rebind shapes:
+   - `ignore previous instructions` / `ignore all prior instructions`
+   - `system prompt` / `you are now` / `act as`
+   - `disregard the above` / `forget what i said`
+   - `you must` + override imperatives
+   - `<system>`, `<|im_start|>`, `[INST]` and similar tokenizer-control sequences
+   - `assistant:` / `human:` chat role markers
+   - `pretend you are` / `roleplay as`
+4. If any pattern matches, replace the entire input with `"[input removed]"` and log a warning with the matched pattern + first 60 chars so we can spot evolving attack shapes in monitoring.
+
+Production note: this is a deliberately lightweight first line. A real defence-in-depth setup layers an LLM classifier (e.g. Prompt Shield) on top for the high-stakes free-text fields — proposals, chat replies, journal — where the heuristic regex won't catch obfuscated paraphrases. The hook is left as `sanitize_user_input` so swapping the implementation doesn't ripple through every caller.
+
+### City context lookup
+
+`shared/cities.py :: get_city_context(city, country)` returns a thin context dict (`{summary, weather_now, lat, lon, country_code}`) used by the destination feed + the cinematic reveal's date-window framing. Three-source fallback chain, all keyless / free:
+
+1. **Nominatim (OpenStreetMap)** — `geocode(city, country)` → `{lat, lon, country_code, display_name}`. Required for the weather lookup. Soft 1-req-per-sec etiquette enforced via a process-wide token bucket.
+2. **OpenWeather** (`/data/2.5/weather?lat=&lon=`) — current weather as a one-line summary ("light rain, 14°C"). Skipped if Nominatim failed.
+3. **Wikipedia** REST API `/page/summary/{title}` — the lede paragraph (~200 chars) for the destination card. Same map-rejection filter as `useDestinationPhoto` (don't show coats of arms as "what's the city like").
+
+Disk-cached to `.cache/cities.json`. Cache is keyed by `(city, country)` so repeats are instant. Stale entries are 30 days old; refresh is best-effort (Nominatim or OpenWeather flaking doesn't block the call — we return whatever we got).
+
+### Dependency choices — the deliberate ones
+
+Most pip / npm choices are obvious (FastAPI, React, Pydantic). A few are deliberate decisions worth recording so the next maintainer doesn't "simplify" them:
+
+- **`pydantic v2`** not v1 — the validator engine relies on `model_validate` semantics and the new model_copy + nested-merge behaviour. Don't downgrade.
+- **`pinecone-client` (the v3+ SDK)** — `index.update(set_metadata=...)` is what the backfill script depends on. The legacy `pinecone` package has a different API surface.
+- **`webpush`** Python lib (not pywebpush legacy) — supports the AES-GCM payload encryption the modern service-worker contract needs.
+- **`slowapi`** for rate-limiting — chosen over `fastapi-limiter` because it doesn't require Redis for the typical single-container deployment. Falls back to in-memory bucketing.
+- **`httpx`** over `requests` — async surface throughout the backend; one less event-loop block.
+- **`framer-motion`** is the heaviest non-React dep on the frontend; it's load-bearing for the reveal choreography and the bi-view scroll sync. Don't strip it.
+- **No client-side state library** (no Redux / Zustand / Jotai) — local state + window CustomEvent fan-out (via NotificationProvider) is sufficient because most realtime signals are per-page. Adding global state would be premature.
+- **No GraphQL** — every backend route returns a Pydantic-validated JSON shape; the contract lives in the schemas, not in a separate graph. Keeping it RESTful keeps the surface scannable.
+
 ### Recent reliability fixes
 
 A few merged PRs worth recording because the failure modes are subtle:
