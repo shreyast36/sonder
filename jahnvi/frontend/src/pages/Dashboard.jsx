@@ -7,7 +7,7 @@ import MatchCard from '../components/MatchCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
-import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, deleteItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest, getUserProfile, patchProfileGender } from '../lib/api'
+import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, deleteItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest, getUserProfile, patchProfileGender, listMyShared } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
 import NavTabs from '../components/NavTabs'
 import { storage } from '../lib/firebase'
@@ -679,6 +679,11 @@ export default function Dashboard() {
   const [switchingTrip, setSwitchingTrip] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
+  // Shared trips — every itinerary the user is co-planning or has
+  // co-planned with another traveller. Populated independently of the
+  // solo past-trips fetch so a /api/shared failure doesn't block the
+  // rest of the dashboard.
+  const [sharedTrips, setSharedTrips] = useState([])
 
   const refresh = async () => {
     // Track the current itinerary in a local so the past-trips fallback
@@ -950,6 +955,15 @@ export default function Dashboard() {
       document.removeEventListener('visibilitychange', onVisible)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid])
+
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    listMyShared()
+      .then(res => { if (!cancelled) setSharedTrips(res?.shared || []) })
+      .catch(err => { console.warn('listMyShared failed:', err?.message || err) })
+    return () => { cancelled = true }
   }, [user?.uid])
 
   const trip = deriveTripCard(storedItinerary)
@@ -1748,6 +1762,112 @@ export default function Dashboard() {
               </p>
             )}
           </motion.section>
+        )}
+
+        {/* Shared trips — every itinerary the user is co-planning or
+            has co-planned with another traveller. Rendered as a
+            standalone section between the solo vault and Pulse so
+            collaborative trips have visual prominence rather than
+            living inside the matches column. Hidden when empty. */}
+        {sharedTrips.length > 0 && (
+        <motion.section
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease, delay: 0.25 }}
+          style={{
+            gridColumn: '1 / -1',
+            padding: '40px 52px 24px',
+            borderTop: `1px solid ${HAIRLINE}`,
+            position: 'relative',
+          }}
+        >
+          <div style={{
+            position: 'absolute', top: -1, left: '50%', transform: 'translateX(-50%)',
+            width: 120, height: 1,
+            background: `linear-gradient(to right, transparent, #10B981, transparent)`,
+          }}/>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 22 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <motion.span
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                  style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 10px #10B981' }}
+                />
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+                  Planned together
+                </p>
+              </div>
+              <h2 style={{
+                fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
+                fontSize: 30, color: BONE, lineHeight: 1.05, margin: 0,
+                letterSpacing: '-0.015em',
+              }}>
+                Your shared trips.
+              </h2>
+            </div>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: DIM, margin: 0 }}>
+              {sharedTrips.length}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'thin' }}>
+            {sharedTrips.map((t, i) => {
+              const accent = t.finalized ? '#10B981' : '#F59E0B'
+              const status = t.finalized
+                ? 'Final'
+                : t.pending_changes > 0 ? `${t.pending_changes} pending` : 'In negotiation'
+              return (
+                <motion.button
+                  key={t.itinerary_id}
+                  whileHover={{ y: -3, borderColor: accent }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => navigate(`/shared/${encodeURIComponent(t.itinerary_id)}`)}
+                  initial={{ opacity: 0, x: 18 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.4, delay: 0.05 + i * 0.06, ease }}
+                  style={{
+                    position: 'relative',
+                    flex: '0 0 auto', width: 220, padding: '18px 18px 16px',
+                    background: t.finalized ? 'rgba(16,185,129,0.05)' : 'rgba(245,158,11,0.04)',
+                    border: `1px solid ${accent}55`,
+                    borderRadius: 14, cursor: 'pointer',
+                    transition: 'all 0.25s', textAlign: 'left',
+                  }}
+                >
+                  <span style={{
+                    position: 'absolute', top: 10, right: 10,
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 7.5,
+                    letterSpacing: '0.24em', textTransform: 'uppercase',
+                    color: accent, padding: '3px 7px', borderRadius: 8,
+                    background: `${accent}10`, border: `1px solid ${accent}55`,
+                  }}>
+                    {status}
+                  </span>
+                  <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: '0 0 6px' }}>
+                    Together
+                  </p>
+                  <h3 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 24, color: BONE, lineHeight: 1, margin: 0, letterSpacing: '-0.01em' }}>
+                    {t.city || '—'}
+                  </h3>
+                  {t.country && (
+                    <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, margin: '4px 0 12px' }}>
+                      {t.country}
+                    </p>
+                  )}
+                  <div style={{ height: 1, background: HAIRLINE, margin: '10px 0' }}/>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE }}>
+                      {t.day_count ? `${t.day_count} day${t.day_count === 1 ? '' : 's'}` : '—'}
+                    </span>
+                    <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: DIM }}>
+                      v{t.version}
+                    </span>
+                  </div>
+                </motion.button>
+              )
+            })}
+          </div>
+        </motion.section>
         )}
 
         {/* Sonder Pulse lives at /pulse now — keeps this view focused

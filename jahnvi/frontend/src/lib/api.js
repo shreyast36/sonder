@@ -505,6 +505,10 @@ export async function askPersonaSuggest(itineraryId, { version }) {
   return post(`/api/shared/${encodeURIComponent(itineraryId)}/persona-suggest`, { version })
 }
 
+export async function listMyShared() {
+  return get('/api/shared')
+}
+
 export async function finalizeShared(itineraryId, { version }) {
   return post(`/api/shared/${encodeURIComponent(itineraryId)}/finalize`, { version })
 }

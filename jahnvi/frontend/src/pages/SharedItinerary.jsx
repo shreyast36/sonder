@@ -473,6 +473,9 @@ export default function SharedItinerary() {
   const [shared, setShared]       = useState(null)
   const [error, setError]         = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  // Celebration modal — surfaces on a successful lockIn so the moment
+  // gets a real visual beat instead of just an activity-log row.
+  const [showFinalizedModal, setShowFinalizedModal] = useState(false)
   const [proposeOpen, setProposeOpen] = useState(false)
   const [proposeDay, setProposeDay] = useState(1)
   const [counterTarget, setCounterTarget] = useState(null)    // ProposedChange we're countering
@@ -667,6 +670,7 @@ export default function SharedItinerary() {
     try {
       const res = await finalizeShared(id, { version: shared.version })
       setShared(res.shared)
+      setShowFinalizedModal(true)
     } catch (e) {
       setError(e?.message || 'Could not finalise')
     } finally {
@@ -913,6 +917,96 @@ export default function SharedItinerary() {
                   error={error}
                 />
               )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Lock-in confirmation. Surfaces on a successful finalize so the
+          moment lands as a deliberate beat rather than a silent state
+          change. The email receipt is fired server-side in parallel. */}
+      <AnimatePresence>
+        {showFinalizedModal && shared && (
+          <motion.div
+            key="finalized-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            onClick={() => setShowFinalizedModal(false)}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 200,
+              background: 'rgba(2,2,2,0.85)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 16, cursor: 'pointer',
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.92, y: 18 }}
+              animate={{ scale: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                cursor: 'default',
+                maxWidth: 480, width: '100%',
+                padding: '40px 36px',
+                borderRadius: 18,
+                background: 'linear-gradient(160deg, rgba(22,18,12,0.99) 0%, rgba(14,11,8,1) 100%)',
+                border: `1px solid ${GREEN}55`,
+                boxShadow: `0 30px 80px rgba(0,0,0,0.7), 0 0 60px ${GREEN}22`,
+                textAlign: 'center',
+              }}
+            >
+              <p style={{
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                letterSpacing: '0.32em', textTransform: 'uppercase',
+                color: GREEN, marginBottom: 18,
+              }}>
+                Locked in
+              </p>
+              <h2 style={{
+                fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+                fontWeight: 400, fontSize: 'clamp(28px, 4vw, 38px)',
+                color: BONE, lineHeight: 1.15, margin: '0 0 18px',
+              }}>
+                Your trip is final.
+              </h2>
+              <p style={{
+                fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
+                fontSize: 14, color: `${BONE}c8`, lineHeight: 1.6,
+                margin: '0 0 28px',
+              }}>
+                We've sent a confirmation to your inbox and added it to your shared trips on the dashboard. Time to pack.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
+                <motion.button
+                  whileHover={{ y: -2, boxShadow: `0 0 36px ${GREEN}55` }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => { setShowFinalizedModal(false); navigate('/dashboard') }}
+                  style={{
+                    minWidth: 260, padding: '15px 28px',
+                    background: `linear-gradient(135deg, ${GREEN} 0%, #059669 100%)`,
+                    border: 'none', borderRadius: 12, cursor: 'pointer',
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                    fontWeight: 600, color: '#0a0807',
+                  }}
+                >
+                  Back to dashboard
+                </motion.button>
+                <button
+                  onClick={() => setShowFinalizedModal(false)}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    padding: '10px 18px',
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                    letterSpacing: '0.20em', textTransform: 'uppercase',
+                    color: MUTE,
+                  }}
+                >
+                  Stay on this page
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

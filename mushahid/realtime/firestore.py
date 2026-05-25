@@ -339,6 +339,42 @@ async def get_shared_itinerary(itinerary_id: str):
 
 
 
+async def list_shared_itineraries_for_user(user_id: str) -> list:
+    """Every shared itinerary this user is a participant in. Returns a list
+    of SharedItinerary objects sorted by version descending so the most
+    recently active surfaces first."""
+    from shared.schemas import SharedItinerary
+    if LOCAL_MODE:
+        out = []
+        for key, val in _store.items():
+            if not key.startswith("shared:") or not isinstance(val, dict):
+                continue
+            if user_id in (val.get("user_ids") or []):
+                try:
+                    out.append(SharedItinerary.model_validate(val))
+                except Exception:
+                    pass
+        return sorted(out, key=lambda s: s.version, reverse=True)
+    try:
+        docs = await asyncio.to_thread(
+            lambda: list(
+                get_db().collection("shared_itineraries")
+                .where("user_ids", "array_contains", user_id)
+                .limit(50).stream()
+            )
+        )
+        out = []
+        for d in docs:
+            try:
+                out.append(SharedItinerary.model_validate(d.to_dict()))
+            except Exception as e:
+                logger.warning("list_shared rehydrate failed for %s: %s", d.id, e)
+        return sorted(out, key=lambda s: s.version, reverse=True)
+    except Exception as e:
+        logger.warning("list_shared_itineraries_for_user failed: %s", e)
+        return []
+
+
 async def create_user_profile(user_id: str, display_name: str) -> None:
     doc = {
         "user_id": user_id,

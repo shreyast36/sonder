@@ -399,6 +399,37 @@ async def get_state(itinerary_id: str, uid: str = Depends(verify_token)):
     return shared.model_dump(mode="json")
 
 
+@router.get("/shared")
+async def list_my_shared(uid: str = Depends(verify_token)):
+    """Every shared itinerary the user is a participant in. Powers the
+    dashboard's "Shared trips" section. Each entry is a thin summary so
+    the carousel can render without fetching every full doc."""
+    from mushahid.realtime.firestore import list_shared_itineraries_for_user
+    shared_list = await list_shared_itineraries_for_user(uid)
+    summaries = []
+    for s in shared_list:
+        finalized = any(e.kind == "finalized" for e in (s.activity_log or []))
+        pending = sum(1 for c in (s.proposed_changes or []) if c.status == "proposed")
+        accepted = sum(1 for c in (s.proposed_changes or []) if c.status == "accepted")
+        dest = s.itinerary.destination if s.itinerary else None
+        days = s.itinerary.days if s.itinerary else []
+        summaries.append({
+            "itinerary_id":    s.itinerary_id,
+            "user_ids":        list(s.user_ids or []),
+            "city":            getattr(dest, "city", "") if dest else "",
+            "country":         getattr(dest, "country", "") if dest else "",
+            "day_count":       len(days),
+            "trip_start":      str(days[0].trip_date) if days and days[0].trip_date else None,
+            "trip_end":        str(days[-1].trip_date) if days and days[-1].trip_date else None,
+            "version":         s.version,
+            "finalized":       finalized,
+            "pending_changes": pending,
+            "accepted_changes": accepted,
+            "last_updated_by": s.last_updated_by,
+        })
+    return {"shared": summaries}
+
+
 @router.post("/shared/{itinerary_id}/propose")
 async def propose(itinerary_id: str, body: ProposeRequest, uid: str = Depends(verify_token)):
     """User proposes a change. Persona evaluates synchronously and either:
@@ -948,6 +979,26 @@ async def finalize(itinerary_id: str, body: FinalizeRequest, uid: str = Depends(
             link_path=f"/shared/{itinerary_id}",
             tag=f"sonder-shared-final-{itinerary_id}",
         ))
+
+    # Self-confirmation. The finalizer was the one tapping the button,
+    # so the in-app modal carries the live celebration, but the email
+    # is the lasting receipt — sent to the signup address so it lives
+    # in the user's inbox alongside their flight booking confirmations.
+    co_names = []
+    for other_uid in (shared.user_ids or []):
+        if other_uid == uid:
+            continue
+        nm = await _display_name_for(other_uid)
+        if nm:
+            co_names.append(nm)
+    with_who = (" with " + " and ".join(co_names)) if co_names else ""
+    asyncio.create_task(notify_event(
+        recipient_uid=uid, kind="shared_finalized_self",
+        title=f"You locked in {dest or 'your trip'}",
+        body=f"Your {dest or 'shared'} itinerary{with_who} is final. Time to pack.",
+        link_path=f"/shared/{itinerary_id}",
+        tag=f"sonder-shared-final-self-{itinerary_id}",
+    ))
 
     # Auto-emit a trip-recap post on the user's behalf so the moment
     # gets celebrated on /feed. Fire-and-forget; finalize stays fast.
