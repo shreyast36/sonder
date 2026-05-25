@@ -483,6 +483,10 @@ export default function SharedItinerary() {
   // editTarget = { activity_id, name, from_day, mode: 'replace'|'move' }
   const [editTarget, setEditTarget] = useState(null)
   const [otherDisplayName, setOtherDisplayName] = useState('them')
+  // Full match payload (profile + score + reasons) so the header pill
+  // can show the avatar and compatibility number, not just the name.
+  // Populated by the same lookup that resolves the display name.
+  const [otherMatch, setOtherMatch] = useState(null)
 
   const pollRef = useRef(null)
   // Timestamp the user opened the page. ActivityFeed uses this to
@@ -551,6 +555,7 @@ export default function SharedItinerary() {
         if (cancelled) return
         const name = match?.profile?.display_name?.split(/\s+/)?.[0]
         if (name) setOtherDisplayName(name)
+        if (match) setOtherMatch(match)
       } catch {
         if (!cancelled) setOtherDisplayName('your match')
       }
@@ -741,7 +746,63 @@ export default function SharedItinerary() {
             <h1 style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 48, lineHeight: 1.1, color: BONE, margin: '8px 0 4px' }}>
               {itin?.destination?.city || 'Your trip'}
             </h1>
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE, margin: 0 }}>
+
+            {/* Match-detail pill — kept visible at all times (live + locked)
+                so the user can see who they're planning with, their compat
+                score, and click through to the full match profile. */}
+            {otherMatch?.profile && (
+              <button
+                onClick={() => navigate(`/match/${encodeURIComponent(otherMatch.profile.profile_id)}`)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 10,
+                  marginTop: 12, marginBottom: 4,
+                  padding: '6px 12px 6px 6px',
+                  background: 'rgba(139,92,246,0.06)',
+                  border: `1px solid ${VIOLET}33`,
+                  borderRadius: 999, cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.10)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.06)' }}
+              >
+                {otherMatch.profile.avatar_url ? (
+                  <img
+                    src={otherMatch.profile.avatar_url}
+                    alt={otherMatch.profile.display_name || ''}
+                    style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${VIOLET}55` }}
+                  />
+                ) : (
+                  <span style={{ width: 26, height: 26, borderRadius: '50%', background: `${VIOLET}22`, border: `1px solid ${VIOLET}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: VIOLET, fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 13 }}>
+                    {(otherMatch.profile.display_name || '?').slice(0, 1)}
+                  </span>
+                )}
+                <span style={{
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+                  color: BONE, fontWeight: 500,
+                }}>
+                  Planning with {otherMatch.profile.display_name?.split(/\s+/)?.[0] || otherName}
+                </span>
+                {typeof otherMatch.match_score === 'number' && (
+                  <span style={{
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                    color: VIOLET, fontWeight: 600,
+                    padding: '2px 8px', borderRadius: 999,
+                    background: `${VIOLET}18`,
+                  }}>
+                    {Math.round(otherMatch.match_score * 100)}% match
+                  </span>
+                )}
+                <span style={{
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                  letterSpacing: '0.18em', textTransform: 'uppercase',
+                  color: `${VIOLET}aa`, marginLeft: 4,
+                }}>
+                  View →
+                </span>
+              </button>
+            )}
+
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE, margin: '8px 0 0' }}>
               {finalized
                 ? 'Locked in. No more changes can be made.'
                 : 'Propose changes, agree or counter — both of you shape the trip.'}
@@ -851,14 +912,19 @@ export default function SharedItinerary() {
           ))}
         </div>
 
-        {/* RIGHT — activity feed */}
+        {/* RIGHT — activity feed.
+            For a live negotiation we filter to entries created after the
+            page opened (clean visual slate per session). For finalised
+            trips, the full edit history is the point — pass since=null
+            so the user can see every proposal, counter, and acceptance
+            the pair worked through on the way to locking in. */}
         <div style={{ position: 'sticky', top: 100, alignSelf: 'flex-start', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <ActivityFeed
             log={shared.activity_log}
             selfId={selfId}
             otherName={otherName}
             otherEvaluating={otherEvaluating}
-            since={pageOpenedAtRef.current}
+            since={finalized ? null : pageOpenedAtRef.current}
           />
         </div>
       </div>

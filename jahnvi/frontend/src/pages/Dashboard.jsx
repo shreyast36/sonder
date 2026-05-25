@@ -9,6 +9,7 @@ import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
 import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, deleteItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest, getUserProfile, patchProfileGender, listMyShared } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
+import { ensurePushSubscribed, pushSupported } from '../lib/push'
 import NavTabs from '../components/NavTabs'
 import { storage } from '../lib/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -363,6 +364,138 @@ function EmptyStateInspiration({ onPlan }) {
   )
 }
 
+// One past-trip card. Extracted so each card's useDestinationPhoto hook
+// can fetch its own photo — hooks can't run inside a .map().
+function PastTripCard({ trip, index, isCurrent, deleting, switching, onSelect, onDelete }) {
+  const photo = useDestinationPhoto(trip.city, trip.country)
+  const accent = isCurrent ? '#F59E0B' : 'rgba(245,158,11,0.30)'
+  return (
+    <motion.div
+      whileHover={!switching && !deleting && !isCurrent ? { y: -3, borderColor: accent } : {}}
+      whileTap={!switching && !deleting && !isCurrent ? { scale: 0.98 } : {}}
+      initial={{ opacity: 0, x: 18 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.4, delay: 0.05 + index * 0.06, ease }}
+      style={{
+        position: 'relative',
+        flex: '0 0 auto', width: 200, padding: '18px 18px 16px',
+        background: isCurrent ? 'rgba(245,158,11,0.06)' : 'rgba(232,212,168,0.04)',
+        border: `1px solid ${isCurrent ? 'rgba(245,158,11,0.40)' : HAIRLINE}`,
+        borderRadius: 14,
+        cursor: isCurrent || switching || deleting ? 'default' : 'pointer',
+        transition: 'all 0.25s', textAlign: 'left',
+        opacity: (switching && !isCurrent) || deleting ? 0.5 : 1,
+        overflow: 'hidden',
+      }}
+      onClick={() => {
+        if (isCurrent || switching || deleting) return
+        onSelect?.(trip.itinerary_id)
+      }}
+      role={!isCurrent ? 'button' : undefined}
+      aria-disabled={switching || deleting}
+    >
+      {/* Destination photo backdrop — faded behind the content so type
+          stays legible without sacrificing the visual identity of the
+          place. */}
+      {photo && (
+        <>
+          <img
+            src={photo}
+            alt={trip.city}
+            referrerPolicy="no-referrer"
+            style={{
+              position: 'absolute', inset: 0, width: '100%', height: '100%',
+              objectFit: 'cover',
+              opacity: isCurrent ? 0.55 : 0.40,
+              filter: 'saturate(0.9) brightness(0.65)',
+              pointerEvents: 'none',
+            }}
+          />
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            background: isCurrent
+              ? 'linear-gradient(180deg, rgba(20,16,11,0.55) 0%, rgba(20,16,11,0.92) 100%)'
+              : 'linear-gradient(180deg, rgba(8,8,7,0.65) 0%, rgba(8,8,7,0.94) 100%)',
+          }}/>
+        </>
+      )}
+
+      {isCurrent && (
+        <span style={{
+          position: 'absolute', top: 10, right: 10, zIndex: 2,
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 7.5,
+          letterSpacing: '0.24em', textTransform: 'uppercase',
+          color: '#F59E0B', padding: '3px 7px', borderRadius: 8,
+          background: 'rgba(245,158,11,0.18)', border: '1px solid rgba(245,158,11,0.55)',
+          backdropFilter: 'blur(6px)',
+        }}>
+          Current
+        </span>
+      )}
+
+      {onDelete && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(trip.itinerary_id, trip.city) }}
+          disabled={deleting}
+          title={deleting ? 'Deleting…' : 'Delete this trip and its data'}
+          aria-label="Delete trip"
+          style={{
+            position: 'absolute', bottom: 10, right: 10, zIndex: 2,
+            width: 26, height: 26, padding: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(248,113,113,0.10)',
+            border: '1px solid rgba(248,113,113,0.30)',
+            borderRadius: 8,
+            cursor: deleting ? 'wait' : 'pointer',
+            color: 'rgba(248,113,113,0.75)',
+            transition: 'all 0.2s',
+            opacity: deleting ? 0.5 : 0.85,
+            backdropFilter: 'blur(6px)',
+          }}
+          onMouseEnter={(e) => {
+            if (deleting) return
+            e.currentTarget.style.background = 'rgba(248,113,113,0.22)'
+            e.currentTarget.style.borderColor = 'rgba(248,113,113,0.65)'
+            e.currentTarget.style.color = '#F87171'
+            e.currentTarget.style.opacity = '1'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(248,113,113,0.10)'
+            e.currentTarget.style.borderColor = 'rgba(248,113,113,0.30)'
+            e.currentTarget.style.color = 'rgba(248,113,113,0.75)'
+            e.currentTarget.style.opacity = '0.85'
+          }}
+        >
+          <Trash2 size={12}/>
+        </button>
+      )}
+
+      <div style={{ position: 'relative', zIndex: 1 }}>
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: 'rgba(244,237,224,0.65)', margin: '0 0 6px' }}>
+          Destination
+        </p>
+        <h3 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 24, color: BONE, lineHeight: 1, margin: 0, letterSpacing: '-0.01em', textShadow: photo ? '0 2px 12px rgba(0,0,0,0.55)' : 'none' }}>
+          {trip.city}
+        </h3>
+        {trip.country && (
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(244,237,224,0.65)', margin: '4px 0 12px' }}>
+            {trip.country}
+          </p>
+        )}
+        <div style={{ height: 1, background: photo ? 'rgba(244,237,224,0.18)' : HAIRLINE, margin: '10px 0' }}/>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingRight: onDelete ? 32 : 0 }}>
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: 'rgba(244,237,224,0.65)' }}>
+            {trip.day_count ? `${trip.day_count} day${trip.day_count === 1 ? '' : 's'}` : '—'}
+          </span>
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: 'rgba(244,237,224,0.45)' }}>
+            {_fmtTripDate(trip.trip_start) || ''}
+          </span>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
 function PastTripsRow({ trips, onSelect, switching, onDelete, deletingId }) {
   if (!trips || trips.length === 0) return null
   return (
@@ -376,113 +509,18 @@ function PastTripsRow({ trips, onSelect, switching, onDelete, deletingId }) {
         </p>
       </div>
       <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'thin' }}>
-        {trips.map((t, i) => {
-          const isCurrent = !!t.is_current
-          const accent = isCurrent ? '#F59E0B' : 'rgba(245,158,11,0.30)'
-          const deleting = deletingId === t.itinerary_id
-          // Card itself is a div now — delete button is a nested clickable
-          // and we don't want nested <button>s. Switch action is its own
-          // click handler at the card-body level, with stopPropagation on
-          // the trash icon so deleting doesn't double as switching.
-          return (
-            <motion.div
-              key={t.itinerary_id}
-              whileHover={!switching && !deleting && !isCurrent ? { y: -3, borderColor: accent } : {}}
-              whileTap={!switching && !deleting && !isCurrent ? { scale: 0.98 } : {}}
-              initial={{ opacity: 0, x: 18 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.4, delay: 0.05 + i * 0.06, ease }}
-              style={{
-                position: 'relative',
-                flex: '0 0 auto', width: 200, padding: '18px 18px 16px',
-                background: isCurrent ? 'rgba(245,158,11,0.06)' : 'rgba(232,212,168,0.04)',
-                border: `1px solid ${isCurrent ? 'rgba(245,158,11,0.40)' : HAIRLINE}`,
-                borderRadius: 14,
-                cursor: isCurrent || switching || deleting ? 'default' : 'pointer',
-                transition: 'all 0.25s', textAlign: 'left',
-                opacity: (switching && !isCurrent) || deleting ? 0.5 : 1,
-              }}
-              onClick={() => {
-                if (isCurrent || switching || deleting) return
-                onSelect?.(t.itinerary_id)
-              }}
-              role={!isCurrent ? 'button' : undefined}
-              aria-disabled={switching || deleting}
-            >
-              {/* Current-trip badge */}
-              {isCurrent && (
-                <span style={{
-                  position: 'absolute', top: 10, right: 10,
-                  fontFamily: '"Inter Tight",sans-serif', fontSize: 7.5,
-                  letterSpacing: '0.24em', textTransform: 'uppercase',
-                  color: '#F59E0B', padding: '3px 7px', borderRadius: 8,
-                  background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.40)',
-                }}>
-                  Current
-                </span>
-              )}
-
-              {/* Delete affordance — bottom-right corner, low-key until hover.
-                  Tints rose on hover so the destructive action telegraphs itself. */}
-              {onDelete && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onDelete(t.itinerary_id, t.city) }}
-                  disabled={deleting}
-                  title={deleting ? 'Deleting…' : 'Delete this trip and its data'}
-                  aria-label="Delete trip"
-                  style={{
-                    position: 'absolute', bottom: 10, right: 10,
-                    width: 26, height: 26, padding: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: 'rgba(248,113,113,0.04)',
-                    border: '1px solid rgba(248,113,113,0.20)',
-                    borderRadius: 8,
-                    cursor: deleting ? 'wait' : 'pointer',
-                    color: 'rgba(248,113,113,0.65)',
-                    transition: 'all 0.2s',
-                    opacity: deleting ? 0.5 : 0.7,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (deleting) return
-                    e.currentTarget.style.background = 'rgba(248,113,113,0.14)'
-                    e.currentTarget.style.borderColor = 'rgba(248,113,113,0.55)'
-                    e.currentTarget.style.color = '#F87171'
-                    e.currentTarget.style.opacity = '1'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(248,113,113,0.04)'
-                    e.currentTarget.style.borderColor = 'rgba(248,113,113,0.20)'
-                    e.currentTarget.style.color = 'rgba(248,113,113,0.65)'
-                    e.currentTarget.style.opacity = '0.7'
-                  }}
-                >
-                  <Trash2 size={12}/>
-                </button>
-              )}
-
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: '0 0 6px' }}>
-                Destination
-              </p>
-              <h3 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 24, color: BONE, lineHeight: 1, margin: 0, letterSpacing: '-0.01em' }}>
-                {t.city}
-              </h3>
-              {t.country && (
-                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, margin: '4px 0 12px' }}>
-                  {t.country}
-                </p>
-              )}
-              <div style={{ height: 1, background: HAIRLINE, margin: '10px 0' }}/>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingRight: onDelete ? 32 : 0 }}>
-                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE }}>
-                  {t.day_count ? `${t.day_count} day${t.day_count === 1 ? '' : 's'}` : '—'}
-                </span>
-                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: DIM }}>
-                  {_fmtTripDate(t.trip_start) || ''}
-                </span>
-              </div>
-            </motion.div>
-          )
-        })}
+        {trips.map((t, i) => (
+          <PastTripCard
+            key={t.itinerary_id}
+            trip={t}
+            index={i}
+            isCurrent={!!t.is_current}
+            deleting={deletingId === t.itinerary_id}
+            switching={switching}
+            onSelect={onSelect}
+            onDelete={onDelete}
+          />
+        ))}
       </div>
     </div>
   )
@@ -684,6 +722,13 @@ export default function Dashboard() {
   // solo past-trips fetch so a /api/shared failure doesn't block the
   // rest of the dashboard.
   const [sharedTrips, setSharedTrips] = useState([])
+  // Push-notification prompt state. We show the banner only when:
+  //   - the browser supports push,
+  //   - the user has never been asked (permission === 'default'),
+  //   - they haven't dismissed the banner this device-session.
+  // Granted-on-load is handled silently by NotificationProvider, which
+  // attaches the SW subscription with no UI.
+  const [pushPromptState, setPushPromptState] = useState('hidden')
 
   const refresh = async () => {
     // Track the current itinerary in a local so the past-trips fallback
@@ -966,6 +1011,40 @@ export default function Dashboard() {
     return () => { cancelled = true }
   }, [user?.uid])
 
+  useEffect(() => {
+    if (!user) return
+    if (!pushSupported()) return
+    if (typeof Notification === 'undefined') return
+    if (Notification.permission !== 'default') return
+    // Respect a previous in-session dismissal — don't nag.
+    try {
+      if (localStorage.getItem('sonder:push:prompt:dismissed') === '1') return
+    } catch { /* noop */ }
+    setPushPromptState('visible')
+  }, [user?.uid])
+
+  async function handleEnablePush() {
+    setPushPromptState('working')
+    try {
+      const p = await Notification.requestPermission()
+      if (p === 'granted') {
+        const sub = await ensurePushSubscribed()
+        setPushPromptState(sub ? 'success' : 'failed')
+        if (sub) setTimeout(() => setPushPromptState('hidden'), 2400)
+      } else {
+        setPushPromptState('hidden')
+      }
+    } catch (err) {
+      console.warn('enable push failed:', err?.message || err)
+      setPushPromptState('failed')
+    }
+  }
+
+  function dismissPushPrompt() {
+    try { localStorage.setItem('sonder:push:prompt:dismissed', '1') } catch { /* noop */ }
+    setPushPromptState('hidden')
+  }
+
   const trip = deriveTripCard(storedItinerary)
   const tripPhoto = useDestinationPhoto(trip?.city, trip?.country)
   const daysAway  = useCountUp(trip?.daysAway ?? 0, 1000, 600)
@@ -1237,6 +1316,102 @@ export default function Dashboard() {
           )}
         </motion.div>
       </div>
+
+      {/* Push-notification prompt — only shown when the browser supports
+          push, permission is still 'default' (never asked), and the user
+          hasn't dismissed it. Lives above the main grid so it lands in
+          the first thing the user sees on the dashboard. */}
+      <AnimatePresence>
+        {pushPromptState === 'visible' && (
+          <motion.div
+            key="push-prompt"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3, ease }}
+            style={{
+              maxWidth: 1240, margin: '0 auto 0',
+              width: 'calc(100% - 48px)',
+              marginTop: 16, marginLeft: 24, marginRight: 24,
+              padding: '14px 18px',
+              borderRadius: 14,
+              background: 'rgba(139,92,246,0.08)',
+              border: '1px solid rgba(139,92,246,0.30)',
+              display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+              position: 'relative', zIndex: 1,
+            }}
+          >
+            <span style={{
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+              letterSpacing: '0.30em', textTransform: 'uppercase',
+              color: '#8B5CF6', fontWeight: 500,
+            }}>
+              Stay in the loop
+            </span>
+            <span style={{
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 12,
+              color: BONE, fontWeight: 300, flex: 1, minWidth: 240,
+            }}>
+              Turn on notifications so chat messages, match invites, and shared-itinerary updates reach you even when the tab is closed.
+            </span>
+            <motion.button
+              whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }}
+              onClick={handleEnablePush}
+              style={{
+                padding: '8px 14px', borderRadius: 999,
+                background: 'linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%)',
+                border: 'none', cursor: 'pointer', color: '#fff',
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                letterSpacing: '0.20em', textTransform: 'uppercase', fontWeight: 600,
+              }}
+            >
+              Enable notifications
+            </motion.button>
+            <button
+              onClick={dismissPushPrompt}
+              aria-label="Dismiss"
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                padding: '4px 8px', color: MUTE,
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                letterSpacing: '0.18em', textTransform: 'uppercase',
+              }}
+            >
+              Not now
+            </button>
+          </motion.div>
+        )}
+        {pushPromptState === 'working' && (
+          <motion.div
+            key="push-working"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{
+              maxWidth: 1240, margin: '16px 24px 0', padding: '14px 18px',
+              borderRadius: 14, background: 'rgba(139,92,246,0.08)',
+              border: '1px solid rgba(139,92,246,0.30)',
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: BONE,
+              position: 'relative', zIndex: 1,
+            }}
+          >
+            Setting up notifications…
+          </motion.div>
+        )}
+        {pushPromptState === 'success' && (
+          <motion.div
+            key="push-success"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{
+              maxWidth: 1240, margin: '16px 24px 0', padding: '14px 18px',
+              borderRadius: 14, background: 'rgba(16,185,129,0.08)',
+              border: '1px solid rgba(16,185,129,0.30)',
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: BONE,
+              position: 'relative', zIndex: 1,
+            }}
+          >
+            Notifications on — you'll get pinged when something happens.
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* main grid */}
       <motion.div variants={stagger} initial="hidden" animate="show"
