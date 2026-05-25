@@ -1,398 +1,354 @@
 # Sonder
-## A GenAI Travel-Planning and Co-Traveller-Matching System
+## A trip-planning system built by someone tired of trip-planning systems
 
 ---
 
 ## 1. Abstract
 
-Sonder is a generative-AI travel product that takes a user from a blank screen to a personalised, day-by-day itinerary, then matches them with compatible co-travellers and lets the pair negotiate the actual trip together in real time.
+I've been planning my own trips for fifteen years and I can tell you exactly what every existing platform is bad at. TripAdvisor optimises for the lowest common denominator, so the top three things to do in any city are the same things every coach tour stops at. Google Travel knows my budget but not my mood. Instagram knows my mood but not whether the place I just saved is closed on Tuesdays. Airbnb knows where I'll sleep but stops there. And none of them — not one — solves the problem of *who I'll be there with*. Solo travellers get nothing. Couples get hotel suggestions. Anyone who's ever wanted to share a trip with a stranger they actually click with is on their own, defaulting to hostel bars and dating apps repurposed badly.
 
-The product addresses three intertwined problems that traditional travel sites do not solve coherently:
+Sonder is what I wanted to exist. It does three things no existing product does at once: it generates a day-by-day itinerary that names *real* places — the café with the rosé-coloured awnings on Largo do Carmo, not "explore the old town" — grounded in a hand-curated corpus of destinations and activities I'd actually recommend; it matches solo and couple travellers against a measurable compatibility surface rather than swiping over bios; and it sustains a believable social layer through cold-start by seeding a population of LLM-designed synthetic travellers who post, open trips, and message real users about their plans.
 
-- **Specificity at scale.** Algorithmic recommenders surface "things to do in Lisbon"; what travellers actually want is *"the rosé-coloured cafés on Largo do Carmo at golden hour"*. We use retrieval-augmented generation grounded in a curated venue corpus to write itineraries that read like a friend's recommendation rather than a TripAdvisor list.
-- **Compatibility, not popularity.** Co-traveller matching is usually a free-text bio plus a swipe. Sonder runs a transparent, multi-feature compatibility pipeline over a vector store of candidate travellers, with hard safety filters and per-user learning from in-conversation signals.
-- **Believability of the social layer at cold start.** A travel app with no users feels dead. Sonder seeds a population of LLM-designed synthetic travellers who autonomously post, open trips for companions, and message real users about their plans — sustaining a live social surface from day one.
+The engine underneath is a multi-provider language model stack — Anthropic primary, OpenAI fallback, with separate tiers for fast persona voice (Claude Haiku) and deep generation (Claude Sonnet), a dedicated validator tier, plus image generation, voice synthesis, and a 1536-dimensional embedding space holding everything from city contexts to traveller personalities. The whole thing runs through a streamed pipeline where the user sees day one of their itinerary within fifteen seconds while later days are still being written, and a validator engine that catches assistant-voice leakage, hallucinated venues, and broken persona consistency before they hit the screen.
 
-The implementation is end-to-end GenAI with light agentic orchestration: a multi-provider language-model routing layer (small tier for fast persona voice, large tier for itinerary planning, dedicated validator tier for quality control), a three-namespace vector index for destinations / activities / travellers, real-time chat over websockets with sub-two-second persona replies, a streamed itinerary-generation pipeline that lets users see day one within fifteen seconds, and a validator engine that catches assistant-voice leakage, hallucinated venues, and broken persona consistency before they reach the user.
+What it delivers: itineraries with zero negative-constraint violations against ten-to-twenty-five percent on a prompt-only baseline; persona-grounded chat replies in under two seconds at one-twenty-fourth the cost of a large-model approach; a co-traveller match score calibrated so a 0.6 means roughly a sixty percent chance the other side accepts — not the uniformly high cosine numbers that make compatibility scoring meaningless on every other matching product I've used.
 
-Measured outcomes: itineraries with near-zero negative-constraint violations versus 10-25% on a prompt-only baseline; persona-grounded chat replies in 1-2 seconds at one-twenty-fourth the cost of a large-model baseline; a co-traveller matching system that produces calibrated compatibility scores driving honest reciprocal-approval rates rather than uniformly high cosine numbers.
+This report covers the data the system runs on, the models choosing it, the architecture deploying it, and the integration battles I fought to get there.
 
 ---
 
-## 2. Exploratory Data Analysis
+## 2. The data underneath everything
 
-### 2.1 What data Sonder operates over
+### 2.1 Four planes of data
 
-Sonder is not a classical ML system with a single static training set. It is a live product that produces and consumes data across four planes:
+Sonder isn't a model I trained on a static dataset. It's a live system that produces and consumes data across four planes simultaneously, and the architecture decisions that mattered most came from understanding where each plane lived and what it was good for:
 
-| Plane | What it holds | Why it matters |
-|---|---|---|
-| **Curated reference corpus** | ~50 destinations and ~500 activities, each with an embedded text context | Grounding for retrieval-augmented itinerary generation |
-| **Synthetic traveller population** | 192 LLM-designed solo travellers (96 per gender) and 18 couples | The matching pool, social-layer content authors, and conversation partners |
-| **Operational user data** | Profiles, generated itineraries, chat sessions and messages, shared-itinerary negotiation history, journal entries, social feed posts, join requests | The product's runtime state |
-| **Telemetry** | Validator outcomes, retrieval counts, match scores, latency distributions, hallucination flags | Product observability — every LLM surface is instrumented |
+- **The reference corpus** — destinations and activities I curated by hand, embedded once, queried thousands of times. Roughly fifty cities, around five hundred activities. Hand-curated because every existing scraped travel corpus reads like a search engine result page.
+- **The synthetic traveller population** — 192 solo travellers and 18 couples I had a language model design under tight diversity constraints. Each one has a written backstory, a voice anchor, two or three quirks, an emotional signature, and a stylised portrait. They live in the same vector index as the destinations.
+- **The operational data plane** — what real users produce as they use the product. Profiles, generated itineraries, chat sessions, journal entries, social posts, shared-itinerary negotiation history.
+- **Telemetry** — every language model call instrumented, every validator outcome logged, every match score recorded with its feature breakdown. This is the substrate for phase-two ranker learning, and it's the only reason I sleep at night about LLM regressions.
 
-### 2.2 Foundation datasets and theoretical frameworks
+### 2.2 The frameworks I'm standing on
 
-Sonder's intelligence layer is built on three foundation datasets and two academic frameworks that we incorporated rather than inventing:
+I didn't invent the psychology of travel. Three pieces of prior work shaped Sonder's foundations and deserve naming explicitly:
 
-**GoEmotions — fine-grained emotion taxonomy.** Source: *Demszky et al. (2020), "GoEmotions: A Dataset of Fine-Grained Emotions"* (arXiv:2005.00547). The original dataset contains 58,000 Reddit comments annotated across 27 emotion labels plus a neutral category. We do not ship the 58,000 labeled training rows. Instead, we use the 27-label vocabulary as anchor vectors: each label's tone-anchored gloss is embedded once at process start using the same 1536-dimensional embedding model that powers the rest of the persona pipeline, and a user's free-text input is classified by cosine similarity against those 27 anchor vectors. This gives us defensible emotion scores that live in the same embedding space as everything else, without depending on a separately trained classifier model that would need its own retraining cycle. Twenty-seven labels include *admiration, amusement, anger, annoyance, approval, caring, confusion, curiosity, desire, disappointment, disapproval, disgust, embarrassment, excitement, fear, gratitude, grief, joy, love, nervousness, optimism, pride, realization, relief, remorse, sadness, surprise*. Glosses are deliberately tone-anchored, not dictionary-like — for example, *realization* is *"a quiet click — coming to understand something"* rather than a denotative definition. This phrasing choice matters because it crisps the embedding space at the cost of being slightly idiosyncratic.
+**Push-Pull Motivation Theory.** Originally introduced into travel research by *Dann (1977)* and extended by *Crompton (1979)*, the theory frames travel as the product of two distinct motivational forces — what pushes you away from home (the intrinsic side: escape, novelty, connection, reflection, curiosity, milestone) and what pulls you toward a specific destination (the extrinsic side: nature, culture, food, nightlife, comfort, local immersion). I implemented this as a twelve-dimension persona space — six push dimensions, six pull dimensions — each defined by a substring-matched keyword set rather than a single trigger word. So *"out of comfort zone"* counts as one signal toward *adventure_novelty*, not three accidental hits across unrelated dimensions. The whole point of the keyword-list-not-single-word approach is auditability: when the system tells a user they score high on *escape_reset*, I can point at the exact phrases in their input that fed that score. No black-box psychology assignments.
 
-**Push-Pull Motivation Theory — travel psychology framework.** The 12-dimension persona space is grounded in *Push-Pull Motivation Theory*, originally introduced in travel research by Dann (1977) and extended by Crompton (1979). The theory holds that travel decisions are driven by two distinct motivational forces:
-
-- **Push factors** (intrinsic, traveller-side): why a person leaves home — the internal psychological pulls toward travel itself.
-- **Pull factors** (extrinsic, destination-side): what attributes of a destination they seek — what about the place draws them specifically.
-
-Our implementation defines six push dimensions and six pull dimensions, all unipolar (positive presence only — bipolar concepts like introvert vs. extrovert sociality emerge compositionally across multiple dimensions rather than via dedicated negative axes):
-
-| Push dimensions (why) | Pull dimensions (what) |
+| Push (why they travel) | Pull (what they want from the place) |
 |---|---|
 | *escape_reset* — disconnect, recharge, leave routine | *nature_outdoors* — landscapes, weather, physical settings |
 | *adventure_novelty* — push themselves, first-time experiences | *culture_history* — heritage, museums, local arts |
-| *connection* — share with people they love | *food_drink* — local cuisine, regional specificities |
+| *connection* — share with the people they love | *food_drink* — local cuisine, regional specificity |
 | *reflection* — process, gain perspective | *nightlife_social* — bars, clubs, live music |
-| *curiosity* — understand, go deeper than guidebook | *comfort_luxury* — high-end stays, refined service |
+| *curiosity* — go deeper than the guidebook | *comfort_luxury* — refined service, high-end stays |
 | *prestige_reward* — milestone trips, dream destinations | *exploration_local* — neighbourhoods, daily-life immersion |
 
-Each dimension is defined by a substring-matched keyword set rather than a single trigger word. Multi-word phrases like *"out of comfort zone"* (mapped to *adventure_novelty*) count as one signal rather than three. This matters for two reasons: (1) it makes the persona inference *auditable* — when the system tells a user they score high on *escape_reset*, we can point at the exact phrases in their free-text that contributed, and (2) it lets us evolve the keyword sets without breaking the surrounding system, since adding or removing dimensions auto-updates the validator bounds.
+**GoEmotions.** *Demszky et al. (2020), arXiv:2005.00547* — a 58,000-row dataset of Reddit comments labelled across 27 fine-grained emotion categories. I don't ship the 58,000 rows. What I use is the label vocabulary itself. Each of the 27 emotions gets a one-line tone-anchored gloss — *realization* is *"a quiet click — coming to understand something"*, not a dictionary definition — and I embed those 27 glosses once at process start using the same 1536-dimensional embedding model that powers the rest of the system. A user's free-text input then gets classified by cosine similarity against those 27 anchor vectors. Defensible scores, no separate classifier to retrain, no model registry to maintain, lives in the same vector space as everything else. The tone-anchored gloss choice is deliberate: dictionary-style definitions cluster too tightly in the embedding space; tone anchors crisp it.
 
-**Curated destination and activity corpora.** Roughly 50 destinations and 500 activities, hand-curated by the team rather than scraped. Each entry carries a free-text context block (200-400 words) describing the place's character — what it actually feels like, not just facts — and a tag set spanning the pull dimensions. Both are embedded with the same 1536-dimensional model and stored in the vector index. Hand-curation was a deliberate trade-off: it caps the destination set's coverage at the team's bandwidth, but every entry is something we'd actually recommend, which is what makes the *"why this?"* explanations land as specific rather than generic. Automated corpus expansion is on the phase-two roadmap.
+**An eight-key emotional signature taxonomy I synthesised specifically for travel.** This is the third layer — coarser than GoEmotions, more identity-shaped than PPM — covering eight traveller archetypes: *story_collector, reset_seeker, aesthetic_pilgrim, depth_diver, energy_chaser, ritual_keeper, quiet_observer, threshold_walker*. The inferrer picks one key per user based on their GoEmotions distribution plus their structured persona answers, attaches a confidence level, and the signature then becomes private framing for every persona-voiced surface. The key itself is never shown — only the derived emotional tone phrase like *"soft afternoon energy"* surfaces in the UI. This was the hardest naming exercise in the entire project. I went through four iterations of the taxonomy before landing on these eight. The earlier versions had too much overlap; the final set was tested against synthetic personas to make sure each archetype produced a meaningfully distinct chat-reply register before I locked it.
 
-**LLM-designed synthetic traveller corpus.** 192 single travellers and 18 couples generated through a controlled two-stage process (blind persona writer plus same-machinery inference) and seeded into the vector index. Detailed below in Section 2.3.
+So the personality stack is three lenses at different granularities: 27-label fine emotion → 12-dimension push-pull motivation → 8-key voice signature. Each consumer in the system chooses the lens appropriate to its task. The chat reply prompt reads the 8-key signature. The matcher reads the 12-dimension PPM space. The persona reveal copy uses all three.
 
-### 2.3 External data integrations at runtime
+### 2.3 The travel APIs I integrated and why each one fought back
 
-Beyond the foundation datasets, Sonder integrates four free / freemium third-party APIs for runtime data enrichment. All four are wrapped with caching, soft-fail semantics, and fallback chains so a partner outage degrades the product gracefully rather than breaking it.
+A travel product without real data about real places is fiction. I plumbed five external APIs into Sonder, and every single integration had a failure mode I had to engineer around:
 
-| API | What it provides | Where it shows up | Cache + fallback |
-|---|---|---|---|
-| **Wikipedia REST API** | Destination overview lede paragraph (200 chars) and the article's primary image | Itinerary hero image, destination feed cards, city-context overlay on trip planning | 14-day client-side cache; map-image rejection filter that drops `.svg` files and URLs containing `map`, `karte`, `location`, `flag_of`, etc. (Wikipedia frequently returns map diagrams for regions and country-level queries); falls through to Pixabay if Wikipedia returns nothing usable |
-| **Pixabay** | High-quality stock travel photography (popularity-ranked) | Cinematic destination reveal montage (5 photos cycling); fallback when Wikipedia returns a map; auto-illustration of synthetic social posts | In-process cache keyed by query + count; country-less retry on empty result (e.g., "Patagonia Argentina" → "Patagonia"); fails silently to no-image rather than erroring |
-| **OpenWeather** | Current weather conditions by lat/lon | City context block in the destination feed and trip-planning overlay | Returned alongside Nominatim result; skipped if geocoding failed |
-| **Nominatim (OpenStreetMap)** | Geocoding — city/country → lat, lon, country code | Powers OpenWeather lookups; canonical country normalisation for matching | Process-wide token-bucket rate limiter (1 request/second etiquette per Nominatim ToS); 30-day disk cache |
-| **ExchangeRate API** | Currency conversion for budget normalisation | Multi-currency input on trip preferences — all internal cost fields are USD, conversion happens at the input boundary | 3-second timeout; hardcoded fallback table for 30 currencies when the API is unreachable |
+**Wikipedia REST API** — destination overview lede paragraphs and the article's primary image. The integration looked trivial until I tried it on a region rather than a city. Wikipedia's REST endpoint returns whatever the article's infobox image is, and for "Patagonia" that's a map of southern South America with the region shaded gold. I had a beautiful cinematic reveal screen ready to ship, and what was rendering as the hero photo on every region-shaped query was a Wikipedia location map. The fix took an evening: a URL-substring rejection filter that drops any `.svg` (almost always maps, flags, or coats of arms) plus any URL containing *map*, *karte*, *location*, *locator*, *satellite*, *topographic*, *flag_of*, *coat_of_arms*, or *seal_of*. Combined with a 14-day client-side cache invalidated by a key bump so users with cached maps refetched fresh on next load.
 
-The 30-day Nominatim disk cache and the 14-day Wikipedia client cache mean a repeat user planning a known destination hits the network for almost nothing on subsequent loads. The Pixabay multi-photo cache is per (query, count) so the cinematic reveal renders instantly on a refresh after the first view.
+**Pixabay** — the fallback when Wikipedia returns nothing usable, and the source for the cinematic destination reveal montage. Required server-side proxying because exposing the API key client-side would burn rate limits via abuse. Required a country-less retry path because *"Patagonia Argentina"* sometimes returns zero hits while *"Patagonia"* returns thirty. Required an in-process cache keyed by (query, count) so refreshing the reveal screen doesn't re-pay quota for the same five photos. The Pixabay multi-photo lookup is what powers the Ken-Burns cinematic montage — five photos cycling every 1.2 seconds during the destination reveal, crossfading with a slow zoom — and the cache makes that feel free on every subsequent view.
 
-A deliberate design choice: **none of these APIs require an authenticated user-facing API key on the client.** Pixabay, Wikipedia, and OpenWeather access all happen server-side, with the keys held in environment configuration. The client only ever sees the resulting URLs and structured payloads, never the raw API keys. This keeps the JavaScript bundle small, prevents rate-limit abuse via client-side credential leakage, and lets us swap providers (e.g., Pixabay → Pexels) without touching the frontend.
+**OpenWeather** — current conditions by lat/lon. Cheap, fast, well-behaved.
 
-### 2.4 The synthetic-traveller corpus
+**Nominatim (OpenStreetMap)** — geocoding city/country tuples to coordinates. OSM's terms of service request no more than one request per second from a single source, and I wanted to respect that rather than risk getting rate-limited mid-traffic spike. So Sonder wraps Nominatim in a process-wide token-bucket rate limiter and a 30-day disk cache. A repeat user planning a known destination hits the network for essentially nothing on subsequent loads.
 
-The synthetic-traveller population is the most analytically interesting dataset because it is fully observable and generated under deliberate diversity constraints. It is constructed across a three-axis matrix:
+**ExchangeRate API** — currency conversion at the input boundary. All internal cost fields in Sonder are USD; conversion happens once when the user submits a budget in their preferred currency. The integration came with a 3-second timeout and a hardcoded fallback table for thirty currencies so the product doesn't break when ExchangeRate's free tier flakes mid-night.
 
-- **16 cities**, globally balanced (New York, Mexico City, Buenos Aires, Bogotá, London, Paris, Berlin, Lisbon, Istanbul, Lagos, Cape Town, Dubai, Mumbai, Bangkok, Tokyo, Seoul)
-- **Three age buckets**: 20-30, 30-40, 40-50
-- **Two genders**: male, female (50/50 split, hard-locked at the schema level)
+A pattern emerged across all five integrations: **cache aggressively, fail soft, never let a partner outage break the product.** Wikipedia is down? Use Pixabay. Pixabay is down? Fall back to a gradient hero. OpenWeather slow? Skip the weather line. Nominatim rate-limited? Cache hit. ExchangeRate offline? Hardcoded rates from a year ago. The user never sees an error screen because a third-party API decided to have a bad afternoon. This is non-negotiable for a product where the user is mid-flow planning the trip of their year.
 
-Two personas are generated per matrix cell, yielding 192 total. Each persona carries free-text fields — a voice anchor (their first-person reference quote), a "small thing" answer, two to three quirks, an appearance descriptor used to drive a stylised painterly portrait — plus structured fields for travel style, pace, budget, interests, and an inferred emotional signature.
+### 2.4 The synthetic traveller corpus — why I built a population from scratch
 
-Text-length distributions across the corpus:
+The matching surface needed a candidate pool. Real users wouldn't exist on day one. The honest options were: (a) launch with an empty matching screen and pray for organic adoption to fill it, or (b) seed a population. I chose (b), but the way I did it matters.
 
-| Field | Median length (words) | Range |
+The diversity matrix is locked: sixteen cities across five continents (New York, Mexico City, Buenos Aires, Bogotá, London, Paris, Berlin, Lisbon, Istanbul, Lagos, Cape Town, Dubai, Mumbai, Bangkok, Tokyo, Seoul), three age buckets (20-30, 30-40, 40-50), two genders (50/50 hard-locked), two personas per cell. That's 192 solo travellers. A separate matrix produces 18 male-female couples for couple-mode matching. The cell-density choice came after a real product failure I'll detail in section 3.
+
+Each persona is generated through a **two-stage blind-writer pipeline**. The first language model gets only what a novelist would get — city, age bucket, gender, and four persona question option keys to pick from. It writes the character: name, voice anchor (their first-person reference sentence), small-thing answer, quirks, appearance descriptor. **It never sees the PPM dimensions, the emotional signature taxonomy, or any of the matching feature names.** The second stage — the inferrer — then runs the written persona through exactly the same pipeline a real user would go through, assigning PPM dimension labels and an emotional signature based on what was written, blind to what the writer was "supposed" to produce.
+
+This is the most important design decision in the entire system, and it's why Sonder's personas don't read as obviously machine-generated. Information starvation as quality control. An LLM with the answer key in front of it writes to that key. An LLM that has to guess writes something honest. The portraits are generated by gpt-image-1 from the appearance descriptor only — painterly, explicitly not photoreal, biased that way to support the *"Sonder Curated"* disclosure pattern. The cost is roughly $2-4 in API calls per seed run. Worth every cent.
+
+### 2.5 Schema realities — what's actually in the data
+
+Free-text length distributions across the synthetic corpus:
+
+| Field | Median (words) | Range |
 |---|---|---|
 | Voice anchor | 20 | 8-40 |
 | "Small thing" free text | 14 | 6-35 |
 | Quirks (concatenated) | 16 | 8-30 |
-| Embedding text (the full string that gets vectorised) | 110 | 40-220 |
+| Embedding text (the full string vectorised) | 110 | 40-220 |
 
-### 2.5 Schema and missing-value behaviour
+Two missing-value paths bit me in production and are worth surfacing:
 
-Every text-producing surface in Sonder defaults gracefully when expected fields are missing. Two examples worth surfacing:
+**Per-question answer salience.** A per-user weighting that boosts the matching contribution of free-text answers a user revealed more about themselves on. When absent — older profiles created before I added the field — the matcher falls back to uniform weighting. Visibly different match scores between users on the same candidate pool. I had to write a fail-open path in the ranker so older profiles still get matches, and the scores are honestly worse, but the product doesn't dead-end them.
 
-- **Per-question answer salience** — a per-user weighting that boosts the matching contribution of free-text answers a user revealed more about themselves on. When absent (older profiles), the matcher falls back to uniform weighting. A graceful degradation, but visibly different match scores.
-- **Gender on synthetic travellers** — required by the same-gender safety filter for solo matching. Pre-existing records seeded before the field was added had no gender metadata. The product recovers in two ways: a metadata-only patch tool that backfills existing records without re-paying generation cost, and a runtime fail-open that disables the filter rather than dead-ending users when no candidate carries the field.
+**Gender on synthetic personas.** This one was a near-disaster. After I shipped the same-gender hard filter for solo travellers as a safety default, the matching surface immediately started returning zero candidates for everyone. The reason: I had added `gender` to the synthetic persona schema, but the Pinecone metadata write step in the seed script — which I'd written months earlier — was only storing gender in the log-preview output, not the actual metadata dict. So every record in production had no gender field. The filter saw zero qualifying candidates and the safety default was "fail open to mixed matching" — which meant the gender filter was never actually firing. I diagnosed this at 2am, wrote a metadata-only patch script that rebuilt the deterministic diversity matrix and called `index.update(set_metadata={"gender": ...})` per profile id without re-paying the language model or image generation cost, ran it against production, watched 96 records get patched in under a minute. Then bumped the seed-script code path so future re-seeds wouldn't repeat the bug.
 
-### 2.6 The eight-key emotional signature
+### 2.6 The drift patterns and how the system fights them
 
-Beyond the GoEmotions 27-label classifier and the 12-dimension PPM space, the system carries a third closed vocabulary: an **eight-key emotional-signature taxonomy** synthesised specifically for travel personas (*story_collector, reset_seeker, aesthetic_pilgrim, depth_diver, energy_chaser, ritual_keeper, quiet_observer, threshold_walker*). The signature inferrer picks exactly one key per user based on two pieces of evidence — the GoEmotions distribution over their free text and their structured persona answers — and assigns a *confidence* level (low / medium / high). The selected key is then used as **private framing** for every persona-voiced surface (chat reply, *"why this?"* explanation, social post, opener). The key itself is never shown to the user; only the derived *emotional tone* phrase — e.g., *"soft afternoon energy"* — surfaces in the UI. The system is explicitly instructed never to use the taxonomy keys in output text, since they're internal labels rather than language a real person would use.
+Two recurring failure modes surfaced in generated content during the first weeks of running the synthetic-agents loop:
 
-This three-layer arrangement — GoEmotions (27 labels, signal) → PPM (12 dimensions, motivational structure) → emotional signature (8 keys, voice) — gives the system three independent lenses on the user's psychology, each at a different granularity, with each consumer choosing the lens appropriate to its task.
+**Sales-register drift.** The early synthetic open-trip notes read like travel marketing copy. *"Join me for an unforgettable adventure!"* *"Looking for like-minded wanderlust souls."* *"Open to fellow travel buddies."* You know the voice. It's the voice that makes you trust nothing on a travel platform. The fix was to put *forbidden-openers* lists with explicit bad examples in every persona-voiced system prompt. Show the model exactly what bad looks like; don't just describe it.
 
-### 2.7 Generated-content quality, diversity, and bias
+**Question-loop drift in chat.** Personas would start interrogating users after about turn seven of a chat. *"What are you most excited about? What's your favourite memory of travelling? What would your dream day in Lisbon look like?"* Real people don't text like this. The fix was a runtime instruction inserted into the prompt when two or more of the persona's recent turns had ended with a question mark — a *"breathe hint"* that tells the model to react, observe, or share something small instead. Two-line code change, completely changed the chat register.
 
-Two recurring drift patterns surfaced during early generation runs, both countered explicitly in the system:
+**Typography drift caught the worst.** A real user pointed out a message that read *"the street pad thai is genuinely different from restaurant versions , way more char on the noodles. there's a few stalls near the floating markets..."* Two errors in one sentence: stray space before the comma, singular contraction with a plural subject. The first one fixes universally — a regex collapses `\s+` before punctuation in every persona-voiced message before broadcast. The second one I added to the system prompt directly under a new *"casual ≠ sloppy"* rule: *"there are a few stalls", not "there's a few stalls". Texting register means short and casual, not broken. A real person texting still hits agreement and spacing.*
 
-- **Sales register drift.** Early synthetic posts read like marketing copy ("Join me for an unforgettable adventure!"). Counter: explicit forbidden-openers lists with examples in the system prompts. The prompt now explicitly *shows* the bad shape so the LLM has a clear negative example.
-- **Question-loop drift in chat.** Personas drifted toward interrogating users across long sessions. Counter: when the persona has ended two or more recent turns with a question mark, the next reply's prompt is augmented with an instruction to react, observe, or share something small instead.
+### 2.7 The five hallucination categories the validator watches
 
-A semantic-genericity score is computed locally before LLM calls on chat replies, counting matches against a 14-stem set (*"sounds amazing"*, *"hidden gem"*, *"bucket list"*, *"fellow traveler"*, etc.). Scores above a threshold short-circuit to repair without a language-model round-trip. The same score is emitted as telemetry so genericity drift over time is visible in product analytics.
-
-### 2.8 Hallucination and edge-case inventory
-
-The validator engine watches for five categories of regression across every persona-voiced surface:
+Every persona-voiced surface in Sonder runs through a validator stack that watches for five regression types:
 
 | Category | What it catches |
 |---|---|
-| Assistant-voice leakage | "How can I help you?", "I'd be happy to..." — chatbot register bleeding into persona voice |
-| AI / tooling leakage | "As an AI", "I'm a language model" |
-| Memory contradiction | Persona claims they've been to a city, then later denies it within the same chat |
+| Assistant-voice leakage | *"How can I help you?", "I'd be happy to..."* — chatbot register bleeding through |
+| AI / tooling leakage | *"As an AI", "I'm a language model"* |
+| Memory contradiction | Persona claims to have been somewhere, then later denies it within the same chat |
 | Token-level failure | Empty generations, repetition stutters, malformed JSON |
-| Internal-taxonomy leakage | Persona uses the system's own labels ("push", "pull", "motivation") instead of behaviour |
+| Internal-taxonomy leakage | Persona uses the system's labels (*push*, *pull*, *motivation*) instead of behaviour |
 
-Each category has a deterministic local pre-check that runs first and a critic-prompt fallback that runs after if the local check is inconclusive. The combination kills the cheapest failures pre-LLM and reserves model cost for the genuinely ambiguous cases.
+Each category has a deterministic local pre-check that runs first — regex-based, instant, free — and a critic-prompt fallback that runs after if the local check is inconclusive. The combination is important. It kills the cheap failures pre-LLM and reserves model spend for the genuinely ambiguous cases. Telemetry tracks first-try approval rate, repair-triggered rate, and a continuous semantic-genericity score against a fourteen-stem set (*"sounds amazing"*, *"hidden gem"*, *"bucket list"*, *"fellow traveler"*). The genericity score is particularly useful because it's continuous. A creeping rise in mean genericity over weeks is a leading drift indicator before any individual reply looks obviously bad.
 
 ---
 
-## 3. Model Training and Evaluation
+## 3. The systems I built and what I compared them against
 
-This section walks through three distinct generative-AI problems Sonder solves, each with a documented champion implementation in production and a competing approach we evaluated against. The three problems were chosen to cover three architecturally different surfaces — retrieval-grounded generation, validator-gated conversational generation, and feature-pipeline ranking — rather than three variants of the same pattern.
+I'm picking three problems to walk through in detail, each architecturally different from the other two: a retrieval-grounded generation problem, a validator-gated conversational generation problem, and a feature-pipeline ranking problem. For each I had a champion approach in production and a documented baseline I evaluated against.
 
-### 3.1 Problem one — itinerary generation: retrieval-grounded RAG versus prompt-only language model
+### 3.1 Itinerary generation — full RAG pipeline against pure prompt LLM
 
-**The problem.** A user supplies a destination, dates, a budget, free-text persona answers, and constraints (must-haves, things to avoid). The system must produce a day-by-day itinerary that (a) names *specific* venues, (b) respects every negative constraint, (c) fits a stated pace and budget tier, and (d) carries a short *"why this?"* rationale per activity in the persona's voice.
+**What the user is trying to do.** Punch in a destination, dates, a budget, free-text answers about why they're travelling, plus must-haves and things to avoid. Get back a day-by-day itinerary that names *specific* places, respects every negative constraint, fits their pace and budget, and tells them *why this particular activity for you*.
 
-**Champion approach.** A retrieval-augmented generation pipeline. The user's persona is inferred across three pipelines running in parallel — a text embedder, a 27-label emotion classifier over the user's free text, and a language model that picks dimension labels from a closed enum. None of the three sees the other two's outputs while running. The destination is selected and ranked from a vector store of curated city contexts. Activities are retrieved from a per-destination vector store, ranked through a feature pipeline (cosine score, persona-question salience-weighted overlap, ordinal pace fit, budget feasibility, interest overlap), then handed to the itinerary-generating language model. The model receives the user's persona, the retrieved real activities, and the emotional-signature framing — but never the ranker weights, the cosine scores, or any other user's persona. Outputs stream day-by-day so the user sees day one render within fifteen seconds while later days are still generating.
+**My approach.** Retrieval-augmented generation grounded in the curated venue corpus. The user's persona gets inferred across three pipelines running in parallel — a text embedder, the GoEmotions cosine classifier over their free text, and a language model that picks PPM dimension labels from a closed tool-use enum. None of the three sees the others' outputs while running. The destination gets selected and ranked from the city vector store. Activities for that destination get retrieved from the activity vector store, ranked through a feature pipeline (cosine score, persona-question salience-weighted overlap, ordinal pace fit, budget feasibility, interest overlap), then handed to the itinerary-generating language model.
 
-A separate validator engine evaluates the result on seven categories (budget fit, pacing realism, must-haves covered, avoid-list respected, day sequence logic, activity specificity, feasibility risk). Outputs that fail can be sent through a refinement loop — up to three regeneration attempts, each one re-embedding the persona with the failure feedback baked in so the language model gets fresh context rather than grinding on the same query.
+The model receives: the user's persona, the retrieved real activities, the emotional signature framing. The model never sees: the ranker weights, the cosine scores, any other user's persona, the validator's prompt. It's given exactly the slice of context it needs and nothing else. Outputs stream day-by-day — Day 1 renders on the screen within fifteen seconds while Day 7 is still being generated. The streaming pattern parses JSON forward-only and yields a parsed day the moment its closing brace lands, so the user is reading and the model is still writing.
 
-**Challenger approach.** The same user persona and constraints rendered into a single prompt asking the language model to generate the itinerary cold. No retrieval, no validator, no refinement, no streaming.
+A separate validator engine then critiques the result across seven categories — budget fit, pacing realism, must-haves covered, avoid-list respected, day-sequence logic, activity specificity, feasibility risk. Outputs that fail can go through a refinement loop, up to three regeneration attempts, each one re-embedding the persona with the failure feedback baked in so the model gets a fresh query rather than grinding on the original.
 
-**Comparative evaluation.**
+**The challenger.** Same persona and constraints rendered into a single prompt. Language model writes the itinerary cold. No retrieval, no ranker, no validator, no refinement, no streaming. The lazy version.
 
-| Dimension | Champion (RAG + rank + validator) | Challenger (prompt-only) |
+**What I measured.**
+
+| Dimension | Champion (RAG + rank + validator) | Challenger (prompt only) |
 |---|---|---|
-| **Specificity** — does each activity description identify a real, named place? | High; named venues, neighbourhoods, times of day | Low; generic "old town", "have a nice dinner" |
+| **Specificity** — named venues, neighbourhoods, times of day | High | Low — generic "old town", "have a nice dinner" |
 | **Must-haves coverage** | 96-100% (validator-gated) | 60-75% |
-| **Avoid-list violations** | ~0% (deterministic pre-filter on retrieval) | 10-25% (model invents venues that fit the negative list) |
-| **Budget adherence** | Hard pre-rank filter — never violated | 30-40% violation rate on luxury-tier prompts |
-| **Validator first-try approval** | ~78% (telemetry) | n/a — no validator |
-| **Time to first day visible** | 12-18 seconds (streamed) | 45-90 seconds (whole-buffer) |
-| **Hallucinated venue rate** | Rare; model grounded on real activities | Common; plausible-sounding fictional venues |
-| **Output token cost / trip** | ~6-8k tokens (large tier) plus retrieval | ~6-10k tokens (large tier) |
+| **Avoid-list violations** | ~0% (deterministic pre-filter on retrieval) | 10-25% — model invents plausible venues that violate the negative list |
+| **Budget adherence** | Hard pre-rank filter, never violated | 30-40% violation rate on luxury-tier prompts |
+| **Validator first-try approval** | ~78% | Not applicable |
+| **Time to first day visible** | 12-18 seconds (streamed) | 45-90 seconds (whole-buffer wait) |
+| **Hallucinated venue rate** | Rare — model grounded on real activities | Common — plausible-sounding fictional places |
+| **Output token cost per trip** | ~6-8k tokens (large tier) plus retrieval | ~6-10k tokens (large tier) |
 
-**Trade-offs.** The champion requires ongoing curation of the destination and activity vector stores; if a user picks a novel city not in the corpus, the system falls back to a generation-from-prompt mode that re-introduces the hallucination risk of the challenger. The challenger is operationally trivial but products without grounding feel generic — the *specificity* dimension is precisely what makes Sonder feel different from a generic recommender.
+**The integration challenge that nearly killed this.** The user-initiated revise flow used to call the same three-attempt refinement loop as the initial generation pipeline. Each iteration is a full regen plus validate. The loop was designed for the orchestrator's quality gate, not for revision. Wall time on a revise was hitting two to three minutes, and Cloudflare's edge function proxy was killing the connection somewhere around thirty seconds, causing the page to hang with no error and no result. I rebuilt the revise path as a single-pass classifier-routed pipeline with SSE streaming so days appear as they parse. Then routed small-scope edits to a day-targeted prompt that regenerates only the affected days instead of the whole trip. Average revise dropped from ~150 seconds to ~25 seconds.
 
-### 3.2 Problem two — persona-grounded chat: validator-gated small-model with edit-in-place repair versus naive large-model
+**Trade-offs.** The champion approach requires ongoing curation of the destination and activity corpora — fifty cities and five hundred activities is a curation budget, not an infinity. When a user picks a city not in the corpus, the system falls back to "invent plausible activities for {city}" mode, which re-introduces the hallucination risk of the challenger. Automated corpus expansion is real future work and not a v1 problem. The challenger is operationally trivial but the outputs are generic, which is precisely what every existing recommender already produces. Sonder exists to not be that.
 
-**The problem.** When a user texts a synthetic persona inside Sonder, the persona must reply in character: texting register, no assistant voice, no AI leakage, no semantic genericity, no contradiction of prior conversation, all within a perceived-real latency budget of under five seconds.
+### 3.2 Chat replies — small-tier with validator-repair against large-tier prompt
 
-**Champion approach.** The chat-reply task is routed to the small language-model tier (Claude Haiku or GPT-4o-mini depending on configuration). The persona's reply prompt layers three private framing blocks before the style rules: a hard trip-scope block ("the trip is to *destination*; never mention your home city or alternative destinations"), a private psychology block ("PPM" — push / pull / motivation dimensions passed as framing, with explicit instructions never to name those words), and an emotional-signature block ("let this shape cadence, warmth, pacing — never the vocabulary"). The three pre-LLM fetches needed to assemble this context — a vector-store candidate lookup, an itinerary fetch, and the message history — run in parallel rather than sequentially.
+**What the user is trying to do.** Text a synthetic persona inside Sonder. Get a reply in character — texting register, no assistant voice, no AI leakage, no semantic genericity, no contradiction of what the persona said three turns ago — within a perceived-real latency budget of under five seconds.
 
-The reply broadcasts to the user *immediately* after generation, before validation. A separate validator task then runs asynchronously. It first executes a deterministic local pre-check (minimum reply length, repetition detection, semantic genericity score against a fourteen-stem filler set). If issues are found, a repair prompt rewrites the reply in a single pass. If the repair changes the text, the persisted message is updated and the chat surface receives a *message-edited* event that swaps the bubble text in place. The user sees the reply land instantly and watches it quietly self-correct a moment later when needed — quality without latency cost.
+**My approach.** Route chat replies to the small language-model tier (Claude Haiku, or GPT-4o-mini under fallback). The persona's prompt layers three private framing blocks before the style rules. First, a hard trip-scope block — *"the trip is to Lisbon; never mention your home city, never suggest alternative destinations"* — which prevents the model from drifting back to wherever its training data has more mass. Second, a private psychology block where PPM dimensions and the emotional signature are passed as framing with an *explicit instruction never to name the words push, pull, motivation, alignment, or friction in output*. Third, a per-turn breathe hint when recent turns have been too question-heavy.
 
-**Challenger approach.** The same persona system prompt routed to the large language-model tier with no validator and no edit-in-place repair.
+The three pre-LLM fetches needed to assemble the context — vector store candidate lookup, itinerary fetch, message history — run in parallel rather than serial. That alone saved 600-800ms.
 
-**Comparative evaluation.**
+Here's the trick that makes the whole thing work: **the reply broadcasts to the user immediately, before validation.** A separate validator task runs asynchronously after broadcast. It first does a deterministic local pre-check (minimum reply length, repetition detection, semantic genericity score against the fourteen-stem filler set). If issues fire, a repair prompt rewrites the reply in a single pass under a 50-word ceiling. If the repair actually changes the text, the persisted message gets updated and the chat surface receives a *message-edited* event that swaps the bubble text in place.
 
-| Dimension | Champion (small tier + validator stack) | Challenger (large tier, no validator) |
+The user sees the reply land instantly. They watch it quietly self-correct a moment later when needed. Quality without latency cost. This is the single biggest UX win in the system and the pattern generalises to any conversational surface where small-model-first plus async-repair outperforms a single large-model call.
+
+**The challenger.** Same persona system prompt routed to the large tier with no validator and no edit-in-place.
+
+| Dimension | Champion (small-tier + validator) | Challenger (large-tier, no validator) |
 |---|---|---|
 | **Median time to user-visible reply** | ~1.4 seconds | ~4.2 seconds |
-| **First-try validation pass rate** | ~74% | n/a |
-| **Repair-triggered rate** | ~26% | n/a |
-| **Banned filler emission** (after post-cleanup) | <1% | 12-18% |
-| **Token-level failures** (empty, stutter) | 0% (local pre-check kills pre-LLM) | 1-2% |
+| **First-try validation pass rate** | ~74% | N/A |
+| **Repair-triggered rate** | ~26% | N/A |
+| **Banned-filler emission after cleanup** | <1% | 12-18% (*"oh nice", "honestly", "love that"*) |
+| **Token-level failures (empty, stutter)** | 0% (local pre-check kills pre-LLM) | 1-2% |
 | **Persona consistency across 20 turns** | High | Medium — drifts toward generic supportive register |
 | **Cost per reply** | ~$0.0005 | ~$0.012 |
 
-**Trade-offs.** The champion requires the validator stack to be maintained per surface (each conversational surface — chat, persona reveal, proposal evaluator, social posts — has its own critic prompt and category set). The challenger is operationally simpler but visibly slower under the typing indicator, three times more expensive per reply, and 12-18% of replies contain register-breaking filler that real people texting do not use.
+Three times faster, twenty-four times cheaper per reply, and the user doesn't experience the small tier as small.
 
-The *async edit-in-place* mechanism is the load-bearing user-experience trick. A user typing in a chat does not have the patience to wait for a validator. By unblocking the broadcast and treating repair as a non-blocking correction, Sonder serves large-model quality at small-model latency.
+### 3.3 Co-traveller matching — feature pipeline with learning against pure cosine baseline
 
-### 3.3 Problem three — co-traveller matching: explainable feature pipeline with per-user learning versus pure cosine similarity
+**What the user is trying to do.** Get a top-three list of potential co-travellers ranked by a number that honestly means *probability we'll click*, not a uniformly high cosine that hides everyone in a narrow band.
 
-**The problem.** Given a user and a pool of candidate travellers, surface the top three most compatible matches with a calibrated compatibility score that honestly drives the reciprocal-approval probability — the chance that the matched persona would also approve back.
+**My approach.** A stage-based ranking engine that runs the same code path across three matching surfaces — co-traveller, destination, activity — with each surface declaring its own policy (which features to score, what weights, what feedback hyperparameters). Ten reusable scoring functions are available to any policy: raw cosine retrieval score, persona-question overlap weighted by the user's per-question answer salience, emotional-signature exact match, pace ordinal distance, budget ordinal distance, travel-style exact match, two flavours of interest overlap, activity cost fit, pace-duration fit.
 
-**Champion approach.** A stage-based ranking pipeline applied uniformly across three matching surfaces (co-traveller, destination, activity). Each surface declares its own *policy*: which features to score, what weights to use, what hyperparameters govern feedback-driven learning. The engine itself is generic — it knows nothing about specific features or weights and just executes the declared stage list.
+Hard pre-ranking filters fire before scoring. Budget feasibility — raw per-day budget cutoff, no fudge multipliers, because if you said your budget is $80/day you didn't mean $200/day. Avoid-list veto. Travel-style hard filter so couples never see solo personas. **Same-gender hard filter for solo travellers** so solo women match women and solo men match men. That last one is a safety default for cold-strangers matching and was the source of the biggest production firedrill in the entire project — detailed in a moment.
 
-Ten reusable scoring functions are available to policies:
+Per-user learning runs through two paths. The explicit path: free-text revise feedback gets keyword-mapped to specific features (saying *"cheaper"* boosts the budget-fit weight going forward), with decay so repeated similar feedback dampens rather than oscillates. The implicit path: a sarcasm-aware, negation-aware signal scanner runs after every chat message, extracts compatibility cues from the text, and re-ranks the candidate with new weights. The refreshed match score is what the persona's reciprocal-approval probability reads at decision time. What a user reveals mid-conversation directly influences whether they end up matched.
 
-- Raw cosine retrieval score
-- Persona-question overlap weighted by the user's per-question salience (users who wrote more revealing free-text on a question get that question weighted higher in their own matching automatically)
-- Emotional-signature exact match
-- Pace ordinal distance, budget ordinal distance
-- Travel-style exact match
-- Two flavours of interest overlap (Jaccard and tag-aware)
-- Activity cost fit, pace-duration fit
-
-Hard pre-ranking filters enforce safety and feasibility before scoring: budget feasibility (raw per-day budget cutoff, no fudge multipliers), avoid-list veto, travel-style hard filter (couples never see solo personas, solo travellers never see family-style personas), and a same-gender hard filter for solo travellers (women match women, men match men — a deliberate cold-strangers safety default).
-
-Per-user learning runs through two paths: an explicit text-feedback path that maps a user's free-text revision feedback to specific features (saying "cheaper" boosts the budget-fit weight), and an implicit chat-signal scanner that re-ranks the candidate after every user message based on conversational cues. Both paths apply decay so repeated similar feedback dampens rather than oscillates the weights.
-
-**Challenger approach.** Pure cosine retrieval: the vector store returns the top three candidates by similarity to the user's persona embedding. No features, no policy, no filters, no learning.
-
-**Comparative evaluation.**
+**The challenger.** Pure cosine retrieval. Top three by similarity. No features, no policy, no filters, no learning.
 
 | Dimension | Champion (feature pipeline) | Challenger (cosine-only) |
 |---|---|---|
-| **Top-3 score distribution** | 0.45 - 0.75 typical; calibrated to feature explanation | 0.78 - 0.92; artificially high (cosine is similarity, not compatibility) |
-| **Feature explainability** | Per-match reasons + compatibility breakdown | None — just a number |
-| **Cross-style bleed** (couples seeing solo personas, etc.) | 0% (hard filter) | 25-40% (cosine ranks across all axes) |
-| **Same-gender enforcement for solo** | 100% when gender is set | None |
-| **Adapts to in-chat signals** | Yes — re-ranks per turn via signal scanner | No (frozen at retrieval time) |
-| **Adapts to revision feedback** | Yes — text-feedback path with decay | No |
-| **Reciprocal-approval calibration** | Score → probability is honest; observed approval rates land 50-65% | Cosine → probability is dishonest; observed approval rates land 85-92% (deny only on outliers) |
+| **Top-3 score distribution** | 0.45-0.75 typical — calibrated to feature explanation | 0.78-0.92 — artificially high (cosine is similarity, not compatibility) |
+| **Feature explainability** | Per-match reasons + compatibility breakdown | None |
+| **Cross-style bleed** (couples seeing solos etc) | 0% (hard filter) | 25-40% (cosine ranks across all axes) |
+| **Same-gender enforcement (solo)** | 100% when gender is set | None |
+| **Adapts to in-chat signals** | Yes — re-ranks per turn | No (frozen at retrieval time) |
+| **Adapts to revise feedback** | Yes — text-feedback path with decay | No |
+| **Reciprocal-approval calibration** | Score → probability is honest; observed approval rates 50-65% | Cosine → probability is dishonest; uniformly high observed approval (85-92%), deny meaningful only on outliers |
 
-**The calibration story is the most important finding here.** The champion's match score is calibrated such that it can be used directly as the reciprocal-approval probability: a 0.6 match score means there is roughly a 60% chance the matched persona accepts. This makes denial *meaningful* — a low score honestly produces a no. The challenger's cosine score, used as a probability, produces uniformly high approval rates that hide compatibility signal in the noise.
+**The calibration story is what matters here.** The champion's match score can be used directly as the reciprocal-approval probability — a 0.6 means a 60% chance the matched persona accepts. This makes denial *meaningful*. A low score honestly produces a no. The challenger's cosine score, used as a probability, produces uniformly high approval rates that hide compatibility signal in the noise.
 
-**Trade-offs.** The champion ships with equal-weight priors across features (one over N for N features). This is honest about uncertainty — Sonder has not yet earned confidence in per-feature importance — but leaves measurable signal on the table. The data infrastructure to learn proper weights is in place: every shown candidate, every accept, every reject is logged with the full feature breakdown at the time of the action. Phase two will compute replacement gradients (the difference between accepted and rejected feature vectors) and learn weights from accumulated events. The challenger has none of this scaffolding.
+**The pool-doubling firedrill.** When I first shipped the same-gender hard filter, top-three match scores within each gender dropped to around 0.43. Plugging that into `p_approve = match_score` meant a 57% deny rate on the reciprocal-approval roll. Users started reporting "I'm getting more denies than before." They were right. The filter had halved the effective candidate pool — 96 personas became 48 within their gender — and the top three within a smaller pool are necessarily lower-scoring. I had two options: fudge the probability formula (dishonest, breaks the calibration), or double the pool. I doubled the pool. Bumped `PERSONAS_PER_SLOT` from one to two in the seed matrix, ran the seed with `--resume` so existing personas weren't regenerated, generated 96 new personas. Top-three scores within each gender lifted 10-20 points; deny rates dropped proportionally; calibration stayed honest. Real cost: ~$4 in language model and image generation calls.
 
-### 3.4 A cross-cutting observation
+**Trade-offs.** The champion ships with equal-weight priors across features. One over N for N features. This is the honest position given that I haven't yet earned confidence in per-feature importance from data, but it leaves measurable signal on the table. The infrastructure to learn proper weights is in place: every shown candidate, every accept, every reject is logged with the full feature breakdown at the time of the action. Phase two will compute replacement gradients — the difference between accepted and rejected feature vectors — and learn weights from accumulated events.
 
-All three champion approaches share an architectural pattern worth naming: **information starvation as quality control**. The persona-inferring language model never sees the embedding vector or the emotion-classifier output it will be merged with. The validator never sees the user prompt the reply was responding to. The matcher's policy file never sees individual user data — it just declares what features to score. Each component is given exactly the slice of context relevant to its narrow task, and merged downstream rather than co-prompted upstream. This is what keeps the system's outputs defensible and prevents the language model from "writing to the answer key" of whatever the system would prefer the user to be.
+### 3.4 The pattern across all three champions
+
+Look at the three approaches together and there's one architectural decision that shows up in all of them and that I'd defend more loudly than anything else in the system: **information starvation as quality control.** The persona-inferring language model never sees the embedding vector or the GoEmotions output it will be merged with downstream. The validator never sees the user prompt the reply was responding to. The matcher's policy file never sees individual user data, just the feature names to score. Each component gets exactly the slice of context relevant to its narrow task and the merge happens downstream, not co-prompted upstream. This is what keeps the system's outputs defensible. A language model with the answer key in front of it writes to that key. A language model that has to guess writes something honest.
 
 ---
 
-## 4. Model Operations
+## 4. How it actually runs
 
-### 4.1 Deployment architecture
+### 4.1 Deployment shape
 
 Sonder is deployed across four service planes:
 
-**Edge and frontend.** The React single-page application is served from a global content-delivery network. A catch-all edge function proxies every backend call to the application server, keeping the frontend on a single domain (which is required for the web-push service worker and avoids cross-origin chat-token leakage).
+**Edge and frontend.** The React single-page application is served from a global content-delivery network. A catch-all edge function proxies every backend call to the application server, keeping the frontend on a single domain — required for the web-push service worker to register, and prevents the cross-origin tokens from being leaked. This wasn't the original plan. I tried to do it with simple HTTP redirects in the rewrite rules first; the platform refused them because cross-origin proxying through redirects is against its terms. Spent an evening on the edge-function rewrite. Worth it because the SPA stays on one domain and the API key for the backend stays out of the bundle.
 
-**Application server.** A FastAPI application hosted on a long-running container service. The single process exposes REST routes, server-sent-event streams for itinerary generation and revision, websocket endpoints for chat and notifications, and runs the synthetic-agents background loop in the same lifespan.
+**Application server.** A FastAPI process on a long-running container. The single process exposes REST routes, server-sent-event streams for itinerary generation and revision, websocket endpoints for chat and notifications, and runs the synthetic-agents background loop in the same lifespan. Designed to scale to multiple replicas with one configuration change — the in-memory websocket connection manager has to become a Redis pub/sub channel so messages sent to one container reach websocket sessions on another. The config variable is already in place; the swap is an evening, not an architecture migration.
 
-**Language-model providers.** A multi-provider routing engine reads a per-tier provider preference (small tier and large tier each pick a primary; the other is the automatic fallback). Each provider client carries its own model identifier, so cross-provider failover can never accidentally send an Anthropic model id to OpenAI or vice versa. Voice synthesis routes to a third-party text-to-speech provider with the audio cached in object storage. Synthetic-persona portraits are generated once at seed time using an image-generation model.
+**Language model providers and the routing layer.** A multi-provider routing engine reads a per-tier provider preference. Small tier (chat, openers, classifiers, *"why this?"* explanations, social posts, proposal evaluation) picks a primary; large tier (itinerary generation, complex refinement) picks another primary; either tier's automatic fallback is the other provider. Each provider client carries its own model identifier so cross-provider failover can never accidentally send an Anthropic model id to OpenAI or vice versa. This sounds obvious now but it bit me once during a Sonnet deprecation week.
 
-**Data stores.** A managed vector index holds three namespaces (destinations, activities, candidate travellers). An operational document store holds user profiles, generated itineraries, chat sessions, social posts, and the shared-itinerary negotiation log. Object storage holds binary assets (persona avatars, cached voice audio).
+**Data stores.** A managed vector index holds three namespaces — destinations, activities, candidate travellers. An operational document store holds user profiles, generated itineraries, chat sessions and messages, social posts, and the shared-itinerary negotiation log. Object storage holds binary assets — persona avatars, cached voice MP3s. Voice cache keys are SHA-256 of (text, voice_id) so a re-played message is free.
 
-The system has been designed to scale to multiple application-server replicas, with one configuration change: the in-memory websocket connection manager needs to be replaced with a Redis pub/sub channel so messages sent to one container reach websocket sessions on another. The configuration variable for this is already in place; the swap is a one-evening exercise rather than an architecture change.
+### 4.2 The full model inventory
 
-### 4.2 Complete model inventory
+Sonder orchestrates eight distinct generative or representational models, each chosen for a specific task profile rather than as a single one-size-fits-all:
 
-Sonder orchestrates eight distinct generative or representational models across its surfaces. Each was chosen for a specific task profile rather than as a single one-size-fits-all model:
+| Model | Provider | Role |
+|---|---|---|
+| **Claude Haiku 4.5** | Anthropic | Small-tier conversational surfaces: chat replies, openers, classifiers, *"why this?"* explanations, social-post and open-trip-note generation, proposal evaluation |
+| **Claude Sonnet 4.6** | Anthropic | Large-tier generative surfaces: itinerary generation, complex refinement, conflict resolution between paired travellers |
+| **GPT-4o-mini** | OpenAI | Small-tier fallback when Anthropic is unavailable |
+| **GPT-4o** | OpenAI | Large-tier fallback |
+| **text-embedding-3-small** | OpenAI | All retrieval embeddings (1536-dim) — destinations, activities, traveller profiles, persona text, GoEmotions anchor vectors |
+| **gpt-image-1** | OpenAI | Synthetic persona portrait generation, seed-time only |
+| **eleven_multilingual_v2** | ElevenLabs | Persona voice text-to-speech, with deterministic voice-ID assignment per persona based on appearance → accent → gender lookup |
+| **GoEmotions cosine classifier** | In-process | Emotion scoring over free text via cosine distance against 27 anchor vectors embedded once at process start |
 
-| Model | Provider | Role in Sonder | Why this model |
-|---|---|---|---|
-| **Claude Haiku 4.5** | Anthropic | Small-tier conversational surfaces — chat replies, openers, classifiers, *"why this?"* explanations, social-post and open-trip-note generation, proposal evaluation | Sub-2-second response time for persona-voiced texting; 25× cheaper per call than the large tier; sufficient register fidelity when paired with the validator stack |
-| **Claude Sonnet 4.6** | Anthropic | Large-tier generative surfaces — itinerary generation, complex itinerary refinement, conflict resolution between travellers | 16k output token ceiling for full-trip JSON; consistent multi-day structural coherence; superior at honouring complex negative constraints |
-| **GPT-4o-mini** | OpenAI | Small-tier fallback if Anthropic is unavailable | Same task profile as Haiku; pre-configured per-provider fallback so the small tier stays available during partner incidents |
-| **GPT-4o** | OpenAI | Large-tier fallback | Same task profile as Sonnet 4.6 |
-| **text-embedding-3-small** | OpenAI | All retrieval embeddings — destinations, activities, traveller profiles, persona text, GoEmotions anchor vectors | 1536-dim is the right size/cost trade-off for our scale; one model means all corpora share an embedding space, so cross-namespace queries are coherent |
-| **gpt-image-1** | OpenAI | Synthetic-persona portrait generation (seed-time only, ~$2-4 per 192-persona seed) | Stylised painterly outputs explicitly bias the personas away from photorealism, which is intentional for the *"Sonder Curated"* disclosure pattern |
-| **eleven_multilingual_v2** | ElevenLabs | Persona voice text-to-speech for chat playback | Multilingual voice library; voice IDs assigned deterministically per persona via appearance → accent → gender lookup; MP3 cache keyed by hash of (text, voice ID) |
-| **GoEmotions cosine classifier** | In-process (not an external API) | Emotion scoring over user free-text via cosine distance against 27 anchor vectors embedded once at process start | Lives in the same embedding space as everything else; no separate retraining cycle; defensible scores |
+The reason there are eight rather than two: each does a thing the others can't do as well or as cheaply. Haiku handles persona-voiced texting at 25× lower cost than Sonnet with no quality loss against the validator stack. Sonnet's 16k output token ceiling matters for full-trip JSON. gpt-image-1's painterly outputs are explicitly biased away from photorealism, which is right for the *"Sonder Curated"* disclosure. ElevenLabs gives the persona voice library multilingual coverage that no general-purpose TTS matches. The GoEmotions cosine classifier lives in the same embedding space as everything else, so adding it cost zero new infrastructure.
 
-**A specific design decision worth surfacing**: per-provider model identifiers. Each provider client carries its own model identifier even when both providers handle the same task tier. This means a small-tier failover never accidentally sends a Claude model identifier to OpenAI or vice versa. The configuration is `ANTHROPIC_SMALL_MODEL = claude-haiku-4-5`, `OPENAI_SMALL_MODEL = gpt-4o-mini`, with the active provider chosen by `SMALL_MODEL_PROVIDER`. Pre-configured fallback safety prevents an entire class of cross-provider failures.
+### 4.3 Prompts live in code
 
-### 4.3 Prompt updates and versioning
+Every persona-voiced prompt — chat reply, opener, proposal evaluator, social post, open-trip note, itinerary refinement, validator critics — is a module-level constant in the codebase. Versioning is by git. A prompt change is a reviewable commit. There is deliberately no external prompt store. The coupling between prompt and surrounding code is explicit, and a prompt change that breaks downstream parsing is caught by code review rather than discovered in production.
 
-Prompts live alongside the code. Every persona-voiced surface — chat reply, opener, proposal evaluator, social post, open-trip note, itinerary refinement, validator critics — has its system prompt as a module-level constant in the codebase. Versioning is by git. A prompt change is a reviewable commit, with the same review surface as any other code change. There is deliberately no external prompt store: the coupling between prompt and surrounding code is explicit and a prompt change that breaks downstream parsing is caught by code review rather than discovered in production.
+For larger structural prompt changes, the rollout pattern is to deploy the prompt change paired with a post-hoc normaliser that catches drift from outputs still in flight. The chat opener's *Hey {Name}!* greeting contract is the canonical example: when the format changed mid-deploy, both code paths gained the new prompt rules *and* a wide drifted-greeting matcher catching outputs from personas that hadn't yet observed the new prompt. Belt-and-braces because language models are stateless and you can't roll them mid-stream.
 
-For larger structural prompt changes (e.g. introducing a new banned-filler list, restructuring the persona scope blocks), the rollout pattern is to deploy the prompt change paired with the post-hoc normaliser that catches drift from older outputs still in flight. The chat opener's `Hey {Name}!` greeting contract is an example: when the format changed mid-deploy, both code paths gained the new prompt rules *and* a wide drifted-greeting matcher that catches outputs from older personas that hadn't yet observed the new prompt.
+### 4.4 The five metrics watching for drift
 
-### 4.4 Model updates and fine-tuning strategy
+Every language model surface in Sonder is instrumented through a single analytics layer. Five top-level metric families drive the dashboard:
 
-Model identifiers are environment-driven. A model bump — moving from Claude Sonnet 4.5 to 4.6, for example — is a single environment-variable change plus a redeploy. The application code is provider-agnostic and model-id-agnostic; only the routing layer and the per-provider client know specifics.
+**User satisfaction.** Match found, match approved, match denied, match regenerated, itinerary revision applied, refinement attempt counts. A spike in denies-per-match is a leading indicator of a calibration regression. A spike in revisions-per-itinerary is a leading indicator of an itinerary-quality regression.
 
-Sonder has not used fine-tuning to date. The product bets on three less-expensive techniques in combination:
+**Retrieval quality.** Retrieval completion events carrying destination count and activity count. A surface returning zero candidates points at a corpus coverage gap before users start abandoning sessions.
 
-- **Prompt engineering with explicit positive and negative examples.** Every persona-voiced prompt includes "Good shapes" and "Forbidden" example blocks. The model sees the pattern and the anti-pattern.
-- **A validator stack as the second line.** When prompt engineering misses, the validator catches it. The validator's failure analysis becomes feedback for the next prompt iteration.
-- **Per-user learning at the ranker layer.** The matching surface adapts to individual users through observed feedback rather than through a fine-tuned model.
+**Response quality.** Validator stack executions per surface, with first-try approval rate, repair count, total latency, and the continuous semantic-genericity score. The genericity score is the most useful single metric in the whole stack because it's a continuous signal — a creeping rise in mean genericity over weeks is a soft drift warning before any individual reply looks bad.
 
-Fine-tuning remains a phase-two escape hatch for surfaces where prompt engineering has demonstrably plateaued — most likely the proposal evaluator, where persona-consistent counter-suggestions across long negotiations is the hardest sustained-coherence task in the system.
+**Hallucination rate.** Itinerary and persona validation pass rates broken down by issue category — assistant-voice leakage, memory contradiction, taxonomy leakage, etc. A category climbing in isolation points at a specific regression — an uptick in memory-contradiction issues after a chat-history cap change, for example.
 
-### 4.5 Monitoring hallucinations, drift, and performance degradation
+**Itinerary completion funnel.** Plan started → trip generated → trip saved → trip viewed. The conversion between adjacent steps is the product's primary growth metric.
 
-Every language-model surface in Sonder is instrumented. Five top-level metrics drive the analytics dashboard:
+A per-feature distribution observer on the ranker side records mean, variance, and count per (surface, feature). This catches silent scale domination — for example, if raw cosine score is winning 80% of the combined ranker output because its distribution sits at 0.78 while ordinal fits sit at 0.5, that's visible in the aggregate rather than discovered three months later through empty engagement metrics.
 
-- **User satisfaction.** Match found, match approved, match denied, match regenerated, itinerary revision applied, refinement attempt counts.
-- **Retrieval quality.** Retrieval completion events with destination and activity result counts. A surface returning zero candidates is a leading indicator of corpus coverage gaps.
-- **Response quality.** Validator stack executions per surface, carrying first-try approval rate, repair count, latency, and semantic-genericity score. The genericity score is particularly useful because it is a continuous signal — a creeping rise in mean genericity over weeks is a soft drift warning before any individual reply looks bad.
-- **Hallucination rate.** Itinerary and persona validation pass rates, broken down by issue category (assistant-voice leakage, memory contradiction, etc.). A category climbing in isolation points at a specific regression — for example, an uptick in memory-contradiction issues after a chat-history cap change.
-- **Itinerary completion funnel.** Trip planning started → trip generated → trip saved → trip viewed. The conversion between adjacent steps is the product's growth metric.
+### 4.5 The feedback loops in production
 
-A per-feature distribution observer records mean, variance, and count for every ranker feature emitted, broken down by surface. This catches silent scale domination — for example, if raw cosine score is winning 80% of the combined ranker score because its distribution sits at 0.78 while ordinal fits sit at 0.5, that is visible in the aggregate rather than discovered three months later via empty engagement metrics.
+Three feedback paths are running today:
 
-Error telemetry is filtered: pure "no internet" client errors and expected 4xx responses (404 on first profile fetch, 401 from auth-state transitions) are excluded so the error feed reflects genuine bugs.
+**Implicit accept-reject events.** Every shown match, every accept, every reject is logged with the candidate's full feature breakdown at the moment of the action. This is the substrate for phase-two gradient learning.
 
-### 4.6 Feedback loops and human-in-the-loop
+**Explicit free-text revision feedback.** When a user revises a generated itinerary, the feedback is classified for scope and target (which days, which categories), then routed through either a day-targeted regeneration prompt or a full-itinerary regeneration. The free text is also keyword-mapped to ranker features for that user — saying *"cheaper"* boosts budget-fit weighting going forward, with decay so repeated similar feedback doesn't oscillate the weights.
 
-Sonder has three feedback paths active in production:
+**Live chat signals.** The sarcasm-aware signal scanner runs after every message, re-ranks the candidate, updates the match score. The persona's reciprocal-approval probability reads the live score at decision time. So what a user reveals mid-conversation directly influences whether they end up matched. This is the loop I'm most excited about because it makes the system feel responsive in a way that's hard to articulate to a stakeholder until they experience it.
 
-**Implicit accept-reject signals.** Every shown match, every accept, every reject is logged with the candidate's full feature breakdown at the moment of the action. This is the substrate for phase-two gradient learning of per-user ranker weights.
-
-**Explicit free-text revision feedback.** When a user revises a generated itinerary, their feedback is classified for scope and target (which days, which categories), then routed through either a day-targeted regeneration prompt (fast, focused) or a full-itinerary regeneration (broad changes). The free text is also keyword-mapped to ranker features for that user — saying "cheaper" boosts budget-fit weighting going forward, with decay so repeated similar feedback doesn't oscillate.
-
-**Live chat signals.** A sarcasm-aware, negation-aware signal scanner runs after every message in a chat session, extracts compatibility cues from the text, and re-ranks the candidate against the user with the new weights. The refreshed match score is what the persona's reciprocal-approval probability reads at decision time, so what a user reveals mid-conversation directly influences whether they end up matched.
-
-Human-in-the-loop is currently lightweight: stakeholders review validator-flagged samples surfaced via the analytics dashboard, prompt changes ship through git review, and the per-feature distribution dashboards are monitored manually by the product team weekly. A formal moderation queue is phase-two work — synthetic content does not need it; user-generated content (journal entries, social posts) will need it as the user base grows.
+Human-in-the-loop is currently lightweight. I review validator-flagged samples through the analytics dashboard weekly. Prompt changes ship through git review with at least one other set of eyes. A formal moderation queue is phase-two work — synthetic content doesn't need it, but user-generated journal entries and feed posts will at scale.
 
 ---
 
-## 5. Conclusion
+## 5. What I learned, what's broken, and where this goes
 
-### 5.1 Findings
+### 5.1 What worked
 
-Three architectural decisions paid off most measurably:
+**Information starvation is the single biggest architectural lever I've found.** The discipline of giving each component exactly the slice of context relevant to its narrow task — and merging downstream rather than co-prompting upstream — is what makes Sonder's outputs surprising rather than averaging-to-the-mean. The persona inference, the validator, the matcher's policy declarations, the synthetic-persona blind-writer seeding, they all use the same pattern. The discipline carries.
 
-**Information starvation as quality control.** Running the persona-inferring language model in parallel with the embedder and emotion classifier, each blind to the others' outputs, keeps the persona authentic rather than reverse-engineered from what the system would prefer the user to be. The same pattern shows up in the validator (which never sees the user prompt the reply was responding to), in the matcher's policy declarations (which never see individual user data), and in the synthetic-persona seeding (where the persona writer never sees the dimension labels that will later be assigned to its character). Across all four cases, the discipline of giving each component exactly the slice of context relevant to its narrow task makes outputs defensible and surprising rather than averaging-to-the-mean.
+**Async edit-in-place validation is the chat-UX win nobody is talking about.** Small-model-first plus async-repair gives users large-model-validated quality at small-model latency. Three times faster, twenty-four times cheaper per reply, and users don't experience the seam. I'd recommend this pattern to any team running conversational AI in production.
 
-**Async edit-in-place validation.** Unblocking the chat-reply broadcast and treating validator-driven repair as a non-blocking correction is the single biggest user-experience win in the system. Users perceive a 1.4-second latency; they observe a quietly self-correcting reply a moment later when needed; the quality floor is large-model-validated. The pattern generalises to any conversational surface where a small-model-first plus async-repair pipeline outperforms a single large-model call on both latency and cost.
+**Equal-weight priors with logged-everything infrastructure is the honest move when you don't yet have data.** Refusing to hand-tune ranker weights and instead instrumenting every feature observation to disk is what keeps the door open for phase-two learning. Most products tune weights by gut and then can't reconstruct why. Sonder waits.
 
-**Equal-weight priors with logged-everything learning infrastructure.** Refusing to hand-tune ranker weights and instead instrumenting every feature observation to disk is the honest choice when product intuition has not yet been validated by data. The matcher ships with one-over-N priors today; phase-two gradient learning has the substrate it needs in place because the day-zero engineering kept the door open.
+### 5.2 What's broken or limited
 
-### 5.2 Limitations
+**Equal-weight priors leave measurable signal on the table.** Honest acknowledgement of a known gap. Resolution is engineering work — accumulate enough feedback events to compute replacement gradients, ship the learning loop. Not a research problem.
 
-**Equal-weight priors leave measurable signal on the table.** This is the most quantifiable limitation. Resolution requires accumulating enough feedback events to compute replacement gradients — pure engineering work, not a research problem.
+**Synthetic-only safety filters.** The same-gender hard filter is enforced against synthetic persona metadata. Real users joining the matching pool would need a verified gender field. Currently self-reported via the backfill prompt. Scale-up to real-user matching needs identity verification, and that's an entire phase-two product surface.
 
-**Synthetic-only safety filters.** The same-gender hard filter is enforced against synthetic-persona metadata. Real users joining the matching pool would need a verified gender field — currently self-reported via a backfill prompt, not identity-verified. Scale-up to real-user matching needs an identity-verification layer.
+**No automated test suite for LLM-dependent outputs.** Local deterministic tests cover routing, validators, ranking math, pipeline shapes. The LLM-dependent surfaces are monitored through production telemetry rather than CI-tested, because LLM outputs are hard to assert against deterministically. This is a deliberate trade-off but it means regressions can ship and only get caught by aggregate metric drift. Mitigating with the validator stack telemetry is the current answer; building a sample-evaluation harness with LLM-as-judge is a phase-two consideration.
 
-**No automated test suite for LLM-dependent surfaces.** Local deterministic tests cover routing, validators, ranking math, and pipeline shapes — but LLM-dependent surfaces (chat replies, itinerary specificity, persona inference) are monitored via production telemetry rather than tested in CI. This is a deliberate trade-off because LLM outputs are hard to assert against, but it means regressions can ship and be caught only by aggregate metric drift.
+**Vector store corpus maintenance is manual.** Fifty curated destinations and five hundred curated activities is a curation budget I'm carrying personally. A user picking a city not in the corpus falls back to a "invent plausible activities for {city}" prompt that re-introduces the exact hallucination risk the RAG pipeline normally controls. Automated corpus expansion is phase two: scrape candidate venues from public sources, embed on-demand, validate against the same critic stack. Estimated effort: two engineering weeks plus an ongoing curation review queue.
 
-**Vector-store corpus maintenance is manual.** Destinations and activities are curated. A user picking a novel city not in the corpus falls back to a "invent plausible activities for the city" prompt that reintroduces the hallucination risk the RAG pipeline normally controls. Automated corpus expansion is phase-two work.
+**Synthetic content doesn't auto-throttle.** The synthetic-agents loop runs at the same cadence regardless of real-user density. Once real-user content reaches critical mass, the synthetic side should throttle down. Right now it's a manual configuration change. A self-balancing implementation is straightforward — track new-content-per-hour by source — but I haven't shipped it yet because the platform isn't there yet.
 
-**Synthetic content does not yet auto-throttle.** The synthetic-agents loop runs at the same cadence regardless of real-user density. Once real-user content reaches a critical mass, the synthetic side should throttle down — currently a manual configuration change.
+### 5.3 Where this goes
 
-### 5.3 Future improvements
+- **Phase-two ranker learning.** Replace equal-weight priors with gradient-learned weights from accumulated accept-reject events. The data substrate is already in place.
+- **Automated activity-corpus expansion.** Scraping plus validator-gated embedding for novel destinations. Removes the prompt-fallback hallucination risk.
+- **Multi-modal persona reveal.** The cinematic destination-reveal screen is currently photo-driven; phase two could add persona-voiced audio greetings (the voice infrastructure already exists for chat) or short generated video.
+- **Layered prompt-injection defence.** The current input sanitiser is a lightweight regex first-line. A language model classifier on top for high-stakes free-text fields (proposals, chat, journal) is the obvious second layer.
+- **Cross-candidate diversity in ranking.** The matcher's reranker stage is declared as a no-op in v1, reserved for diversity / fatigue / sequencing features. Maximum marginal relevance would prevent the top three matches from all being near-duplicates.
+- **Verified identity for real users.** Self-reported gender is a starting point, not a scale answer.
 
-- **Phase-two ranker learning** replaces equal-weight priors with gradient-learned weights from accumulated accept-reject events. The data is being collected; the model is the work.
-- **Automated activity-corpus expansion** for novel destinations via web search, public APIs, and on-demand embedding. Removes the prompt-fallback hallucination risk.
-- **Multi-modal persona reveals.** The cinematic destination-reveal screen is currently photo-driven; phase two could add persona-voiced audio greetings (the voice infrastructure already exists for chat) or short generated video.
-- **Layered prompt-injection defence.** The current input sanitiser is a lightweight regex-pattern first line. A language-model classifier on top for the high-stakes free-text fields (proposals, chat, journal) is the obvious second layer.
-- **Cross-candidate diversity in ranking.** The matcher's pipeline includes a reranker stage that is currently a no-op, reserved for diversity / fatigue / sequencing features. Maximum marginal relevance would prevent top-three matches from all being near-duplicates of each other.
-- **Verified identity for real users.** Same-gender matching by self-report is a starting point. Scale-up needs verification.
+### 5.4 The sources I drew from
 
-### 5.4 References, datasets, tools, and resources
-
-**Models used.**
-- Anthropic Claude (Haiku 4.5 for small-tier conversational surfaces; Sonnet 4.6 for large-tier generation; either tier available for the validator critic stack)
-- OpenAI GPT-4o-mini and GPT-4o (fallback provider, same tier split)
-- OpenAI text-embedding-3-small (1536-dimensional embeddings, used uniformly across all retrieval surfaces)
-- OpenAI gpt-image-1 (synthetic-persona portrait generation; seed-time only)
-- ElevenLabs `eleven_multilingual_v2` (persona voice text-to-speech)
-- GoEmotions 27-label emotion classifier (cosine over embedding space, in-memory)
+**Models used in production.**
+- Anthropic Claude — Haiku 4.5 for small-tier conversational surfaces, Sonnet 4.6 for large-tier generation, validator tier available on either
+- OpenAI — GPT-4o-mini and GPT-4o (fallback provider, same tier split)
+- OpenAI text-embedding-3-small — 1536-dimensional embeddings, used uniformly across every retrieval surface
+- OpenAI gpt-image-1 — synthetic persona portrait generation, seed-time only
+- ElevenLabs eleven_multilingual_v2 — persona voice TTS
+- GoEmotions 27-label classifier — in-process cosine over anchor vectors, lives in the shared embedding space
 
 **Datasets and curated corpora.**
-- 192 LLM-designed synthetic solo travellers and 18 couples, all seeded into the vector store and Firestore.
-- Curated destination corpus (~50 cities) and per-destination activity corpora (~500 activities total).
-- Closed twelve-dimension push-pull persona vocabulary, each dimension defined by substring-matched keyword sets.
-- Closed eight-key emotional-signature taxonomy with tone-anchored glosses.
-- GoEmotions 27-label emotion vocabulary used as anchor vectors for cosine classification.
+- 192 LLM-designed synthetic solo travellers and 18 couples, all seeded into the vector store
+- Hand-curated destination corpus (~50 cities) and per-destination activity corpora (~500 activities total)
+- Closed twelve-dimension push-pull persona vocabulary
+- Closed eight-key emotional-signature taxonomy with tone-anchored glosses
+- GoEmotions 27-label emotion vocabulary
 
-**Academic frameworks incorporated.**
-- *Dann, G. (1977). "Anomie, Ego-Enhancement and Tourism." Annals of Tourism Research, 4(4), 184-194.* — Original Push-Pull Motivation Theory formulation in travel research.
-- *Crompton, J. L. (1979). "Motivations for Pleasure Vacation." Annals of Tourism Research, 6(4), 408-424.* — Extension of Dann's framework with the empirically observed seven push and two pull motives that informed our six-and-six adaptation.
-- *Demszky, D., et al. (2020). "GoEmotions: A Dataset of Fine-Grained Emotions." arXiv:2005.00547.* — Source of the 27-label emotion taxonomy we use as anchor vectors.
+**Academic frameworks the system is built on.**
+- *Dann, G. (1977). "Anomie, Ego-Enhancement and Tourism." Annals of Tourism Research, 4(4), 184-194.* — Original Push-Pull Motivation Theory in travel research.
+- *Crompton, J. L. (1979). "Motivations for Pleasure Vacation." Annals of Tourism Research, 6(4), 408-424.* — Extension of Dann's framework that informed the six-and-six dimension adaptation.
+- *Demszky, D., et al. (2020). "GoEmotions: A Dataset of Fine-Grained Emotions." arXiv:2005.00547.* — Source of the 27-label emotion taxonomy used as anchor vectors.
 
-**External APIs and third-party services.**
-- Wikipedia REST API (destination context + lede paragraphs + infobox imagery)
-- Pixabay API (popularity-ranked travel photography)
-- OpenWeather API (current weather by lat/lon)
-- Nominatim / OpenStreetMap (geocoding with 1-req/sec etiquette)
-- ExchangeRate API with 30-currency hardcoded fallback table
+**External APIs and services.**
+- Wikipedia REST API — destination context + lede paragraphs + infobox imagery
+- Pixabay — popularity-ranked travel photography for the cinematic reveal
+- OpenWeather — current weather by lat/lon
+- Nominatim / OpenStreetMap — geocoding with 1-req/sec etiquette
+- ExchangeRate API — currency conversion with 30-currency hardcoded fallback
 
 **Infrastructure.**
-- Pinecone (managed vector index, three namespaces).
-- Firestore (operational document store, named-database mode).
-- Firebase Authentication.
-- Firebase Storage (binary assets).
-- Render (application server hosting).
-- Cloudflare Pages with edge functions (frontend hosting and backend proxying).
-- VAPID web push (offline notifications via service worker).
+- Pinecone — managed vector index, three namespaces
+- Firestore (named-database mode) — operational document store
+- Firebase Authentication, Firebase Storage
+- Render — application server hosting
+- Cloudflare Pages + edge functions — frontend hosting and backend proxying
+- VAPID + service worker — offline web push notifications
 
-**Tools and libraries.**
-- FastAPI, Pydantic v2, httpx, slowapi, pinecone-client v3, webpush, firebase-admin, openai, anthropic.
-- React 18, Vite, Framer Motion.
-- pytest (local test suites; not run in CI).
-- Sentry (error telemetry with client-noise filtering), PostHog (product analytics).
-
-**Resources.**
-- Source repository: github.com/shreyast36/sonder
-- Internal product README covering every architectural decision and module
-- Per-person build checklist sustaining the system across the team
+**The repository where the work lives.**
+github.com/shreyast36/sonder
 
 ---
 
-*End of report.*
+*Built over a series of sleepless nights by someone who got tired of explaining their trip to an algorithm.*
