@@ -1297,7 +1297,7 @@ A few merged PRs worth recording because the failure modes are subtle:
 
 **`shreyas/cotraveller/presence.py`** — heartbeat writes ONLY `last_seen`, never rewrites a boolean `online` flag (which would go stale on dropped connections). `is_online` is always derived from `last_seen < TTL`.
 
-**`shared/currency.py`** — live rates from `exchangerate-api.com` with a **3-second timeout**, hardcoded `FALLBACK_RATES` table for 30 currencies used in `LOCAL_MODE` or when the API is unreachable. Format is units-per-1-USD (inverted from the API's USD-per-1-unit) so all conversions are a single multiplication.
+**`shared/currency.py`** — static `FALLBACK_RATES` table for 30 currencies. Format is units-per-1-USD so all conversions are a single division. A live-rates integration was scoped initially but never shipped; the static table is accurate enough for budget-tier classification (where the user's intent is ranges like *"mid-range"* / *"luxury"* rather than a precise figure). Refresh quarterly.
 
 **`shared/email.py`** — provider abstraction over `resend | sendgrid | ses`. `LOCAL_MODE` silently logs instead of sending; test endpoints set `force=True` to bypass. Pre-flight raises a concrete `"set EMAIL_API_KEY"` error before reaching the provider rather than surfacing an opaque 401.
 

@@ -49,7 +49,7 @@ The personality stack is three lenses at three granularities: 27-label fine emot
 
 ### 2.3 The travel APIs we integrated and the failure modes each one had
 
-A travel product without real data about real places is fiction. The team integrated five external APIs, and every single integration revealed a failure mode that needed engineering around.
+A travel product without real data about real places is fiction. The team integrated four external APIs, and every single integration revealed a failure mode that needed engineering around. Budget conversion is handled by a static rate table in the codebase rather than a live forex API — accurate enough for budget-tier classification, one less dependency to maintain.
 
 **Wikipedia REST API + Wikimedia Commons** power destination overview paragraphs and primary imagery. Wikipedia's article-summary endpoint returns the lede paragraph plus the article's infobox image, which is sourced from Wikimedia Commons under permissive licensing. The integration looked trivial until it was tested on a region rather than a city. For *"Patagonia"*, the infobox image is a Wikimedia Commons SVG showing southern South America with the region shaded gold. The cinematic reveal screen was rendering Wikimedia location maps as the hero photo on every region-shaped query. The fix took an evening: a URL-substring rejection filter that drops any `.svg` (almost always maps, flags, or coats of arms) plus any URL containing *map*, *karte*, *location*, *locator*, *satellite*, *topographic*, *flag_of*, *coat_of_arms*, or *seal_of*. The fix shipped alongside a 14-day client-side cache, with the cache key bumped so users with already-cached maps would refetch on next load.
 
@@ -61,9 +61,7 @@ The two image sources are deliberately layered. Wikimedia gives us editorial-qua
 
 **Nominatim (OpenStreetMap)** handles geocoding from city/country tuples to coordinates. OSM's terms of service request no more than one request per second from a single source. The integration wraps Nominatim in a process-wide token-bucket rate limiter and a 30-day disk cache.
 
-**ExchangeRate API** handles currency conversion at the input boundary. All internal cost fields are USD; conversion happens once when the user submits a budget. The integration has a 3-second timeout and a hardcoded fallback table for thirty currencies so the product does not break when the free tier flakes overnight.
-
-A consistent pattern across all five: **cache aggressively, fail soft, never let a partner outage break the product.** Wikipedia down? Use Pixabay. Pixabay down? Fall back to a gradient hero. OpenWeather slow? Skip the weather line. Nominatim rate-limited? Cache hit. For a product where users are mid-flow planning the trip of their year, the user never sees an error screen because a third party had a bad afternoon.
+A consistent pattern across the four integrations: **cache aggressively, fail soft, never let a partner outage break the product.** Wikipedia down? Use Pixabay. Pixabay down? Fall back to a gradient hero. OpenWeather slow? Skip the weather line. Nominatim rate-limited? Cache hit. For a product where users are mid-flow planning the trip of their year, the user never sees an error screen because a third party had a bad afternoon.
 
 ### 2.4 The synthetic-traveller corpus — why we built a population from scratch
 
@@ -440,7 +438,6 @@ Human-in-the-loop oversight is currently lightweight. The team reviews validator
 - Pixabay for travel photography powering the cinematic reveal.
 - OpenWeather for current weather by latitude and longitude.
 - Nominatim / OpenStreetMap for geocoding.
-- ExchangeRate API for currency conversion with a 30-currency hardcoded fallback.
 
 **Infrastructure.**
 - Pinecone (managed vector index, three namespaces).

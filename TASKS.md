@@ -78,7 +78,7 @@ Jahnvi owns only the user-facing input schemas. Each other team member owns thei
 
 ### Multi-currency
 
-- [x] `shared/currency.py` — Implement `convert_to_usd(amount, currency_code)` and `format_budget_display(budget_usd, currency_code)`. Set `EXCHANGE_RATE_API_KEY` in `.env` for live rates; static `FALLBACK_RATES` used in LOCAL_MODE
+- [x] `shared/currency.py` — Implement `convert_to_usd(amount, currency_code)` and `format_budget_display(budget_usd, currency_code)`. Uses a static `FALLBACK_RATES` table for 30 currencies; refresh quarterly
 
 ### Design (before any frontend code)
 

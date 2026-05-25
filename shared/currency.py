@@ -6,15 +6,14 @@ All internal cost fields (budget_usd, cost_usd, avg_daily_cost_usd, total_budget
 daily_cost_usd) are denominated in USD. Conversion happens once at the input boundary —
 nothing downstream needs to change.
 
-Live rates: if EXCHANGE_RATE_API_KEY is set, fetches from exchangerate-api.com.
-Fallback:   static approximate rates for 30 common currencies — used in LOCAL_MODE
-            or when the API is unreachable. Update FALLBACK_RATES periodically.
+We use a static FALLBACK_RATES table for 30 common currencies. A live-rate API
+integration was scoped initially but never shipped; the static table is accurate
+enough for budget-tier classification (where the user's intent is ranges like
+"mid-range" / "luxury" rather than a precise figure). Refresh FALLBACK_RATES
+periodically — quarterly is plenty.
 """
 
-import httpx
-from shared.config import EXCHANGE_RATE_API_KEY, LOCAL_MODE
-
-# Approximate rates to USD — update quarterly or when running in LOCAL_MODE.
+# Approximate rates to USD — refresh quarterly.
 # Format: { ISO-4217 code: units-of-currency-per-1-USD }
 FALLBACK_RATES: dict[str, float] = {
     "USD": 1.0,
@@ -52,7 +51,7 @@ FALLBACK_RATES: dict[str, float] = {
 
 async def convert_to_usd(amount: float, currency_code: str) -> float:
     """
-    Convert amount in the given currency to USD.
+    Convert amount in the given currency to USD using FALLBACK_RATES.
 
     Expected input:
         amount        = 150000.0
@@ -61,18 +60,13 @@ async def convert_to_usd(amount: float, currency_code: str) -> float:
     Expected output:
         1796.41   (≈ 150000 / 83.5)
 
-    Falls back to FALLBACK_RATES if the live API is unavailable or not configured.
     Raises ValueError for unknown currency codes not in FALLBACK_RATES.
+    Async signature is preserved for API compatibility with the orchestrator.
     """
     code = currency_code.upper()
 
     if code == "USD":
         return amount
-
-    if not LOCAL_MODE and EXCHANGE_RATE_API_KEY:
-        rate = await _fetch_live_rate(code)
-        if rate is not None:
-            return amount / rate
 
     if code not in FALLBACK_RATES:
         raise ValueError(
@@ -82,26 +76,6 @@ async def convert_to_usd(amount: float, currency_code: str) -> float:
     return amount / FALLBACK_RATES[code]
 
 
-async def _fetch_live_rate(currency_code: str) -> float | None:
-    """
-    Fetch USD exchange rate from exchangerate-api.com.
-    Returns units-of-currency per 1 USD, or None on failure.
-    """
-    url = f"https://v6.exchangerate-api.com/v6/{EXCHANGE_RATE_API_KEY}/pair/{currency_code}/USD"
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("result") == "success":
-                    # conversion_rate is how many USD you get per 1 unit of currency_code
-                    # We want units-of-currency per 1 USD for the division in convert_to_usd
-                    return 1.0 / data["conversion_rate"]
-    except Exception:
-        pass
-    return None
-
-
 def format_budget_display(budget_usd: float, currency_code: str) -> str:
     """
     Format a USD budget for display in the user's original currency.
@@ -109,8 +83,6 @@ def format_budget_display(budget_usd: float, currency_code: str) -> str:
 
     Expected input:  budget_usd=1796.0, currency_code="INR"
     Expected output: "~₹1,49,866"
-
-    This is approximate — uses FALLBACK_RATES for display only.
     """
     code = currency_code.upper()
     rate = FALLBACK_RATES.get(code, 1.0)
