@@ -1218,6 +1218,55 @@ Most pip / npm choices are obvious (FastAPI, React, Pydantic). A few are deliber
 - **No client-side state library** (no Redux / Zustand / Jotai) — local state + window CustomEvent fan-out (via NotificationProvider) is sufficient because most realtime signals are per-page. Adding global state would be premature.
 - **No GraphQL** — every backend route returns a Pydantic-validated JSON shape; the contract lives in the schemas, not in a separate graph. Keeping it RESTful keeps the surface scannable.
 
+### Analytics + monitoring
+
+**`mushahid/monitoring.py`** is the single PostHog touchpoint. Two helpers, both no-op when `POSTHOG_API_KEY` is unset so dev envs without the key never break:
+
+- `capture(uid, event, props)` — user-attributed events. Every route that does something meaningful for a user funnel calls this.
+- `capture_system(event, props)` — system events with no user (cron jobs, seed scripts, system error counters).
+
+Event names live as module-level constants so dashboard queries don't depend on typo-free string literals scattered across the codebase. Five top-level metrics these power:
+
+| Metric | Events |
+|---|---|
+| User satisfaction | `match_found`, `match_approved`, `match_denied`, `match_regenerated`, `itinerary_revision_applied`, `refinement_attempts` |
+| Retrieval quality | `retrieval_done` (destination + activity counts), `cotraveller_search_returned` |
+| Response quality | `validator_stack_execution` per surface (chat reply, persona reveal, cotraveller match, itinerary) — carries `validator_passed_first_try`, `repair_count`, `total_latency_ms`, `semantic_genericity_score` |
+| Hallucination rate | `itinerary_validation`, `persona_validation` — approval rates + issue category breakdowns |
+| Itinerary completion funnel | `trip_plan_started` → `trip_done` → `trip_saved` → `trip_viewed` |
+
+PostHog identify is keyed by Firebase uid; properties are flat (no nested objects) so the dashboard's property breakdowns work without a flatten step.
+
+### Firebase Storage helper
+
+**`mushahid/realtime/storage.py`** is the storage counterpart to `firestore.py`. Separate module because `firebase_admin.storage` requires the bucket name at App init time and we don't want to retrofit `get_db()` to thread that through.
+
+- Bucket name from `FIREBASE_STORAGE_BUCKET` env var (defaults to `{project_id}.appspot.com` when unset and `FIREBASE_PROJECT_ID` is set).
+- All uploads are public-read — the frontend reads the resulting URLs directly without auth. These are synthetic-persona avatars + voice-synthesis MP3 caches, not user content. If user-uploaded content lands here later, switch to authenticated-read + signed URLs.
+- Used by `seed_cotravellers.py` (avatar upload), `ali/voice/elevenlabs.py` (TTS MP3 cache keyed by `sha256(text + voice_id)`), and `purge_firebase_avatars.py` (the wipe script).
+
+### Tests
+
+The repo has local pytest suites — no CI runs them (LLM-dependent surfaces are hard to make deterministic). Cover what they cover:
+
+| Suite | Files | What |
+|---|---|---|
+| Ali | `ali/tests/smoke_test.py`, `test_classifier.py`, `test_output_parser.py` | End-to-end smoke that the LLM clients init + route correctly; the task-type → tier classifier mapping; the JSON output parser (markdown-fence stripping, balanced-brace fallback, ID + activity patching). |
+| Mushahid | `mushahid/tests/test_routes.py`, `test_sanitize.py`, `test_validation.py` | Route shape + auth gates; the prompt-injection sanitiser pattern catalogue; the validator engine's local pre-check + repair loop oscillation detection. |
+| Shreyas | `shreyas/tests/test_feedback.py`, `test_ranking.py` | Text-feedback keyword → feature mapping; the ranking engine's stage pipeline + score-sheet integrity (retrieval / features / rerank kept separate). |
+| Jahnvi | `jahnvi/tests/test_pipeline.py` | Modules 1-3 — capture_constraints → parse_answers → infer_persona shape contracts. |
+
+Run all: `pytest`. Run async-only: `pytest --asyncio-mode=auto`.
+
+### Tiny utilities
+
+A few small modules worth recording so they don't get reinvented:
+
+- **`ali/demo.py`** — `python -m ali.demo` runs an end-to-end persona + itinerary + cotraveller demo against the configured LLM providers. Useful for verifying a fresh deployment's API keys + Pinecone state without touching the frontend.
+- **`jahnvi/data/convert_to_embeddings.py :: build_persona_text`** — the function the whole stack uses to render `(constraints, persona_answers)` into the canonical "persona text" string before embedding. Embed call delegates to `ali.vector.embeddings.embed_text`. Same string shape is used at seed time and at query time so the cosine retrieval works across both populations.
+- **`ali/clients/base.py`** — `BaseLLMClient` abstract class every provider implements. Defines `complete(prompt, system, max_tokens) -> str` and `stream(prompt, system, max_tokens) -> AsyncIterator[str]`. `cost_per_1k_tokens` is an abstract property reserved for V2 cost-aware routing — no caller reads it yet.
+- **`ali/vector/embeddings.py`** — `build_refined_query(profile, feedback)` builds the input string the refinement loop re-embeds before re-querying Pinecone. Keeps the "user said X, so embed Y" mapping in one place.
+
 ### Recent reliability fixes
 
 A few merged PRs worth recording because the failure modes are subtle:
