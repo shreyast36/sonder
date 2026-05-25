@@ -1,4 +1,4 @@
-# Sonder — AI Co-Traveller Trip Planner
+# Sonder — An Inclusive Travel Platform Driven by AI Intelligence
 
 > Plan smarter. Find your perfect co-traveller. Build the trip together in real time.
 
