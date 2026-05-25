@@ -32,7 +32,51 @@ Sonder is not a classical ML system with a single static training set. It is a l
 | **Operational user data** | Profiles, generated itineraries, chat sessions and messages, shared-itinerary negotiation history, journal entries, social feed posts, join requests | The product's runtime state |
 | **Telemetry** | Validator outcomes, retrieval counts, match scores, latency distributions, hallucination flags | Product observability — every LLM surface is instrumented |
 
-### 2.2 The synthetic-traveller corpus
+### 2.2 Foundation datasets and theoretical frameworks
+
+Sonder's intelligence layer is built on three foundation datasets and two academic frameworks that we incorporated rather than inventing:
+
+**GoEmotions — fine-grained emotion taxonomy.** Source: *Demszky et al. (2020), "GoEmotions: A Dataset of Fine-Grained Emotions"* (arXiv:2005.00547). The original dataset contains 58,000 Reddit comments annotated across 27 emotion labels plus a neutral category. We do not ship the 58,000 labeled training rows. Instead, we use the 27-label vocabulary as anchor vectors: each label's tone-anchored gloss is embedded once at process start using the same 1536-dimensional embedding model that powers the rest of the persona pipeline, and a user's free-text input is classified by cosine similarity against those 27 anchor vectors. This gives us defensible emotion scores that live in the same embedding space as everything else, without depending on a separately trained classifier model that would need its own retraining cycle. Twenty-seven labels include *admiration, amusement, anger, annoyance, approval, caring, confusion, curiosity, desire, disappointment, disapproval, disgust, embarrassment, excitement, fear, gratitude, grief, joy, love, nervousness, optimism, pride, realization, relief, remorse, sadness, surprise*. Glosses are deliberately tone-anchored, not dictionary-like — for example, *realization* is *"a quiet click — coming to understand something"* rather than a denotative definition. This phrasing choice matters because it crisps the embedding space at the cost of being slightly idiosyncratic.
+
+**Push-Pull Motivation Theory — travel psychology framework.** The 12-dimension persona space is grounded in *Push-Pull Motivation Theory*, originally introduced in travel research by Dann (1977) and extended by Crompton (1979). The theory holds that travel decisions are driven by two distinct motivational forces:
+
+- **Push factors** (intrinsic, traveller-side): why a person leaves home — the internal psychological pulls toward travel itself.
+- **Pull factors** (extrinsic, destination-side): what attributes of a destination they seek — what about the place draws them specifically.
+
+Our implementation defines six push dimensions and six pull dimensions, all unipolar (positive presence only — bipolar concepts like introvert vs. extrovert sociality emerge compositionally across multiple dimensions rather than via dedicated negative axes):
+
+| Push dimensions (why) | Pull dimensions (what) |
+|---|---|
+| *escape_reset* — disconnect, recharge, leave routine | *nature_outdoors* — landscapes, weather, physical settings |
+| *adventure_novelty* — push themselves, first-time experiences | *culture_history* — heritage, museums, local arts |
+| *connection* — share with people they love | *food_drink* — local cuisine, regional specificities |
+| *reflection* — process, gain perspective | *nightlife_social* — bars, clubs, live music |
+| *curiosity* — understand, go deeper than guidebook | *comfort_luxury* — high-end stays, refined service |
+| *prestige_reward* — milestone trips, dream destinations | *exploration_local* — neighbourhoods, daily-life immersion |
+
+Each dimension is defined by a substring-matched keyword set rather than a single trigger word. Multi-word phrases like *"out of comfort zone"* (mapped to *adventure_novelty*) count as one signal rather than three. This matters for two reasons: (1) it makes the persona inference *auditable* — when the system tells a user they score high on *escape_reset*, we can point at the exact phrases in their free-text that contributed, and (2) it lets us evolve the keyword sets without breaking the surrounding system, since adding or removing dimensions auto-updates the validator bounds.
+
+**Curated destination and activity corpora.** Roughly 50 destinations and 500 activities, hand-curated by the team rather than scraped. Each entry carries a free-text context block (200-400 words) describing the place's character — what it actually feels like, not just facts — and a tag set spanning the pull dimensions. Both are embedded with the same 1536-dimensional model and stored in the vector index. Hand-curation was a deliberate trade-off: it caps the destination set's coverage at the team's bandwidth, but every entry is something we'd actually recommend, which is what makes the *"why this?"* explanations land as specific rather than generic. Automated corpus expansion is on the phase-two roadmap.
+
+**LLM-designed synthetic traveller corpus.** 192 single travellers and 18 couples generated through a controlled two-stage process (blind persona writer plus same-machinery inference) and seeded into the vector index. Detailed below in Section 2.3.
+
+### 2.3 External data integrations at runtime
+
+Beyond the foundation datasets, Sonder integrates four free / freemium third-party APIs for runtime data enrichment. All four are wrapped with caching, soft-fail semantics, and fallback chains so a partner outage degrades the product gracefully rather than breaking it.
+
+| API | What it provides | Where it shows up | Cache + fallback |
+|---|---|---|---|
+| **Wikipedia REST API** | Destination overview lede paragraph (200 chars) and the article's primary image | Itinerary hero image, destination feed cards, city-context overlay on trip planning | 14-day client-side cache; map-image rejection filter that drops `.svg` files and URLs containing `map`, `karte`, `location`, `flag_of`, etc. (Wikipedia frequently returns map diagrams for regions and country-level queries); falls through to Pixabay if Wikipedia returns nothing usable |
+| **Pixabay** | High-quality stock travel photography (popularity-ranked) | Cinematic destination reveal montage (5 photos cycling); fallback when Wikipedia returns a map; auto-illustration of synthetic social posts | In-process cache keyed by query + count; country-less retry on empty result (e.g., "Patagonia Argentina" → "Patagonia"); fails silently to no-image rather than erroring |
+| **OpenWeather** | Current weather conditions by lat/lon | City context block in the destination feed and trip-planning overlay | Returned alongside Nominatim result; skipped if geocoding failed |
+| **Nominatim (OpenStreetMap)** | Geocoding — city/country → lat, lon, country code | Powers OpenWeather lookups; canonical country normalisation for matching | Process-wide token-bucket rate limiter (1 request/second etiquette per Nominatim ToS); 30-day disk cache |
+| **ExchangeRate API** | Currency conversion for budget normalisation | Multi-currency input on trip preferences — all internal cost fields are USD, conversion happens at the input boundary | 3-second timeout; hardcoded fallback table for 30 currencies when the API is unreachable |
+
+The 30-day Nominatim disk cache and the 14-day Wikipedia client cache mean a repeat user planning a known destination hits the network for almost nothing on subsequent loads. The Pixabay multi-photo cache is per (query, count) so the cinematic reveal renders instantly on a refresh after the first view.
+
+A deliberate design choice: **none of these APIs require an authenticated user-facing API key on the client.** Pixabay, Wikipedia, and OpenWeather access all happen server-side, with the keys held in environment configuration. The client only ever sees the resulting URLs and structured payloads, never the raw API keys. This keeps the JavaScript bundle small, prevents rate-limit abuse via client-side credential leakage, and lets us swap providers (e.g., Pixabay → Pexels) without touching the frontend.
+
+### 2.4 The synthetic-traveller corpus
 
 The synthetic-traveller population is the most analytically interesting dataset because it is fully observable and generated under deliberate diversity constraints. It is constructed across a three-axis matrix:
 
@@ -51,21 +95,20 @@ Text-length distributions across the corpus:
 | Quirks (concatenated) | 16 | 8-30 |
 | Embedding text (the full string that gets vectorised) | 110 | 40-220 |
 
-### 2.3 Schema and missing-value behaviour
+### 2.5 Schema and missing-value behaviour
 
 Every text-producing surface in Sonder defaults gracefully when expected fields are missing. Two examples worth surfacing:
 
 - **Per-question answer salience** — a per-user weighting that boosts the matching contribution of free-text answers a user revealed more about themselves on. When absent (older profiles), the matcher falls back to uniform weighting. A graceful degradation, but visibly different match scores.
 - **Gender on synthetic travellers** — required by the same-gender safety filter for solo matching. Pre-existing records seeded before the field was added had no gender metadata. The product recovers in two ways: a metadata-only patch tool that backfills existing records without re-paying generation cost, and a runtime fail-open that disables the filter rather than dead-ending users when no candidate carries the field.
 
-### 2.4 Linguistic features and the closed vocabularies
+### 2.6 The eight-key emotional signature
 
-Two closed vocabularies are load-bearing analytical artefacts:
+Beyond the GoEmotions 27-label classifier and the 12-dimension PPM space, the system carries a third closed vocabulary: an **eight-key emotional-signature taxonomy** synthesised specifically for travel personas (*story_collector, reset_seeker, aesthetic_pilgrim, depth_diver, energy_chaser, ritual_keeper, quiet_observer, threshold_walker*). The signature inferrer picks exactly one key per user based on two pieces of evidence — the GoEmotions distribution over their free text and their structured persona answers — and assigns a *confidence* level (low / medium / high). The selected key is then used as **private framing** for every persona-voiced surface (chat reply, *"why this?"* explanation, social post, opener). The key itself is never shown to the user; only the derived *emotional tone* phrase — e.g., *"soft afternoon energy"* — surfaces in the UI. The system is explicitly instructed never to use the taxonomy keys in output text, since they're internal labels rather than language a real person would use.
 
-- **A 12-dimension persona space** (six "push" dimensions, six "pull" dimensions). Each dimension is defined by a substring-matched keyword list rather than a single trigger word — multi-word phrases like *"out of comfort zone"* count as one signal rather than three. Keeps the persona inference defensible: we can audit exactly which words in a user's free-text contributed to which dimension assignment.
-- **An eight-key emotional-signature taxonomy** (e.g. *story_collector*, *reset_seeker*, *aesthetic_pilgrim*). Closed-set by design — the inferrer picks one key per user. This signature is then used as private framing for every persona-voiced surface (chat, "why this?" explanations, social posts) without ever surfacing the taxonomy key itself.
+This three-layer arrangement — GoEmotions (27 labels, signal) → PPM (12 dimensions, motivational structure) → emotional signature (8 keys, voice) — gives the system three independent lenses on the user's psychology, each at a different granularity, with each consumer choosing the lens appropriate to its task.
 
-### 2.5 Generated-content quality, diversity, and bias
+### 2.7 Generated-content quality, diversity, and bias
 
 Two recurring drift patterns surfaced during early generation runs, both countered explicitly in the system:
 
@@ -74,7 +117,7 @@ Two recurring drift patterns surfaced during early generation runs, both counter
 
 A semantic-genericity score is computed locally before LLM calls on chat replies, counting matches against a 14-stem set (*"sounds amazing"*, *"hidden gem"*, *"bucket list"*, *"fellow traveler"*, etc.). Scores above a threshold short-circuit to repair without a language-model round-trip. The same score is emitted as telemetry so genericity drift over time is visible in product analytics.
 
-### 2.6 Hallucination and edge-case inventory
+### 2.8 Hallucination and edge-case inventory
 
 The validator engine watches for five categories of regression across every persona-voiced surface:
 
@@ -205,13 +248,30 @@ Sonder is deployed across four service planes:
 
 The system has been designed to scale to multiple application-server replicas, with one configuration change: the in-memory websocket connection manager needs to be replaced with a Redis pub/sub channel so messages sent to one container reach websocket sessions on another. The configuration variable for this is already in place; the swap is a one-evening exercise rather than an architecture change.
 
-### 4.2 Prompt updates and versioning
+### 4.2 Complete model inventory
+
+Sonder orchestrates eight distinct generative or representational models across its surfaces. Each was chosen for a specific task profile rather than as a single one-size-fits-all model:
+
+| Model | Provider | Role in Sonder | Why this model |
+|---|---|---|---|
+| **Claude Haiku 4.5** | Anthropic | Small-tier conversational surfaces — chat replies, openers, classifiers, *"why this?"* explanations, social-post and open-trip-note generation, proposal evaluation | Sub-2-second response time for persona-voiced texting; 25× cheaper per call than the large tier; sufficient register fidelity when paired with the validator stack |
+| **Claude Sonnet 4.6** | Anthropic | Large-tier generative surfaces — itinerary generation, complex itinerary refinement, conflict resolution between travellers | 16k output token ceiling for full-trip JSON; consistent multi-day structural coherence; superior at honouring complex negative constraints |
+| **GPT-4o-mini** | OpenAI | Small-tier fallback if Anthropic is unavailable | Same task profile as Haiku; pre-configured per-provider fallback so the small tier stays available during partner incidents |
+| **GPT-4o** | OpenAI | Large-tier fallback | Same task profile as Sonnet 4.6 |
+| **text-embedding-3-small** | OpenAI | All retrieval embeddings — destinations, activities, traveller profiles, persona text, GoEmotions anchor vectors | 1536-dim is the right size/cost trade-off for our scale; one model means all corpora share an embedding space, so cross-namespace queries are coherent |
+| **gpt-image-1** | OpenAI | Synthetic-persona portrait generation (seed-time only, ~$2-4 per 192-persona seed) | Stylised painterly outputs explicitly bias the personas away from photorealism, which is intentional for the *"Sonder Curated"* disclosure pattern |
+| **eleven_multilingual_v2** | ElevenLabs | Persona voice text-to-speech for chat playback | Multilingual voice library; voice IDs assigned deterministically per persona via appearance → accent → gender lookup; MP3 cache keyed by hash of (text, voice ID) |
+| **GoEmotions cosine classifier** | In-process (not an external API) | Emotion scoring over user free-text via cosine distance against 27 anchor vectors embedded once at process start | Lives in the same embedding space as everything else; no separate retraining cycle; defensible scores |
+
+**A specific design decision worth surfacing**: per-provider model identifiers. Each provider client carries its own model identifier even when both providers handle the same task tier. This means a small-tier failover never accidentally sends a Claude model identifier to OpenAI or vice versa. The configuration is `ANTHROPIC_SMALL_MODEL = claude-haiku-4-5`, `OPENAI_SMALL_MODEL = gpt-4o-mini`, with the active provider chosen by `SMALL_MODEL_PROVIDER`. Pre-configured fallback safety prevents an entire class of cross-provider failures.
+
+### 4.3 Prompt updates and versioning
 
 Prompts live alongside the code. Every persona-voiced surface — chat reply, opener, proposal evaluator, social post, open-trip note, itinerary refinement, validator critics — has its system prompt as a module-level constant in the codebase. Versioning is by git. A prompt change is a reviewable commit, with the same review surface as any other code change. There is deliberately no external prompt store: the coupling between prompt and surrounding code is explicit and a prompt change that breaks downstream parsing is caught by code review rather than discovered in production.
 
 For larger structural prompt changes (e.g. introducing a new banned-filler list, restructuring the persona scope blocks), the rollout pattern is to deploy the prompt change paired with the post-hoc normaliser that catches drift from older outputs still in flight. The chat opener's `Hey {Name}!` greeting contract is an example: when the format changed mid-deploy, both code paths gained the new prompt rules *and* a wide drifted-greeting matcher that catches outputs from older personas that hadn't yet observed the new prompt.
 
-### 4.3 Model updates and fine-tuning strategy
+### 4.4 Model updates and fine-tuning strategy
 
 Model identifiers are environment-driven. A model bump — moving from Claude Sonnet 4.5 to 4.6, for example — is a single environment-variable change plus a redeploy. The application code is provider-agnostic and model-id-agnostic; only the routing layer and the per-provider client know specifics.
 
@@ -223,7 +283,7 @@ Sonder has not used fine-tuning to date. The product bets on three less-expensiv
 
 Fine-tuning remains a phase-two escape hatch for surfaces where prompt engineering has demonstrably plateaued — most likely the proposal evaluator, where persona-consistent counter-suggestions across long negotiations is the hardest sustained-coherence task in the system.
 
-### 4.4 Monitoring hallucinations, drift, and performance degradation
+### 4.5 Monitoring hallucinations, drift, and performance degradation
 
 Every language-model surface in Sonder is instrumented. Five top-level metrics drive the analytics dashboard:
 
@@ -237,7 +297,7 @@ A per-feature distribution observer records mean, variance, and count for every 
 
 Error telemetry is filtered: pure "no internet" client errors and expected 4xx responses (404 on first profile fetch, 401 from auth-state transitions) are excluded so the error feed reflects genuine bugs.
 
-### 4.5 Feedback loops and human-in-the-loop
+### 4.6 Feedback loops and human-in-the-loop
 
 Sonder has three feedback paths active in production:
 
@@ -297,8 +357,21 @@ Three architectural decisions paid off most measurably:
 **Datasets and curated corpora.**
 - 192 LLM-designed synthetic solo travellers and 18 couples, all seeded into the vector store and Firestore.
 - Curated destination corpus (~50 cities) and per-destination activity corpora (~500 activities total).
-- Closed twelve-dimension persona vocabulary (six push, six pull dimensions, each defined by substring-matched keyword sets).
+- Closed twelve-dimension push-pull persona vocabulary, each dimension defined by substring-matched keyword sets.
 - Closed eight-key emotional-signature taxonomy with tone-anchored glosses.
+- GoEmotions 27-label emotion vocabulary used as anchor vectors for cosine classification.
+
+**Academic frameworks incorporated.**
+- *Dann, G. (1977). "Anomie, Ego-Enhancement and Tourism." Annals of Tourism Research, 4(4), 184-194.* — Original Push-Pull Motivation Theory formulation in travel research.
+- *Crompton, J. L. (1979). "Motivations for Pleasure Vacation." Annals of Tourism Research, 6(4), 408-424.* — Extension of Dann's framework with the empirically observed seven push and two pull motives that informed our six-and-six adaptation.
+- *Demszky, D., et al. (2020). "GoEmotions: A Dataset of Fine-Grained Emotions." arXiv:2005.00547.* — Source of the 27-label emotion taxonomy we use as anchor vectors.
+
+**External APIs and third-party services.**
+- Wikipedia REST API (destination context + lede paragraphs + infobox imagery)
+- Pixabay API (popularity-ranked travel photography)
+- OpenWeather API (current weather by lat/lon)
+- Nominatim / OpenStreetMap (geocoding with 1-req/sec etiquette)
+- ExchangeRate API with 30-currency hardcoded fallback table
 
 **Infrastructure.**
 - Pinecone (managed vector index, three namespaces).
