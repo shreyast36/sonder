@@ -210,41 +210,48 @@ export default function Itinerary() {
       if (startedRef.current) return
       startedRef.current = true
 
-      if (!shouldGenerate) {
-        // View mode — pull the saved itinerary from Firestore.
-        try {
-          const res = await getCurrentItinerary()
-          if (res?.itinerary) {
-            setItinerary(res.itinerary)
-            setStreamingDone(true)
-            setSaved(true)        // already on the dashboard
-            try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(res.itinerary)) } catch {}
-            return
-          }
-        } catch (err) {
-          console.warn('Could not load saved itinerary:', err?.message || err)
-        }
-        // No saved trip yet. If the user generated something earlier this
-        // session but didn't click Save, the cache still has it — show that
-        // so they can save from here instead of starting over.
-        try {
-          const cached = JSON.parse(localStorage.getItem('sonder_last_itinerary') || 'null')
-          if (cached?.itinerary_id) {
-            setItinerary(cached)
-            setStreamingDone(true)
-            return
-          }
-        } catch { /* invalid JSON in cache */ }
-        navigate('/preferences')
+      // Generation only fires on explicit user intent (the PersonaReveal
+      // confirm step sets the flag). Every other path is view-only.
+      if (shouldGenerate) {
+        const raw = sessionStorage.getItem('sonder_trip_profile')
+        if (!raw) { navigate('/preferences'); return }
+        let profile
+        try { profile = JSON.parse(raw) } catch { navigate('/preferences'); return }
+        start(profile)
         return
       }
 
-      // Generation mode — need the trip profile from PersonaReveal.
-      const raw = sessionStorage.getItem('sonder_trip_profile')
-      if (!raw) { navigate('/preferences'); return }
-      let profile
-      try { profile = JSON.parse(raw) } catch { navigate('/preferences'); return }
-      start(profile)
+      // View mode — load the saved trip from Firestore. Works for both
+      // finalised trips (read-only; the approve/revise gate is hidden
+      // server-side via approval_status) AND drafts (user can resume the
+      // approve/revise decision they paused on).
+      try {
+        const res = await getCurrentItinerary()
+        if (res?.itinerary) {
+          setItinerary(res.itinerary)
+          setStreamingDone(true)
+          setSaved(true)
+          try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(res.itinerary)) } catch {}
+          return
+        }
+      } catch (err) {
+        console.warn('Could not load saved itinerary:', err?.message || err)
+      }
+      // Backend returned nothing — try the session cache (covers the case
+      // where the SSE stream finished but auto-save was still pending when
+      // the user navigated away).
+      try {
+        const cached = JSON.parse(localStorage.getItem('sonder_last_itinerary') || 'null')
+        if (cached?.itinerary_id) {
+          setItinerary(cached)
+          setStreamingDone(true)
+          return
+        }
+      } catch { /* invalid JSON in cache */ }
+      // Genuine view-mode failure. Do NOT silently dump into /preferences —
+      // that turns a transient backend hiccup into a forced re-do of the
+      // whole creation flow. Surface an error and let the user choose.
+      setError("We couldn't load your trip. Head back to the dashboard and try again.")
     })
     return () => unsub()
   }, [navigate, start])
@@ -578,13 +585,22 @@ export default function Itinerary() {
       <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48, textAlign: 'center' }}>
         <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 32, color: BONE, marginBottom: 16, position: 'relative', zIndex: 1 }}>Something didn't load.</p>
         <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, marginBottom: 32, maxWidth: 480, position: 'relative', zIndex: 1 }}>{error}</p>
-        <motion.button
-          whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
-          onClick={() => navigate('/persona-reveal')}
-          style={{ minWidth: 240, padding: '16px 32px', background: `linear-gradient(135deg, ${SKY} 0%, #0284C7 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff', position: 'relative', zIndex: 1 }}
-        >
-          Back to your persona
-        </motion.button>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'center', position: 'relative', zIndex: 1 }}>
+          <motion.button
+            whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
+            onClick={() => navigate('/dashboard')}
+            style={{ minWidth: 220, padding: '16px 32px', background: `linear-gradient(135deg, ${SKY} 0%, #0284C7 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff' }}
+          >
+            Back to dashboard
+          </motion.button>
+          <motion.button
+            whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
+            onClick={() => { startedRef.current = false; setError(null); window.location.reload() }}
+            style={{ minWidth: 180, padding: '16px 28px', background: 'rgba(232,212,168,0.06)', border: `1px solid ${HAIRLINE}`, borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: MUTE }}
+          >
+            Try again
+          </motion.button>
+        </div>
       </div>
     )
   }
