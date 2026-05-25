@@ -1060,6 +1060,75 @@ A sweep across every code file surfaced a long tail of load-bearing decisions wo
 
 **`jahnvi/frontend/src/lib/destinationPhoto.js`** — Wikipedia REST + Pixabay multi-photo. `useDestinationPhoto` rejects map-shaped Wikipedia results via URL substring + `.svg` check, falls through to `/api/destination-photo` when nothing usable comes back. `useDestinationPhotos` hits `/api/destination-photos` for the multi-photo reveal. Both cache in localStorage with `v2` keys so users with cached maps refetch fresh.
 
+**`jahnvi/frontend/src/components/InboxLayout.jsx`** — full /inbox page implementation. Left sidebar lists message categories (All, Matched, Pending, Quiet) with unread counts per category; right pane is the message list filtered to the selected category. Polls every 25s and listens for `sonder:inbox:refresh` window events from NotificationProvider so new sessions land instantly. Persists last-active category to localStorage so a refresh restores the same view.
+
+**`jahnvi/frontend/src/components/InboxStrip.jsx`** — compact dashboard-right-column variant of the inbox. Shows the top N recent sessions with avatar + last-message preview + approval-status pill. Used inside the matches column on the dashboard; the full /inbox page uses InboxLayout instead.
+
+**`jahnvi/frontend/src/components/NavTabs.jsx`** — top-of-page nav between **Your trip** (Dashboard), **Inbox**, and **Sonder Pulse**. Active tab pulses a small accent dot so the rhythm matches the rest of the page eyebrows.
+
+**`jahnvi/frontend/src/components/BottomNav.jsx`** — mobile bottom navigation bar. Two tab sets (`DASHBOARD_TABS` + `ITINERARY_TABS`) so the active surface determines the icons shown — Home / Trips / Matches / Profile on dashboard, Map / Activities / Budget / Notes on an itinerary page.
+
+**`jahnvi/frontend/src/components/MatchCard.jsx`** — co-traveller card with circular avatar, name + location, two-tag chip row (style + budget), and a `MatchRing` SVG percentage ring (gold gradient stroke around an SVG circle, dasharray drives the fill). Renders the `SynthBadge` next to seeded-persona names.
+
+**`jahnvi/frontend/src/components/SynthBadge.jsx`** — "Sonder Curated" disclosure pill. Renders nothing when `is_seed === false`; when true, it's a small violet chip with a sparkle icon. Honest disclosure that the profile is synthetic without being so loud it kills suspension of disbelief.
+
+**`jahnvi/frontend/src/components/ChatBubble.jsx` + `ChatRoom.jsx`** — chat UI primitives. Bubble handles its own seen indicator + timestamp; ChatRoom is the full /chat/:sessionId surface (header with persona name + voice-play button, ChatBubble list with bottom-scroll-pinning, composer with typing indicator, persistent presence dot). Voice-play hits `/api/voice/synthesize` and streams the cached MP3.
+
+**`jahnvi/frontend/src/components/WordLimitTextarea.jsx`** — controlled textarea that counts words against a configurable `LIMIT` and orange-tints the counter when over. Used by TravellerCompatibility's free-text fields where short, specific answers are higher signal than long ones.
+
+**`jahnvi/frontend/src/components/Toast.jsx`** — global toast provider mounted at App root. Exposes `useToast()` with `success / info / error` helpers. Toasts auto-dismiss; ToastProvider stacks them at the bottom-right.
+
+**`jahnvi/frontend/src/components/LuxCard.jsx`** — base card primitive with the gilt-rim gradient border + deep drop-shadow + faint inner highlight. Used as the wrapper for MatchCard and any other "object-on-velvet" surface so the print register stays consistent.
+
+**`jahnvi/frontend/src/components/AppBackground.jsx`** — accent-driven ambient backdrop. Takes an `accent` hex, parses RGB, paints a radial gradient + paper-grain overlay so every page has the same warm-velvet base with a per-page colour tint (gold for trip surfaces, orange for persona, sky for shared, etc).
+
+**`jahnvi/frontend/src/pages/Pulse.jsx`** — `/pulse` page. Renders the existing `DashboardPulse` component verbatim under its own URL + nav. Lifted out of the dashboard so the trip view stays focused on the trip.
+
+**`jahnvi/frontend/src/pages/Inbox.jsx`** — `/inbox` page. Thin wrapper around `<InboxLayout>` with the same NavTabs header.
+
+**`jahnvi/frontend/src/pages/Notes.jsx`** — per-trip private notes. Auto-saves as the user types (debounced); not the same surface as Journal (which is per-day + optionally public).
+
+**`jahnvi/frontend/src/pages/Journal.jsx`** — `/journal/:itineraryId`. Day-indexed journal entries. Each entry can be `is_public` (surfaces on `/destination/:city` for future planners) or private. Soft-delete via `DELETE /api/journal/{entry_id}` flips a flag rather than removing the row so anyone who'd already read it doesn't see "this post was deleted" mid-scroll.
+
+**`jahnvi/frontend/src/pages/Destination.jsx`** — `/destination/:city?country=X`. Aggregated view of public journal entries for a city. Pulls via `/api/destinations/{city}/journal` and groups them. Used by the dashboard trip vault as the "where can I learn more about this city" deep-link.
+
+**`jahnvi/frontend/src/pages/TravellerCompatibility.jsx`** — `/compatibility` standalone questionnaire. 10 free-text questions (trust behaviour, when plans fall apart, comfortable silence, late-night conversations, etc.) feed `CompatibilityAnswers` which embeds to `compatibility_embedding`. Separate from the persona embedding so the cotraveller matching surface can use both signals without conflating them.
+
+**`mushahid/routes/auth.py`** — public auth surface (no Bearer token required). `/api/auth/password-reset` always returns success regardless of whether the email exists, to prevent account enumeration. Rate-limited via slowapi; failures are silently swallowed.
+
+**`mushahid/routes/update_trip.py`** — legacy free-text + per-activity-feedback endpoint that pre-dates the streaming `/revise` flow. Still routes through `run_refinement_loop` (orchestrator quality loop), so it's slower than `/revise` but does the same job. Kept around for backward compatibility; new code should call `/revise` instead.
+
+**`mushahid/routes/journal.py`** — journal CRUD + public destination feed. Ownership is enforced against the itinerary's `user_id` (not the journal entry's own `user_id` field) so a leaked entry_id can't be edited by someone who happens to have it. Soft-delete (flips `deleted_at`) rather than hard so destination feeds don't show "this post was deleted" rows that a future planner has to scroll past.
+
+**`shreyas/cotraveller/approval.py :: approve_match`** — records a user's approval in `chat_sessions/{session_id}`. When BOTH `user_decision` and `profile_decision` are `approved`, kicks off `create_shared_itinerary()` and fires `notify_co_traveller_approved()`. Mutual-approval transition is idempotent — the second-side call moves the state cleanly without re-creating the shared itinerary if it already exists.
+
+**`shreyas/cotraveller/shared_itinerary.py :: create_shared_itinerary`** — clones the chosen itinerary doc into a new `shared_itineraries/{id}` record with `version=0`, `participants=[user_a, user_b]`, empty `proposals` log. The clone is intentional: subsequent edits on the shared surface mustn't mutate the original itinerary, because the user can revoke the pair (denial flow) and reuse their original draft.
+
+**`mushahid/refinement/classifier.py`** — small-LLM JSON classifier that scopes user revise feedback. Emits `{scope, summary, target_day_numbers, target_categories, preserve}` so the `/revise` route can pick the targeted-day prompt path, build a dedupe `DO NOT RE-INTRODUCE` blacklist from prior rejected titles, and feed FOCUS / PRESERVE hints into the regen prompt. Defaults to scope=large on parse failure — better to over-spend on one turn than ship a wrong small-edit. Balanced-brace fallback parser handles markdown-fenced output.
+
+### Operational scripts
+
+| Script | What |
+|---|---|
+| `scripts/seed_pinecone.py` | Seeds the `destinations` + `activities` Pinecone namespaces. Run first-time + after any embedding-model change. `--namespace all` does both; `--namespace destinations` or `--namespace activities` targets one. |
+| `scripts/seed_cotravellers.py` | LLM-designed singles seed (192 personas; see Synthetic Co-Travellers above). |
+| `scripts/seed_couple_cotravellers.py` | LLM-designed couples seed (18 couples). |
+| `scripts/backfill_cotraveller_gender.py` | One-shot Pinecone metadata patcher — adds the `gender` field to existing seeded records without re-paying LLM/image cost. Template for any future schema-only field addition. |
+| `scripts/preview_avatars.py` | Dry-run preview for the `gpt-image-1` portrait prompt. Renders 5 portraits across a diverse slice of the seed matrix and dumps PNGs into `seed_assets/preview/` so you can eyeball the new prompt before paying to re-render all 192. Skips persona-infer, emotional-signature, Pinecone, and Firebase entirely. |
+| `scripts/purge_firebase_avatars.py` | Wipes every blob under `cotraveller_avatars/` in Firebase Storage. Use before a `--purge` re-seed so stale avatars from older runs don't accumulate (Pinecone purge clears metadata pointers, but the actual PNGs in Storage are orphaned otherwise). |
+| `scripts/check_pinecone.py` | Quick CLI dump of `describe_index_stats()` — per-namespace vector counts + total. Use to verify a seed / backfill landed before doing live testing. |
+| `scripts/generate_vapid_keys.py` | One-time VAPID keypair generator for Web Push. Prints `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` to paste into `.env` (or the secret store on ECS / Render). Public key is also exposed to the frontend so the service worker can subscribe — backend serves it via `/api/push/vapid-public-key`. |
+| `scripts/progress.py` | Auto-updates `TASKS.md` checkboxes based on actual implementation state. A Python file task is checked off when none of its public functions raise `NotImplementedError`. Non-Python tasks (Figma, deployment, JS) are left unchanged. Runs in CI on every push that touches a `.py`. |
+| `scripts/sync_trello.py` | Mirrors `TASKS.md` sections to a Trello board. Creates one card per section, moves cards to Done / Doing / per-person To Do based on checkbox state. Mostly used for stakeholder visibility. |
+
+### Recent reliability fixes
+
+A few merged PRs worth recording because the failure modes are subtle:
+
+- **`fix(itinerary): Optimize revision pipeline to prevent timeouts`** — `/revise` used to call `run_refinement_loop` which iterates `MAX_REFINEMENT_ATTEMPTS` (3) times. Each iteration is a full regen + validate, which compounded into wall times that broke the Cloudflare Pages Function proxy's ~30s ceiling and made the page hang. Fix: single-pass `run_single_revision` + the SSE stream so days arrive as they parse; the loop is reserved for the orchestrator quality gate during initial generation only.
+- **`fix(generation): Handle datetime.date serialization in itinerary prompts`** — pydantic models that include `date` fields can't be `json.dumps`'d directly when those fields make it into a prompt string. The fix routes the dump through `model_dump_json()` (which serialises dates as ISO strings) before embedding in the prompt, so the LLM never sees `<datetime.date object>` literals that would derail its JSON output.
+- **`fix/network-error-handling`** — frontend API helpers now distinguish "no internet" `TypeError: Failed to fetch` errors from HTTP errors and from genuine server bugs. The Sentry filter explicitly skips `Failed to fetch` so client-side network drops don't poison the error feed.
+
 **`jahnvi/frontend/src/components/DashboardPulse.jsx :: StoryAvatar` + `StoryViewer`** — Instagram-style stories surface that replaced the Pulse "Open invitations" strip. `StoryAvatar` renders the 70px circular gradient ring (gold→violet→rose, flattens on viewed). `StoryViewer` is the fullscreen 9:16 modal: segmented progress bars + Ken-Burns-style auto-advance every 5.5s + tap-left/right nav + ESC/arrow keys + pointer-down pause + backdrop close. Stories are derived from posts with images, deduped per author (newest wins, IG semantics). `viewedStories` Set tracked per session so the ring dims after viewing.
 
 **`jahnvi/frontend/src/pages/Dashboard.jsx :: EmptyStateInspiration`** — right-column branch when `pastTrips.length === 0`. Same pulsing-dot eyebrow + serif italic headline + breathing drop-shadow as the regular "Curated for you" section so the layout rhythm stays consistent. Four destination shortcuts (Lisbon / Kyoto / Reykjavík / Mexico City) write `sonder_seed_destination` to sessionStorage; `TripPreferences.destination`'s useState reads it once on mount and removes it. Bottom CTA "Plan something different" routes blank.
