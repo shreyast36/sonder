@@ -108,13 +108,22 @@ async def fetch_image_urls(query: str, *, count: int = 5, category: str = "trave
         return []
 
 
-async def fetch_image_url(query: str, *, category: str = "travel") -> Optional[str]:
+async def fetch_image_url(
+    query: str,
+    *,
+    category: str = "travel",
+    editors_choice: bool = False,
+) -> Optional[str]:
     """One large image URL for the given query, or None.
 
     Caches by normalised query for the process lifetime. category
     defaults to 'travel' to keep results destination-shaped — feed
     posts that mention food / nightlife / etc still land relevant
     images because Pixabay's relevance engine is decent.
+
+    `editors_choice=True` filters to Pixabay's curated quality bar —
+    used by the dashboard backdrop to avoid murky / amateur / tourist
+    snapshots in the auto-cycling reel.
 
     Filtered to 4K-source photos via `min_width=3840`; returns the
     highest-resolution URL Pixabay exposed for the hit.
@@ -124,15 +133,15 @@ async def fetch_image_url(query: str, *, category: str = "travel") -> Optional[s
     q = _normalise(query)
     if not q:
         return None
-    # Cache key bumped so post-upgrade calls don't serve pre-upgrade
-    # 1280px entries cached before the min_width filter shipped.
-    cache_key = f"__one4k__{q}"
+    # Cache key includes category + editors_choice so callers asking
+    # for different curation buckets don't share entries.
+    cache_key = f"__one4k__{category}__{int(editors_choice)}__{q}"
     if cache_key in _CACHE:
         return _CACHE[cache_key]
 
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
-            resp = await client.get(_API, params={
+            params = {
                 "key":            PIXABAY_API_KEY,
                 "q":              q,
                 "image_type":     "photo",
@@ -143,7 +152,10 @@ async def fetch_image_url(query: str, *, category: str = "travel") -> Optional[s
                 "per_page":       3,
                 "min_width":      3840,
                 "min_height":     2160,
-            })
+            }
+            if editors_choice:
+                params["editors_choice"] = "true"
+            resp = await client.get(_API, params=params)
             resp.raise_for_status()
             data = resp.json()
             hits = data.get("hits") or []

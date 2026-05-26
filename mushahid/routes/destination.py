@@ -48,31 +48,42 @@ async def destination_photo(
 # engine handles the actual photo pick per query; "aerial" keyword
 # keeps the Ken-Burns simulation reading as flyover.
 _LUXURY_BACKDROP_QUERIES = [
-    # Tropical islands — full-view ground-level landscapes. NO "aerial"
-    # keyword so Pixabay surfaces walking-perspective wide shots, not
-    # drone footage. Turquoise water + palm coast + lagoons.
-    "Maldives island lagoon",
-    "Bora Bora island lagoon",
-    "Palawan El Nido island",
-    "Hawaii Kauai island",
-    "Phi Phi Islands Thailand",
-    "Seychelles tropical island",
-    "Halong Bay Vietnam",
-    "Tahiti island",
-    "Whitsunday Islands",
-    "Fiji islands",
-    # Beautiful mountain landscapes — full-view wide shots from the
-    # ground / a ridge / a lakeshore. Peaks, alpine lakes, glaciers.
-    "Patagonia Torres del Paine",
-    "Swiss Alps Matterhorn",
-    "Milford Sound New Zealand",
-    "Banff Moraine Lake",
-    "Dolomites Italy mountains",
-    "Iceland mountain landscape",
-    "Lofoten Islands mountains",
-    "Himalaya peaks",
-    "Norway fjord mountains",
+    # White sand + turquoise water tropical beaches.
+    # Keywords push Pixabay toward the iconic colour palette —
+    # "turquoise" and "white sand" filter out murky shorelines,
+    # and pairing with category=nature + editors_choice keeps
+    # tourists / hotels out of frame.
+    "white sand beach turquoise water",
+    "Maldives turquoise lagoon",
+    "Bora Bora turquoise lagoon",
+    "Whitsunday whitehaven beach",
+    "Phi Phi Islands turquoise water",
+    "Seychelles white sand beach",
+    "Bahamas turquoise water beach",
+    "Caribbean turquoise lagoon",
+    "Palawan turquoise lagoon",
+    "tropical paradise white sand",
+    # Snow-capped peaks, alpine lakes, glacier landscapes.
+    # "snow peaks" / "alpine" keeps green hillside / lowland
+    # results out; pairs with editors_choice for clean compositions.
+    "Swiss Alps Matterhorn snow",
+    "Patagonia Torres del Paine snow",
+    "Dolomites Italy snow peaks",
+    "Banff Moraine Lake alpine",
+    "Lofoten Islands snow mountains",
+    "Iceland snow mountains",
+    "Himalaya snow peaks",
+    "Milford Sound mountains fjord",
+    "Norway fjord snow mountains",
 ]
+
+
+# Backdrop endpoint uses tighter Pixabay filters than the standard
+# destination-photo lookup: category=nature (not travel — keeps
+# hotels and resort balconies out) + editors_choice=true (Pixabay's
+# curated quality bar, which strips amateur tourist snapshots).
+_BACKDROP_CATEGORY = "nature"
+_BACKDROP_EDITORS_CHOICE = True
 
 
 @router.get("/luxury-backdrops")
@@ -88,7 +99,11 @@ async def luxury_backdrops():
     urls: list[str] = []
     for q in _LUXURY_BACKDROP_QUERIES:
         try:
-            url = await fetch_image_url(q)
+            url = await fetch_image_url(
+                q,
+                category=_BACKDROP_CATEGORY,
+                editors_choice=_BACKDROP_EDITORS_CHOICE,
+            )
         except Exception:
             url = None
         if url:
