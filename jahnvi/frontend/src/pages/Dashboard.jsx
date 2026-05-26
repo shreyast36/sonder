@@ -252,6 +252,147 @@ function LiveTravellersStrip({ onJump }) {
 }
 
 // ── Empty-state inspiration ───────────────────────────────────────────────
+// Cinematic backdrop for the empty hero — Ken-Burns slow zoom on a
+// rotating destination photo, crossfaded every ~7s. Photo source is
+// the same Wikipedia hero we use on past-trip cards; falls back to a
+// pure-black backdrop if the network's slow.
+const CINEMATIC_REEL = [
+  { city: 'Lisbon',     country: 'Portugal' },
+  { city: 'Kyoto',      country: 'Japan'    },
+  { city: 'Marrakech',  country: 'Morocco'  },
+  { city: 'Reykjavík',  country: 'Iceland'  },
+]
+
+function CinematicBackdrop() {
+  const [idx, setIdx] = useState(0)
+  const current = CINEMATIC_REEL[idx]
+  const photo = useDestinationPhoto(current.city, current.country)
+  useEffect(() => {
+    const t = setInterval(() => {
+      setIdx(i => (i + 1) % CINEMATIC_REEL.length)
+    }, 7000)
+    return () => clearInterval(t)
+  }, [])
+  return (
+    <AnimatePresence mode="sync">
+      <motion.div
+        key={`${current.city}-${photo}`}
+        initial={{ opacity: 0, scale: 1.0 }}
+        animate={{ opacity: 0.85, scale: 1.08 }}
+        exit={{ opacity: 0 }}
+        transition={{ opacity: { duration: 1.6, ease }, scale: { duration: 8, ease: 'linear' } }}
+        style={{
+          position: 'absolute', inset: 0,
+          background: photo
+            ? `url(${photo}) center/cover no-repeat`
+            : `radial-gradient(ellipse at 30% 40%, rgba(245,158,11,0.10), transparent 60%), #050403`,
+          filter: 'grayscale(0.15) contrast(1.05)',
+          pointerEvents: 'none',
+        }}
+      />
+    </AnimatePresence>
+  )
+}
+
+// Cool, dramatic, no-CTA empty hero. The right-column city cards +
+// dice roll own the actual action — this card just establishes mood.
+// Rotating cinematic backdrop + slow Ken-Burns + atmospheric headline
+// that animates in like a film title card.
+function CinematicEmptyHero() {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 1.2, ease }}
+      style={{
+        position: 'relative', overflow: 'hidden',
+        borderRadius: 26, minHeight: 340,
+        background: '#040302',
+        border: `1px solid rgba(212,182,134,0.18)`,
+        display: 'flex', flexDirection: 'column',
+        justifyContent: 'center', alignItems: 'center',
+        textAlign: 'center', padding: '64px 40px',
+        boxShadow: `0 24px 80px rgba(0,0,0,0.55)`,
+      }}
+    >
+      <CinematicBackdrop />
+      {/* Dark vignette over the photo so the headline stays legible. */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.78) 60%, rgba(4,3,2,0.96) 100%)',
+        pointerEvents: 'none',
+      }}/>
+      {/* Subtle gold scanline / film-grain feel via overlapping gradients. */}
+      <motion.div
+        animate={{ opacity: [0.04, 0.08, 0.04] }}
+        transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', inset: 0,
+          background: `linear-gradient(180deg, transparent 0%, ${GOLD}11 50%, transparent 100%)`,
+          pointerEvents: 'none', mixBlendMode: 'screen',
+        }}
+      />
+
+      <motion.span
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1, delay: 0.4, ease }}
+        style={{
+          position: 'relative', zIndex: 1,
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+          letterSpacing: '0.40em', textTransform: 'uppercase',
+          color: GOLD, marginBottom: 22,
+          textShadow: `0 0 18px ${GOLD}55`,
+        }}
+      >
+        Somewhere out there
+      </motion.span>
+
+      <motion.h1
+        initial={{ opacity: 0, y: 18, filter: 'blur(8px)' }}
+        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+        transition={{ duration: 1.6, delay: 0.65, ease: [0.16, 1, 0.3, 1] }}
+        style={{
+          position: 'relative', zIndex: 1,
+          fontFamily: '"Cormorant Garamond",serif',
+          fontStyle: 'italic', fontWeight: 300,
+          fontSize: 'clamp(36px, 4.2vw, 54px)',
+          color: BONE, lineHeight: 1.04, letterSpacing: '-0.02em',
+          margin: 0, textShadow: `0 0 36px rgba(212,182,134,0.35)`,
+        }}
+      >
+        The world is waiting.
+      </motion.h1>
+
+      <motion.p
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 1.2, delay: 1.3, ease }}
+        style={{
+          position: 'relative', zIndex: 1,
+          fontFamily: '"Cormorant Garamond",serif',
+          fontStyle: 'italic', fontWeight: 300,
+          fontSize: 17, color: MUTE,
+          margin: '20px 0 0', letterSpacing: '0.02em',
+        }}
+      >
+        Pick a corner.
+      </motion.p>
+
+      {/* Slow ambient gold pulse in the corner — subliminal "alive" cue. */}
+      <motion.div
+        animate={{ opacity: [0.25, 0.7, 0.25] }}
+        transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', bottom: 22, right: 22, zIndex: 1,
+          width: 6, height: 6, borderRadius: '50%',
+          background: GOLD, boxShadow: `0 0 16px ${GOLD}, 0 0 28px ${GOLD}66`,
+        }}
+      />
+    </motion.div>
+  )
+}
+
 // Rendered in the right column when the user has zero trips. Matches
 // would be lying with no trip to scope to, so we replace the "Curated
 // for you" block with a soft inspiration card that nudges toward
@@ -344,23 +485,115 @@ function EmptyStateInspiration({ onPlan }) {
         ))}
       </div>
 
-      <motion.button
-        whileHover={{ y: -2, boxShadow: `0 0 28px ${GOLD}33` }}
-        whileTap={{ scale: 0.98 }}
-        onClick={onPlan}
-        style={{
-          width: '100%', padding: '16px 20px',
-          background: `linear-gradient(135deg, ${GOLD} 0%, #B89668 100%)`,
-          border: 'none', borderRadius: 12, cursor: 'pointer',
-          fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
-          letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 600,
-          color: '#0a0807',
-          transition: 'all 0.25s',
-        }}
-      >
-        Plan something different
-      </motion.button>
+      <DiceRollButton />
     </div>
+  )
+}
+
+// Curated "dare me" pool — evocative, off-the-beaten-path destinations
+// that aren't already on the inspiration list above. Used by the
+// dice-roll CTA on the empty state to bias toward dramatic picks
+// instead of generic capitals.
+const DICE_DESTINATIONS = [
+  'Marrakech, Morocco',
+  'Hoi An, Vietnam',
+  'Cartagena, Colombia',
+  'Tbilisi, Georgia',
+  'Salta, Argentina',
+  'Tórshavn, Faroe Islands',
+  'Sapporo, Japan',
+  'Oaxaca, Mexico',
+  'Tallinn, Estonia',
+  'Luang Prabang, Laos',
+  'Cape Town, South Africa',
+  'Santorini, Greece',
+  'Rishikesh, India',
+  'Hobart, Tasmania',
+  'Petra, Jordan',
+  'Bukhara, Uzbekistan',
+]
+
+// Right-panel CTA on the empty dashboard. Instead of yet another "plan
+// something" button (the four city cards already cover that), this
+// rolls the dice across a curated dramatic-destination pool. Shuffles
+// city names for ~700ms before resolving so the click feels like a
+// moment, not a form-fill.
+function DiceRollButton() {
+  const navigate = useNavigate()
+  const [rolling, setRolling] = useState(false)
+  const [shown, setShown]     = useState(DICE_DESTINATIONS[0])
+
+  function roll() {
+    if (rolling) return
+    setRolling(true)
+    let ticks = 0
+    const TOTAL_TICKS = 14
+    const interval = setInterval(() => {
+      ticks += 1
+      // Pick a random city each tick — drift visible to the user.
+      const next = DICE_DESTINATIONS[Math.floor(Math.random() * DICE_DESTINATIONS.length)]
+      setShown(next)
+      if (ticks >= TOTAL_TICKS) {
+        clearInterval(interval)
+        const final = DICE_DESTINATIONS[Math.floor(Math.random() * DICE_DESTINATIONS.length)]
+        setShown(final)
+        // Hand off to /preferences via the same sessionStorage seam the
+        // city cards use, then navigate after a tiny beat so the final
+        // city flash registers.
+        try { sessionStorage.setItem('sonder_seed_destination', final) } catch { /* noop */ }
+        setTimeout(() => navigate('/preferences'), 350)
+      }
+    }, 50)
+  }
+
+  return (
+    <motion.button
+      whileHover={!rolling ? { y: -2, boxShadow: `0 0 36px ${GOLD}44` } : {}}
+      whileTap={!rolling ? { scale: 0.98 } : {}}
+      onClick={roll}
+      disabled={rolling}
+      style={{
+        position: 'relative', overflow: 'hidden',
+        width: '100%', padding: '18px 20px',
+        background: rolling
+          ? `linear-gradient(135deg, #2a1f10 0%, #1a1308 100%)`
+          : `linear-gradient(135deg, ${GOLD} 0%, #B89668 100%)`,
+        border: rolling ? `1px solid ${GOLD}66` : 'none',
+        borderRadius: 12, cursor: rolling ? 'wait' : 'pointer',
+        fontFamily: '"Inter Tight",sans-serif',
+        transition: 'all 0.25s',
+      }}
+    >
+      {rolling ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <span style={{
+            fontSize: 9, letterSpacing: '0.35em', textTransform: 'uppercase',
+            fontWeight: 500, color: GOLD,
+          }}>
+            Rolling
+          </span>
+          <motion.span
+            key={shown}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.12 }}
+            style={{
+              fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+              fontSize: 17, color: BONE,
+            }}
+          >
+            {shown}
+          </motion.span>
+        </div>
+      ) : (
+        <span style={{
+          fontSize: 11, letterSpacing: '0.28em', textTransform: 'uppercase',
+          fontWeight: 600, color: '#0a0807',
+        }}>
+          ✦ Roll the dice
+        </span>
+      )}
+    </motion.button>
   )
 }
 
@@ -1569,23 +1802,7 @@ export default function Dashboard() {
               </div>
             </motion.div>
           ) : (
-            <motion.div
-              onClick={() => navigate('/preferences')}
-              whileHover={{ y: -4, borderColor: 'rgba(245,158,11,0.35)', transition: spring }}
-              whileTap={{ scale: 0.99 }}
-              style={{ cursor: 'pointer', padding: '48px 40px', borderRadius: 26, background: 'rgba(245,158,11,0.04)', border: `1px solid rgba(245,158,11,0.18)`, textAlign: 'center', transition: 'all 0.25s' }}
-            >
-              <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 32, color: BONE, lineHeight: 1.15, marginBottom: 12 }}>
-                Your next trip is one decision away.
-              </p>
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, marginBottom: 28, lineHeight: 1.6, maxWidth: 360, margin: '0 auto 28px' }}>
-                Plan a trip and your itinerary will live here.
-              </p>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: `1px solid rgba(245,158,11,0.30)` }}>
-                <Plus size={12} style={{ color: AMBER }}/>
-                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: AMBER }}>Plan your first trip</span>
-              </div>
-            </motion.div>
+            <CinematicEmptyHero />
           )}
 
           {/* Trip actions row — outside the clickable card so taps never
