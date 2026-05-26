@@ -258,15 +258,10 @@ function LiveTravellersStrip({ onJump }) {
 // planning. Four destination shortcuts pre-fill /preferences so a user
 // who's curious can land on the form already partway through.
 
-const INSPIRATION_DESTINATIONS = [
-  { city: 'Lisbon',    country: 'Portugal',     query: 'Lisbon, Portugal'   },
-  { city: 'Kyoto',     country: 'Japan',        query: 'Kyoto, Japan'       },
-  { city: 'Reykjavík', country: 'Iceland',      query: 'Reykjavík, Iceland' },
-  { city: 'Mexico City', country: 'Mexico',     query: 'Mexico City, Mexico' },
-]
-
-function EmptyStateInspiration({ onPlan }) {
-  const navigate = useNavigate()
+function EmptyStateInspiration() {
+  // Right column when the user has zero trips. No CTAs — the nav's
+  // "Plan a trip" button is the only path to /preferences. This panel
+  // just sets the tone: gold eyebrow, italic headline, one-line nudge.
   return (
     <div>
       <div style={{ marginBottom: 24 }}>
@@ -295,71 +290,10 @@ function EmptyStateInspiration({ onPlan }) {
 
       <p style={{
         fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
-        fontSize: 13, color: MUTE, lineHeight: 1.6, marginTop: 0, marginBottom: 22,
+        fontSize: 13, color: MUTE, lineHeight: 1.6, marginTop: 0,
       }}>
-        Plan one trip and the rest of the room — matches, journal, shared itineraries — opens up. Start with somewhere that's been on your mind, or borrow one of these.
+        Plan one trip and the rest of the room — matches, journal, shared itineraries — opens up.
       </p>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
-        {INSPIRATION_DESTINATIONS.map((d, i) => (
-          <motion.button
-            key={d.city}
-            initial={{ opacity: 0, x: 18 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.45, delay: 0.15 + i * 0.08, ease }}
-            whileHover={{ x: 3, borderColor: `${GOLD}66` }}
-            whileTap={{ scale: 0.985 }}
-            onClick={() => {
-              // Hand the destination off to /preferences via sessionStorage.
-              // TripPreferences picks it up in its destination field if the
-              // user hasn't already started typing.
-              try { sessionStorage.setItem('sonder_seed_destination', d.query) } catch { /* noop */ }
-              navigate('/preferences')
-            }}
-            style={{
-              textAlign: 'left', padding: '14px 16px', borderRadius: 12,
-              background: 'rgba(232,212,168,0.03)',
-              border: `1px solid ${HAIRLINE}`,
-              cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              gap: 12, transition: 'all 0.2s',
-            }}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-              <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 19, color: BONE, lineHeight: 1.1 }}>
-                {d.city}
-              </span>
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE }}>
-                {d.country}
-              </span>
-            </div>
-            <span style={{
-              fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
-              letterSpacing: '0.22em', textTransform: 'uppercase',
-              color: GOLD, flexShrink: 0,
-            }}>
-              Start →
-            </span>
-          </motion.button>
-        ))}
-      </div>
-
-      <motion.button
-        whileHover={{ y: -2, boxShadow: `0 0 28px ${GOLD}33` }}
-        whileTap={{ scale: 0.98 }}
-        onClick={onPlan}
-        style={{
-          width: '100%', padding: '16px 20px',
-          background: `linear-gradient(135deg, ${GOLD} 0%, #B89668 100%)`,
-          border: 'none', borderRadius: 12, cursor: 'pointer',
-          fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
-          letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 600,
-          color: '#0a0807',
-          transition: 'all 0.25s',
-        }}
-      >
-        Plan something different
-      </motion.button>
     </div>
   )
 }
@@ -754,37 +688,20 @@ export default function Dashboard() {
       console.warn('getCurrentItinerary failed (keeping cache):', err?.message || err)
     }
 
-    // Build the past-trips list. If the API returns anything, use it.
-    // If it returns empty OR errors, fall back to synthesizing one entry
-    // from the just-fetched itinerary OR storedItinerary state OR
-    // localStorage cache — in that order. Either way: if we have *any*
-    // itinerary anywhere, the vault shows it. We never silently strand
-    // the user with an empty vault.
+    // Build the past-trips list directly from the backend. The
+    // previous "never strand empty vault" fallback (synthesise from
+    // currentIt / storedItinerary / localStorage when the API returned
+    // empty) caused a resurrection bug — after a delete the API
+    // correctly returned 0, the fallback found the deleted trip in
+    // localStorage and re-painted it as "current". Honest empty vault
+    // is the correct state after delete; if a freshly-generated trip
+    // hasn't propagated yet, the next refresh tick picks it up.
     let trips = []
     try {
       const res = await listSavedItineraries()
       trips = Array.isArray(res?.trips) ? res.trips : []
     } catch (err) {
-      console.warn('listSavedItineraries failed (falling back):', err?.message || err)
-    }
-    if (trips.length === 0) {
-      let raw = currentIt || storedItinerary
-      if (!raw) {
-        try { raw = JSON.parse(localStorage.getItem('sonder_last_itinerary') || 'null') } catch { /* noop */ }
-      }
-      if (raw && raw.itinerary_id) {
-        const days = raw.days || []
-        trips = [{
-          itinerary_id:     raw.itinerary_id,
-          is_current:       true,
-          city:             raw.destination?.city || '',
-          country:          raw.destination?.country || '',
-          day_count:        days.length,
-          trip_start:       days[0]?.trip_date || null,
-          trip_end:         days[days.length - 1]?.trip_date || null,
-          total_budget_usd: raw.total_budget_usd || 0,
-        }]
-      }
+      console.warn('listSavedItineraries failed:', err?.message || err)
     }
     setPastTrips(trips)
   }
@@ -1569,23 +1486,16 @@ export default function Dashboard() {
               </div>
             </motion.div>
           ) : (
-            <motion.div
-              onClick={() => navigate('/preferences')}
-              whileHover={{ y: -4, borderColor: 'rgba(245,158,11,0.35)', transition: spring }}
-              whileTap={{ scale: 0.99 }}
-              style={{ cursor: 'pointer', padding: '48px 40px', borderRadius: 26, background: 'rgba(245,158,11,0.04)', border: `1px solid rgba(245,158,11,0.18)`, textAlign: 'center', transition: 'all 0.25s' }}
+            <div
+              style={{ padding: '48px 40px', borderRadius: 26, background: 'rgba(245,158,11,0.04)', border: `1px solid rgba(245,158,11,0.18)`, textAlign: 'center' }}
             >
               <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 32, color: BONE, lineHeight: 1.15, marginBottom: 12 }}>
                 Your next trip is one decision away.
               </p>
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, marginBottom: 28, lineHeight: 1.6, maxWidth: 360, margin: '0 auto 28px' }}>
+              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, lineHeight: 1.6, maxWidth: 360, margin: '0 auto' }}>
                 Plan a trip and your itinerary will live here.
               </p>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: `1px solid rgba(245,158,11,0.30)` }}>
-                <Plus size={12} style={{ color: AMBER }}/>
-                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: AMBER }}>Plan your first trip</span>
-              </div>
-            </motion.div>
+            </div>
           )}
 
           {/* Trip actions row — outside the clickable card so taps never
@@ -1770,7 +1680,7 @@ export default function Dashboard() {
         <motion.div variants={reveal} style={{ padding: '52px 44px', display: 'flex', flexDirection: 'column', gap: 36 }}>
 
           {pastTrips.length === 0 ? (
-            <EmptyStateInspiration onPlan={() => navigate('/preferences')}/>
+            <EmptyStateInspiration/>
           ) : (
           <div>
             <div style={{ marginBottom: 24 }}>
