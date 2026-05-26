@@ -468,53 +468,84 @@ function GoldDust() {
   )
 }
 
-// Page-level cinematic backdrop. A slow Ken-Burns cycle through the
-// same SCENES list, blurred + dimmed + vignetted so dashboard content
-// stays legible on top. Cycles every ~12s — slower than the empty-
-// hero reel so it feels like ambient atmosphere, not a slideshow.
-function CinematicPageBackdrop() {
+// Page-level cinematic VIDEO backdrop. The dashboard is the movie.
+// Cycles through hand-picked Pexels CDN clips of tropical / exotic
+// destinations, full-viewport, auto-advancing with cross-fades.
+// Heavy dark vignette layered on top so trip cards, match cards and
+// every other dashboard surface stays legible on the moving footage.
+//
+// Hot-linked Pexels video URLs — Pexels license allows direct embed
+// for any purpose. If any single URL 404s the onError handler skips
+// to the next clip immediately rather than holding a black frame.
+const CINEMATIC_VIDEO_URLS = [
+  // Aerial drone — tropical lagoons
+  'https://videos.pexels.com/video-files/4763824/4763824-hd_1920_1080_24fps.mp4',
+  // Tropical beach with palms
+  'https://videos.pexels.com/video-files/1739010/1739010-hd_1920_1080_25fps.mp4',
+  // Drone over coast
+  'https://videos.pexels.com/video-files/856974/856974-hd_1920_1080_30fps.mp4',
+  // Underwater / coral reef
+  'https://videos.pexels.com/video-files/2098989/2098989-hd_1920_1080_24fps.mp4',
+  // Aerial — paradise islands
+  'https://videos.pexels.com/video-files/5752729/5752729-hd_1920_1080_30fps.mp4',
+  // Palm trees swaying
+  'https://videos.pexels.com/video-files/2169307/2169307-hd_1920_1080_24fps.mp4',
+  // Ocean waves
+  'https://videos.pexels.com/video-files/2169880/2169880-hd_1920_1080_25fps.mp4',
+  // Tropical paradise / beach
+  'https://videos.pexels.com/video-files/3209828/3209828-hd_1920_1080_25fps.mp4',
+]
+
+function CinematicVideoBackdrop() {
   const [idx, setIdx] = useState(0)
-  const n = SCENES.length
+  const n = CINEMATIC_VIDEO_URLS.length
+
+  // Cycle every ~22s. Most Pexels tropical clips are 10-30s long; if
+  // the clip ends before we cycle, `loop` keeps it playing until we
+  // do. This duration is the cut cadence, not the clip length.
   useEffect(() => {
-    const t = setInterval(() => setIdx(i => (i + 1) % n), 12000)
+    const t = setInterval(() => setIdx(i => (i + 1) % n), 22000)
     return () => clearInterval(t)
   }, [n])
-  const current = SCENES[idx]
-  const photo = useDestinationPhoto(current.city, current.country)
-  const kb = getKenBurns(current.pan)
+
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 0,
       pointerEvents: 'none', overflow: 'hidden',
+      background: '#040302',
     }}>
       <AnimatePresence mode="sync">
-        <motion.div
-          key={`${current.city}-${photo}`}
-          initial={{ opacity: 0, ...kb.initial }}
-          animate={{ opacity: 0.32, ...kb.animate }}
+        <motion.video
+          key={`${idx}-${CINEMATIC_VIDEO_URLS[idx]}`}
+          src={CINEMATIC_VIDEO_URLS[idx]}
+          autoPlay muted loop playsInline preload="auto"
+          onError={() => {
+            // Bad URL or load failure — skip to the next clip rather
+            // than freeze on a black frame.
+            setIdx(i => (i + 1) % n)
+          }}
+          initial={{ opacity: 0, scale: 1.06 }}
+          animate={{ opacity: 0.55, scale: 1.0 }}
           exit={{ opacity: 0 }}
           transition={{
-            opacity: { duration: 2.4, ease },
-            scale:   { duration: 14, ease: 'linear' },
-            x:       { duration: 14, ease: 'linear' },
-            y:       { duration: 14, ease: 'linear' },
+            opacity: { duration: 2.6, ease },
+            scale:   { duration: 24, ease: 'linear' },
           }}
           style={{
-            position: 'absolute', inset: '-10%',
-            background: photo
-              ? `url(${photo}) center/cover no-repeat`
-              : `radial-gradient(ellipse at 30% 40%, rgba(245,158,11,0.10), transparent 60%), #050403`,
-            filter: 'blur(6px) saturate(1.10) contrast(1.04)',
+            position: 'absolute', inset: 0,
+            width: '100%', height: '100%',
+            objectFit: 'cover',
+            filter: 'saturate(1.15) contrast(1.06)',
           }}
         />
       </AnimatePresence>
-      {/* Strong dark vignette + colour grade so the photo is *atmosphere*,
-          never something that competes with the dashboard content. */}
+      {/* Dark vignette + colour grade so the video is atmosphere, not
+          a thing competing with the UI cards on top. */}
       <div style={{
         position: 'absolute', inset: 0,
         background:
-          'radial-gradient(ellipse at center, rgba(4,3,2,0.55) 0%, rgba(4,3,2,0.82) 60%, rgba(4,3,2,0.96) 100%), ' +
-          'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.72) 100%)',
+          'radial-gradient(ellipse at center, rgba(4,3,2,0.40) 0%, rgba(4,3,2,0.72) 60%, rgba(4,3,2,0.90) 100%), ' +
+          'linear-gradient(180deg, rgba(0,0,0,0.40) 0%, rgba(0,0,0,0.62) 100%)',
       }}/>
     </div>
   )
@@ -528,7 +559,7 @@ function CinematicPageBackdrop() {
 function CinematicPageAtmosphere() {
   return (
     <>
-      <CinematicPageBackdrop/>
+      <CinematicVideoBackdrop/>
       {/* Drifting lens flare — fixed, much slower + dimmer than the
           empty-hero version because it's running over the whole page
           and should feel like ambient light, not an event. */}
@@ -604,6 +635,101 @@ function PageGoldDust() {
         />
       ))}
     </div>
+  )
+}
+
+// Empty-state overlay sitting on top of the cinematic video backdrop.
+// No cards, no widgets — the video is doing the work. Just a centred
+// title-card-style typographic moment + a single "Plan your trip" CTA
+// that routes to /preferences. Pointer-events on the wrapper are off
+// so taps still hit the video; only the button intercepts clicks.
+function EmptyStateMovieOverlay() {
+  const navigate = useNavigate()
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 1.8, ease, delay: 0.4 }}
+      style={{
+        flex: 1, position: 'relative', zIndex: 1,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        textAlign: 'center', padding: '60px 32px 80px',
+        minHeight: '70vh',
+        pointerEvents: 'none',
+      }}
+    >
+      <motion.span
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1.4, delay: 0.6, ease }}
+        style={{
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 10.5,
+          letterSpacing: '0.50em', textTransform: 'uppercase',
+          color: GOLD, marginBottom: 26,
+          textShadow: `0 0 22px ${GOLD}88, 0 2px 12px rgba(0,0,0,0.9)`,
+          fontWeight: 500,
+        }}
+      >
+        ✦ The world is open
+      </motion.span>
+
+      <motion.h1
+        initial={{ opacity: 0, y: 22, filter: 'blur(12px)' }}
+        animate={{ opacity: 1, y: 0,  filter: 'blur(0px)' }}
+        transition={{ duration: 1.8, delay: 0.85, ease: [0.16, 1, 0.3, 1] }}
+        style={{
+          fontFamily: '"Cormorant Garamond",serif',
+          fontStyle: 'italic', fontWeight: 400,
+          fontSize: 'clamp(56px, 8vw, 108px)',
+          color: BONE, lineHeight: 0.92, margin: 0,
+          letterSpacing: '-0.025em',
+          textShadow: '0 6px 44px rgba(0,0,0,0.92)',
+          maxWidth: 1100,
+        }}
+      >
+        Pick a place. We'll build the rest.
+      </motion.h1>
+
+      <motion.p
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1.4, delay: 1.4, ease }}
+        style={{
+          fontFamily: '"Cormorant Garamond",serif',
+          fontStyle: 'italic', fontWeight: 300,
+          fontSize: 'clamp(20px, 1.8vw, 28px)',
+          color: 'rgba(245,241,232,0.86)',
+          margin: '28px 0 0', maxWidth: 720,
+          lineHeight: 1.32,
+          textShadow: '0 2px 20px rgba(0,0,0,0.9)',
+        }}
+      >
+        Itinerary, companions, shared planning — all of it unlocks
+        the moment you tell us where.
+      </motion.p>
+
+      <motion.button
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1.2, delay: 1.9, ease }}
+        whileHover={{ y: -3, boxShadow: `0 16px 48px rgba(0,0,0,0.5), 0 0 56px ${GOLD}66` }}
+        whileTap={{ scale: 0.97 }}
+        onClick={() => navigate('/preferences')}
+        style={{
+          marginTop: 44, padding: '18px 34px',
+          background: `linear-gradient(135deg, ${GOLD} 0%, #B89668 100%)`,
+          border: 'none', borderRadius: 14,
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+          letterSpacing: '0.32em', textTransform: 'uppercase',
+          fontWeight: 600, color: '#0a0807',
+          cursor: 'pointer', pointerEvents: 'auto',
+          boxShadow: `0 12px 36px rgba(0,0,0,0.4), 0 0 32px ${GOLD}44`,
+        }}
+      >
+        ✦  Begin a trip
+      </motion.button>
+    </motion.div>
   )
 }
 
@@ -1882,23 +2008,13 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* Empty state is now one full-width cinematic film — no inspiration
-          cards, no dice widget, no two-column grid. The whole stage is
-          devoted to the movie until the user actually has a trip. */}
+      {/* Empty state — the video backdrop IS the page. No inspiration
+          cards, no photo reel, no dice, no nothing. A single floating
+          title overlay points users at the "Plan a trip" CTA in the nav.
+          Trip state below renders the regular dashboard grid on top of
+          the same video. */}
       {pastTrips.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 1.4, ease }}
-          style={{
-            flex: 1, width: '100%', maxWidth: 1400,
-            margin: '0 auto',
-            padding: '32px 32px 64px',
-            position: 'relative', zIndex: 1,
-          }}
-        >
-          <CinematicReel />
-        </motion.div>
+        <EmptyStateMovieOverlay />
       ) : (
       <motion.div variants={stagger} initial="hidden" animate="show"
         style={{ flex: 1, display: 'grid', gridTemplateColumns: '1.4fr 1fr', maxWidth: 1240, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
