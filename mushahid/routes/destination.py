@@ -48,29 +48,30 @@ async def destination_photo(
 # engine handles the actual photo pick per query; "aerial" keyword
 # keeps the Ken-Burns simulation reading as flyover.
 _LUXURY_BACKDROP_QUERIES = [
-    # Tropical islands — turquoise water, lagoons, palm-fringed coast.
-    # NO jungles, NO rice terraces, NO waterfalls. Islands only.
-    "Maldives aerial atoll",
-    "Bora Bora aerial lagoon",
-    "Palawan El Nido aerial island",
-    "Hawaii Kauai aerial island",
-    "Phi Phi Islands aerial",
-    "Seychelles islands aerial",
-    "Halong Bay islands aerial",
-    "Tahiti island aerial",
-    "Whitsunday Islands aerial",
-    "Fiji islands aerial",
-    # Beautiful mountains — peaks, alpine lakes, snow, ridges.
-    # NO cities, NO architecture, NO valleys-with-towns. Peaks only.
-    "Patagonia Torres del Paine mountains",
-    "Swiss Alps Matterhorn aerial",
-    "New Zealand Milford Sound mountains",
-    "Banff Moraine Lake mountains",
-    "Dolomites Italy mountains aerial",
-    "Iceland mountain glacier aerial",
-    "Lofoten Islands mountains aerial",
-    "Himalaya peaks aerial",
-    "Norway fjord mountains aerial",
+    # Tropical islands — full-view ground-level landscapes. NO "aerial"
+    # keyword so Pixabay surfaces walking-perspective wide shots, not
+    # drone footage. Turquoise water + palm coast + lagoons.
+    "Maldives island lagoon",
+    "Bora Bora island lagoon",
+    "Palawan El Nido island",
+    "Hawaii Kauai island",
+    "Phi Phi Islands Thailand",
+    "Seychelles tropical island",
+    "Halong Bay Vietnam",
+    "Tahiti island",
+    "Whitsunday Islands",
+    "Fiji islands",
+    # Beautiful mountain landscapes — full-view wide shots from the
+    # ground / a ridge / a lakeshore. Peaks, alpine lakes, glaciers.
+    "Patagonia Torres del Paine",
+    "Swiss Alps Matterhorn",
+    "Milford Sound New Zealand",
+    "Banff Moraine Lake",
+    "Dolomites Italy mountains",
+    "Iceland mountain landscape",
+    "Lofoten Islands mountains",
+    "Himalaya peaks",
+    "Norway fjord mountains",
 ]
 
 

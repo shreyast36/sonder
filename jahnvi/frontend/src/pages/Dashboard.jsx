@@ -474,21 +474,50 @@ function GoldDust() {
 // Backend curates the queries + handles the API key in /api/luxury-
 // backdrops; we just animate the result.
 
-// Restrained drone moves — small enough that the photo never upscales
-// past its native pixel grid (anything above ~1.18 starts to look
-// soft on a 1920px viewport from a 1920-1280px source). Reads as a
-// real handheld camera move instead of a digital zoom.
-const FLYOVER_MOVES = [
-  // gentle pan-right + light push-in
-  { initial: { scale: 1.00, x: '-5%', y: '2%'  }, animate: { scale: 1.10, x: '5%',  y: '-2%' } },
-  // gentle pan-left + light push-in
-  { initial: { scale: 1.00, x: '5%',  y: '-2%' }, animate: { scale: 1.10, x: '-5%', y: '2%'  } },
-  // slow zoom-in from native
-  { initial: { scale: 1.00, x: '0%',  y: '2%'  }, animate: { scale: 1.14, x: '0%',  y: '-2%' } },
-  // diagonal drift
-  { initial: { scale: 1.04, x: '-4%', y: '-2%' }, animate: { scale: 1.12, x: '4%',  y: '2%'  } },
-  // pull-out reveal
-  { initial: { scale: 1.14, x: '0%',  y: '0%'  }, animate: { scale: 1.00, x: '0%',  y: '0%'  } },
+// Walking-perspective camera moves. Each one slowly pushes the
+// viewer FORWARD into the scene (scale ramps up over the duration)
+// with a subtle footstep bob (y oscillates) and a soft sway (x
+// drifts) — the same gentle motion you'd see from a phone held by
+// someone walking through the landscape. NOT a drone. NOT Ken-Burns.
+// Keyframe arrays drive the bob/sway; the wrapping motion.div
+// applies them with `times` so the wobble lands on a metronome
+// instead of easing through the whole shot.
+const WALKING_MOVES = [
+  // Walking straight forward, soft 4-step bob
+  {
+    scale: [1.00, 1.12],
+    x:     ['0%', '0%'],
+    y:     ['0%', '-0.9%', '0.4%', '-0.9%', '0.4%', '-0.9%', '0%'],
+    times: [0,   0.16,    0.33,   0.5,     0.67,   0.83,    1],
+  },
+  // Walking forward + drifting left like turning your head
+  {
+    scale: [1.02, 1.11],
+    x:     ['3%', '-3%'],
+    y:     ['0%', '-0.8%', '0.4%', '-0.8%', '0.4%', '-0.8%', '0%'],
+    times: [0,   0.16,    0.33,   0.5,     0.67,   0.83,    1],
+  },
+  // Walking forward + drifting right
+  {
+    scale: [1.02, 1.11],
+    x:     ['-3%', '3%'],
+    y:     ['0%', '-0.8%', '0.4%', '-0.8%', '0.4%', '-0.8%', '0%'],
+    times: [0,   0.16,    0.33,   0.5,     0.67,   0.83,    1],
+  },
+  // Slow push deeper into the scene (longer stride)
+  {
+    scale: [1.00, 1.14],
+    x:     ['0%', '0%'],
+    y:     ['0%', '-1.0%', '0.3%', '-1.0%', '0.3%', '-1.0%', '0%'],
+    times: [0,   0.18,    0.35,   0.52,    0.7,    0.86,    1],
+  },
+  // Stopping to look around — slight horizontal sway, gentle bob
+  {
+    scale: [1.05, 1.08],
+    x:     ['-3%', '3%'],
+    y:     ['0%', '-0.5%', '0%', '-0.5%', '0%'],
+    times: [0,   0.25,    0.5, 0.75,    1],
+  },
 ]
 
 // Hard fallback when the backend hasn't reached Pixabay yet (or the
@@ -547,7 +576,7 @@ function CinematicVideoBackdrop() {
   }
 
   const current = urls[idx]
-  const move = FLYOVER_MOVES[idx % FLYOVER_MOVES.length]
+  const move = WALKING_MOVES[idx % WALKING_MOVES.length]
 
   return (
     <div style={{
@@ -558,22 +587,36 @@ function CinematicVideoBackdrop() {
       <AnimatePresence mode="sync">
         <motion.div
           key={`${idx}-${current}`}
-          initial={{ opacity: 0, ...move.initial }}
-          animate={{ opacity: 1, ...move.animate }}
+          initial={{
+            opacity: 0,
+            scale: Array.isArray(move.scale) ? move.scale[0] : move.scale,
+            x:     Array.isArray(move.x)     ? move.x[0]     : move.x,
+            y:     Array.isArray(move.y)     ? move.y[0]     : move.y,
+          }}
+          animate={{
+            opacity: 1,
+            scale: move.scale,
+            x:     move.x,
+            y:     move.y,
+          }}
           exit={{ opacity: 0 }}
           transition={{
             opacity: { duration: 2.4, ease },
+            // Walking-pace push-forward: 15s slow stride. linear so
+            // the scale never decelerates into the cut.
             scale:   { duration: 15, ease: 'linear' },
-            x:       { duration: 15, ease: 'linear' },
-            y:       { duration: 15, ease: 'linear' },
+            // x sway and y bob both follow the keyframe arrays, with
+            // `times` keeping the footsteps on a metronome instead of
+            // easing through the whole shot.
+            x:       { duration: 15, ease: 'easeInOut', times: move.times },
+            y:       { duration: 15, ease: 'easeInOut', times: move.times },
           }}
           style={{
             position: 'absolute', inset: '-4%',
             background: `url(${current}) center/cover no-repeat`,
             // Sharpened-photo grade — gentle saturation lift + a real
             // contrast bump so the photo reads crisp, like a phone shot,
-            // not a soft postcard. NO blur layer. Brightness untouched
-            // so the highlights aren't washed.
+            // not a soft postcard. NO blur layer.
             filter: 'saturate(1.15) contrast(1.14)',
           }}
         />
