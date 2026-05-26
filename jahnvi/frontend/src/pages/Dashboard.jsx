@@ -252,317 +252,293 @@ function LiveTravellersStrip({ onJump }) {
 }
 
 // ── Empty-state inspiration ───────────────────────────────────────────────
-// Cinematic backdrop for the empty hero — Ken-Burns slow zoom on a
-// rotating destination photo, crossfaded every ~7s. Photo source is
-// the same Wikipedia hero we use on past-trip cards; falls back to a
-// pure-black backdrop if the network's slow.
-const CINEMATIC_REEL = [
-  { city: 'Lisbon',     country: 'Portugal' },
-  { city: 'Kyoto',      country: 'Japan'    },
-  { city: 'Marrakech',  country: 'Morocco'  },
-  { city: 'Reykjavík',  country: 'Iceland'  },
+// Tropical destinations powering the cinematic 3D gallery in the
+// empty-state hero slot. Hand-curated for max visual punch — these
+// are the ones whose Wikipedia hero photos read as "you are NOT
+// where you are right now."
+const TROPICAL_DESTINATIONS = [
+  { city: 'Bora Bora',       country: 'French Polynesia', tagline: 'Where the horizon dissolves into sky.' },
+  { city: 'Maldives',        country: 'Indian Ocean',     tagline: 'Bungalows built on glass water.'      },
+  { city: 'Bali',            country: 'Indonesia',        tagline: 'Temples wrapped in jungle.'           },
+  { city: 'Phi Phi Islands', country: 'Thailand',         tagline: 'Limestone cliffs, turquoise everything.' },
+  { city: 'Seychelles',      country: 'East Africa',      tagline: 'Granite islands the colour of rose.' },
+  { city: 'Tulum',           country: 'Mexico',           tagline: 'Mayan ruins on a cliff of cenotes.'  },
+  { city: 'Boracay',         country: 'Philippines',      tagline: 'Powder sand, neon-bright water.'     },
+  { city: 'Zanzibar',        country: 'Tanzania',         tagline: 'Spice trails and dhow sails.'        },
+  { city: 'Fiji',            country: 'South Pacific',    tagline: 'Where the day starts new.'           },
+  { city: 'Mauritius',       country: 'Indian Ocean',     tagline: 'A lagoon of impossible blue.'        },
+  { city: 'Palawan',         country: 'Philippines',      tagline: 'Lagoons hidden behind lagoons.'      },
+  { city: 'Koh Samui',       country: 'Thailand',         tagline: 'Coconuts, monsoon rains, slow time.' },
 ]
 
-function CinematicBackdrop() {
-  const [idx, setIdx] = useState(0)
-  const current = CINEMATIC_REEL[idx]
-  const photo = useDestinationPhoto(current.city, current.country)
-  useEffect(() => {
-    const t = setInterval(() => {
-      setIdx(i => (i + 1) % CINEMATIC_REEL.length)
-    }, 7000)
-    return () => clearInterval(t)
-  }, [])
-  return (
-    <AnimatePresence mode="sync">
-      <motion.div
-        key={`${current.city}-${photo}`}
-        initial={{ opacity: 0, scale: 1.0 }}
-        animate={{ opacity: 0.85, scale: 1.08 }}
-        exit={{ opacity: 0 }}
-        transition={{ opacity: { duration: 1.6, ease }, scale: { duration: 8, ease: 'linear' } }}
-        style={{
-          position: 'absolute', inset: 0,
-          background: photo
-            ? `url(${photo}) center/cover no-repeat`
-            : `radial-gradient(ellipse at 30% 40%, rgba(245,158,11,0.10), transparent 60%), #050403`,
-          filter: 'grayscale(0.15) contrast(1.05)',
-          pointerEvents: 'none',
-        }}
-      />
-    </AnimatePresence>
-  )
-}
-
-// Cool, dramatic, no-CTA empty hero. The right-column city cards +
-// dice roll own the actual action — this card just establishes mood.
-// Rotating cinematic backdrop + slow Ken-Burns + atmospheric headline
-// that animates in like a film title card.
-function CinematicEmptyHero() {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 1.2, ease }}
-      style={{
-        position: 'relative', overflow: 'hidden',
-        borderRadius: 26, minHeight: 340,
-        background: '#040302',
-        border: `1px solid rgba(212,182,134,0.18)`,
-        display: 'flex', flexDirection: 'column',
-        justifyContent: 'center', alignItems: 'center',
-        textAlign: 'center', padding: '64px 40px',
-        boxShadow: `0 24px 80px rgba(0,0,0,0.55)`,
-      }}
-    >
-      <CinematicBackdrop />
-      {/* Dark vignette over the photo so the headline stays legible. */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.78) 60%, rgba(4,3,2,0.96) 100%)',
-        pointerEvents: 'none',
-      }}/>
-      {/* Subtle gold scanline / film-grain feel via overlapping gradients. */}
-      <motion.div
-        animate={{ opacity: [0.04, 0.08, 0.04] }}
-        transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-        style={{
-          position: 'absolute', inset: 0,
-          background: `linear-gradient(180deg, transparent 0%, ${GOLD}11 50%, transparent 100%)`,
-          pointerEvents: 'none', mixBlendMode: 'screen',
-        }}
-      />
-
-      <motion.span
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1, delay: 0.4, ease }}
-        style={{
-          position: 'relative', zIndex: 1,
-          fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
-          letterSpacing: '0.40em', textTransform: 'uppercase',
-          color: GOLD, marginBottom: 22,
-          textShadow: `0 0 18px ${GOLD}55`,
-        }}
-      >
-        Somewhere out there
-      </motion.span>
-
-      <motion.h1
-        initial={{ opacity: 0, y: 18, filter: 'blur(8px)' }}
-        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-        transition={{ duration: 1.6, delay: 0.65, ease: [0.16, 1, 0.3, 1] }}
-        style={{
-          position: 'relative', zIndex: 1,
-          fontFamily: '"Cormorant Garamond",serif',
-          fontStyle: 'italic', fontWeight: 300,
-          fontSize: 'clamp(36px, 4.2vw, 54px)',
-          color: BONE, lineHeight: 1.04, letterSpacing: '-0.02em',
-          margin: 0, textShadow: `0 0 36px rgba(212,182,134,0.35)`,
-        }}
-      >
-        The world is waiting.
-      </motion.h1>
-
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 1.2, delay: 1.3, ease }}
-        style={{
-          position: 'relative', zIndex: 1,
-          fontFamily: '"Cormorant Garamond",serif',
-          fontStyle: 'italic', fontWeight: 300,
-          fontSize: 17, color: MUTE,
-          margin: '20px 0 0', letterSpacing: '0.02em',
-        }}
-      >
-        Pick a corner.
-      </motion.p>
-
-      {/* Slow ambient gold pulse in the corner — subliminal "alive" cue. */}
-      <motion.div
-        animate={{ opacity: [0.25, 0.7, 0.25] }}
-        transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut' }}
-        style={{
-          position: 'absolute', bottom: 22, right: 22, zIndex: 1,
-          width: 6, height: 6, borderRadius: '50%',
-          background: GOLD, boxShadow: `0 0 16px ${GOLD}, 0 0 28px ${GOLD}66`,
-        }}
-      />
-    </motion.div>
-  )
-}
-
-// Hand-curated mood pool for the full-width gallery on the empty
-// dashboard. Skews toward visually distinctive places that look
-// great as photo tiles — these don't have to match the inspiration
-// list or the dice-roll pool, and intentional overlap is fine.
-const GALLERY_DESTINATIONS = [
-  { city: 'Santorini',     country: 'Greece'        },
-  { city: 'Marrakech',     country: 'Morocco'       },
-  { city: 'Hoi An',        country: 'Vietnam'       },
-  { city: 'Petra',         country: 'Jordan'        },
-  { city: 'Patagonia',     country: 'Argentina'     },
-  { city: 'Hokkaido',      country: 'Japan'         },
-  { city: 'Cinque Terre',  country: 'Italy'         },
-  { city: 'Jaipur',        country: 'India'         },
-  { city: 'Cape Town',     country: 'South Africa'  },
-  { city: 'Banff',         country: 'Canada'        },
-  { city: 'Tórshavn',      country: 'Faroe Islands' },
-  { city: 'Cartagena',     country: 'Colombia'      },
-]
-
-function GalleryTile({ city, country, index }) {
-  const navigate = useNavigate()
+// One 3D card in the cover-flow stack. Position relative to the
+// centre card is encoded in `offset` (-2..+2). The active card is
+// large, sharp, fully opaque; flanks fall back in 3D space, dim
+// and rotate inward toward the centre. Side cards stay clickable
+// so users can manually steer the carousel.
+function Cinematic3DCard({ destination, offset, active, onClick }) {
+  const { city, country, tagline } = destination
   const photo = useDestinationPhoto(city, country)
+
+  const translateXPct = offset * 38
+  const translateZ    = -Math.abs(offset) * 220
+  const rotateY       = offset * -32
+  const opacity       = offset === 0 ? 1 : (Math.abs(offset) === 1 ? 0.5 : 0.18)
+  const scale         = offset === 0 ? 1 : (Math.abs(offset) === 1 ? 0.82 : 0.66)
+  const zIndex        = 10 - Math.abs(offset)
+
   return (
     <motion.button
-      initial={{ opacity: 0, y: 18 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.55, delay: 0.05 + index * 0.05, ease }}
-      whileHover={{ y: -6, boxShadow: `0 28px 48px rgba(0,0,0,0.55), 0 0 32px ${GOLD}22` }}
-      whileTap={{ scale: 0.98 }}
-      onClick={() => {
-        try {
-          sessionStorage.setItem('sonder_seed_destination', `${city}, ${country}`)
-        } catch { /* noop */ }
-        navigate('/preferences')
+      onClick={onClick}
+      initial={false}
+      animate={{
+        x: `${translateXPct}%`,
+        z: translateZ,
+        rotateY,
+        opacity,
+        scale,
       }}
+      transition={{ duration: 1.0, ease: [0.16, 1, 0.3, 1] }}
       style={{
-        position: 'relative', overflow: 'hidden',
-        flex: '0 0 auto', width: 260, height: 340,
-        background: photo
-          ? `url(${photo}) center/cover no-repeat`
-          : `linear-gradient(135deg, #1a140d 0%, #0a0807 100%)`,
-        border: `1px solid ${HAIRLINE}`,
-        borderRadius: 18, cursor: 'pointer',
-        textAlign: 'left',
-        transition: 'all 0.35s',
-        scrollSnapAlign: 'start',
+        position: 'absolute', top: '50%', left: '50%',
+        width: '64%', height: '78%',
+        marginLeft: '-32%', marginTop: '-39%',
+        padding: 0, border: 'none', background: 'transparent',
+        cursor: 'pointer', zIndex,
+        transformStyle: 'preserve-3d',
       }}
     >
-      {/* Dark gradient overlay so the typography stays legible. */}
       <div style={{
-        position: 'absolute', inset: 0,
-        background: 'linear-gradient(180deg, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0.20) 45%, rgba(0,0,0,0.88) 100%)',
-        pointerEvents: 'none',
-      }}/>
-
-      {/* Subtle gold sweep on hover — handled via CSS-in-JS would be
-          cleaner with a stylesheet, but a static gradient + the parent
-          hover scale carries the drama enough. */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        background: `radial-gradient(ellipse at top right, ${GOLD}10, transparent 60%)`,
-        pointerEvents: 'none', mixBlendMode: 'screen',
-      }}/>
-
-      <div style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0,
-        padding: '20px 22px 22px', zIndex: 1,
+        position: 'relative', width: '100%', height: '100%',
+        background: photo ? `url(${photo}) center/cover no-repeat` : '#0a0807',
+        borderRadius: 20,
+        border: `1px solid ${active ? `${GOLD}88` : `${GOLD}22`}`,
+        boxShadow: active
+          ? `0 36px 88px rgba(0,0,0,0.75), 0 0 64px ${GOLD}44, inset 0 0 0 1px ${GOLD}33`
+          : `0 18px 48px rgba(0,0,0,0.55)`,
+        overflow: 'hidden',
+        filter: active ? 'saturate(1.05)' : 'saturate(0.85) brightness(0.85)',
+        transition: 'filter 0.6s, box-shadow 0.6s, border-color 0.6s',
       }}>
-        <span style={{
-          display: 'block',
-          fontFamily: '"Inter Tight",sans-serif', fontSize: 8.5,
-          letterSpacing: '0.32em', textTransform: 'uppercase',
-          color: GOLD, marginBottom: 6,
-          textShadow: `0 0 14px ${GOLD}66`,
-        }}>
-          {country}
-        </span>
-        <span style={{
-          display: 'block',
-          fontFamily: '"Cormorant Garamond",serif',
-          fontStyle: 'italic', fontWeight: 400,
-          fontSize: 28, color: BONE, lineHeight: 1.05,
-          letterSpacing: '-0.01em',
-          textShadow: `0 2px 14px rgba(0,0,0,0.7)`,
-        }}>
-          {city}
-        </span>
-      </div>
+        {/* Cinematic dark vignette — heavy at the bottom for typography */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: active
+            ? 'linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.30) 50%, rgba(0,0,0,0.90) 100%)'
+            : 'linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.75) 100%)',
+          pointerEvents: 'none',
+        }}/>
 
-      {/* Small "→ start" affordance in the top-right that fades in on
-          hover. Pure CSS would need a wrapper rule; using motion's
-          whileHover on the parent doesn't propagate. Keep static here
-          and let the hover scale + glow do the affordance work. */}
-      <div style={{
-        position: 'absolute', top: 14, right: 14,
-        width: 28, height: 28, borderRadius: '50%',
-        background: 'rgba(10,8,7,0.6)', border: `1px solid ${GOLD}44`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        backdropFilter: 'blur(8px)',
-      }}>
-        <ChevronRight size={12} style={{ color: GOLD }}/>
+        {/* Active-only: drifting gold film-grain scanline */}
+        {active && (
+          <motion.div
+            animate={{ opacity: [0.05, 0.14, 0.05] }}
+            transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
+            style={{
+              position: 'absolute', inset: 0,
+              background: `linear-gradient(180deg, transparent 0%, ${GOLD}22 50%, transparent 100%)`,
+              mixBlendMode: 'screen', pointerEvents: 'none',
+            }}
+          />
+        )}
+
+        {/* Active-only: "take me there" pill in top-right */}
+        {active && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, delay: 0.5, ease }}
+            style={{
+              position: 'absolute', top: 26, right: 26, zIndex: 2,
+              padding: '10px 18px', borderRadius: 999,
+              background: 'rgba(10,8,7,0.55)',
+              backdropFilter: 'blur(14px)',
+              WebkitBackdropFilter: 'blur(14px)',
+              border: `1px solid ${GOLD}55`,
+              display: 'flex', alignItems: 'center', gap: 8,
+              boxShadow: `0 0 24px ${GOLD}33`,
+            }}
+          >
+            <span style={{
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+              letterSpacing: '0.32em', textTransform: 'uppercase',
+              color: GOLD, fontWeight: 500,
+            }}>
+              Take me there →
+            </span>
+          </motion.div>
+        )}
+
+        {/* Typography — bottom-left, scales up dramatically when active */}
+        <div style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          padding: active ? '40px 40px 38px' : '24px 26px 26px',
+          transition: 'padding 0.6s',
+        }}>
+          <span style={{
+            display: 'block',
+            fontFamily: '"Inter Tight",sans-serif',
+            fontSize: active ? 10 : 8,
+            letterSpacing: '0.42em', textTransform: 'uppercase',
+            color: GOLD, marginBottom: active ? 12 : 6,
+            textShadow: `0 0 14px ${GOLD}66`,
+            transition: 'all 0.6s',
+          }}>
+            {country}
+          </span>
+          <h2 style={{
+            fontFamily: '"Cormorant Garamond",serif',
+            fontStyle: 'italic', fontWeight: 400,
+            fontSize: active ? 58 : 28,
+            color: BONE, lineHeight: 0.95,
+            margin: 0, letterSpacing: '-0.025em',
+            textShadow: '0 4px 28px rgba(0,0,0,0.88)',
+            transition: 'font-size 0.6s',
+          }}>
+            {city}
+          </h2>
+          {active && tagline && (
+            <motion.p
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, delay: 0.55, ease }}
+              style={{
+                fontFamily: '"Cormorant Garamond",serif',
+                fontStyle: 'italic', fontWeight: 300,
+                fontSize: 19, color: 'rgba(245,241,232,0.78)',
+                margin: '16px 0 0', maxWidth: 420,
+                lineHeight: 1.32, letterSpacing: '0.005em',
+                textShadow: '0 2px 14px rgba(0,0,0,0.85)',
+              }}
+            >
+              {tagline}
+            </motion.p>
+          )}
+        </div>
       </div>
     </motion.button>
   )
 }
 
-function GalleryStrip() {
+// Cinematic 3D cover-flow gallery. Auto-advances every ~5.5s, pauses
+// on hover so the user can read the tagline. Click the centre card
+// to seed /preferences with that destination; click a side card to
+// bring it to the centre. Replaces the old static "world is waiting"
+// hero — the empty-state actually moves and feels like a film opener
+// instead of an explanation card.
+function Cinematic3DGallery() {
+  const navigate = useNavigate()
+  const [idx, setIdx] = useState(0)
+  const [paused, setPaused] = useState(false)
+  const n = TROPICAL_DESTINATIONS.length
+
+  useEffect(() => {
+    if (paused) return
+    const t = setInterval(() => setIdx(i => (i + 1) % n), 5500)
+    return () => clearInterval(t)
+  }, [paused, n])
+
+  // Shortest-path offset on a circular ring so the carousel can wrap
+  // around without the side cards making a long visual journey.
+  function offsetOf(i) {
+    let d = i - idx
+    if (d > n / 2) d -= n
+    if (d < -n / 2) d += n
+    return d
+  }
+
+  function pickCenter() {
+    const d = TROPICAL_DESTINATIONS[idx]
+    try { sessionStorage.setItem('sonder_seed_destination', `${d.city}, ${d.country}`) } catch { /* noop */ }
+    navigate('/preferences')
+  }
+
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, ease, delay: 0.3 }}
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 1.2, ease }}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
       style={{
-        gridColumn: '1 / -1',
-        padding: '52px 52px 40px',
-        borderTop: `1px solid ${HAIRLINE}`,
-        position: 'relative',
+        position: 'relative', overflow: 'hidden',
+        borderRadius: 26, minHeight: 560,
+        background: 'radial-gradient(ellipse at 50% 30%, #0a0807 0%, #040302 65%, #020201 100%)',
+        border: `1px solid rgba(212,182,134,0.20)`,
+        boxShadow: `0 32px 100px rgba(0,0,0,0.6)`,
       }}
     >
-      {/* gold gradient hairline ornament — matches "Your trips" header */}
-      <div style={{
-        position: 'absolute', top: -1, left: '52px', width: '120px', height: '1px',
-        background: `linear-gradient(90deg, ${GOLD} 0%, transparent 100%)`,
-      }}/>
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1.2, delay: 0.3, ease }}
+        style={{
+          position: 'absolute', top: 30, left: 0, right: 0,
+          textAlign: 'center', zIndex: 20,
+        }}
+      >
+        <span style={{
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 9.5,
+          letterSpacing: '0.46em', textTransform: 'uppercase',
+          color: GOLD, fontWeight: 500,
+          textShadow: `0 0 18px ${GOLD}77`,
+        }}>
+          ✦ A Gallery of Dreams
+        </span>
+      </motion.div>
 
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <motion.span
-            animate={{ opacity: [0.4, 1, 0.4] }}
-            transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
-            style={{
-              width: 6, height: 6, borderRadius: '50%',
-              background: GOLD, boxShadow: `0 0 10px ${GOLD}`,
-            }}
-          />
-          <p style={{
-            fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
-            letterSpacing: '0.34em', textTransform: 'uppercase',
-            color: MUTE, margin: 0,
-          }}>
-            A gallery of dreams
-          </p>
+      <div
+        style={{
+          position: 'absolute', inset: 0,
+          perspective: 1600, perspectiveOrigin: '50% 50%',
+        }}
+      >
+        <div style={{
+          position: 'relative', width: '100%', height: '100%',
+          transformStyle: 'preserve-3d',
+        }}>
+          {TROPICAL_DESTINATIONS.map((d, i) => {
+            const off = offsetOf(i)
+            if (Math.abs(off) > 2) return null
+            return (
+              <Cinematic3DCard
+                key={d.city}
+                destination={d}
+                offset={off}
+                active={off === 0}
+                onClick={() => {
+                  if (off === 0) pickCenter()
+                  else setIdx(i)
+                }}
+              />
+            )
+          })}
         </div>
-        <h2 style={{
-          fontFamily: '"Cormorant Garamond",serif', fontWeight: 400,
-          fontStyle: 'italic', fontSize: 38, color: BONE,
-          lineHeight: 1.02, margin: 0, letterSpacing: '-0.02em',
-        }}>
-          What if…
-        </h2>
-        <p style={{
-          fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
-          fontSize: 13, color: MUTE, lineHeight: 1.6,
-          margin: '12px 0 0', maxWidth: 520,
-        }}>
-          Twelve places that earn their photographs. Pick one and we'll
-          build the trip around it.
-        </p>
       </div>
 
       <div style={{
-        display: 'flex', gap: 18, overflowX: 'auto', overflowY: 'visible',
-        paddingBottom: 18, paddingTop: 4,
-        scrollSnapType: 'x mandatory', scrollbarWidth: 'thin',
+        position: 'absolute', bottom: 30, left: 0, right: 0,
+        display: 'flex', justifyContent: 'center', gap: 8, zIndex: 20,
       }}>
-        {GALLERY_DESTINATIONS.map((d, i) => (
-          <GalleryTile key={d.city} city={d.city} country={d.country} index={i}/>
-        ))}
+        {TROPICAL_DESTINATIONS.map((_, i) => {
+          const isActive = i === idx
+          return (
+            <button
+              key={i}
+              onClick={() => setIdx(i)}
+              aria-label={`Go to slide ${i + 1}`}
+              style={{
+                width: isActive ? 32 : 6, height: 6, padding: 0,
+                borderRadius: 3, border: 'none', cursor: 'pointer',
+                background: isActive ? GOLD : `${GOLD}33`,
+                boxShadow: isActive ? `0 0 14px ${GOLD}aa` : 'none',
+                transition: 'all 0.55s ease',
+              }}
+            />
+          )
+        })}
       </div>
-    </motion.section>
+    </motion.div>
   )
 }
 
@@ -2127,7 +2103,7 @@ export default function Dashboard() {
               </div>
             </motion.div>
           ) : (
-            <CinematicEmptyHero />
+            <Cinematic3DGallery />
           )}
 
           {/* Trip actions row — outside the clickable card so taps never
@@ -2459,14 +2435,9 @@ export default function Dashboard() {
 
         </motion.div>
 
-        {/* Picture gallery — full-width "what if" mood strip below the
-            two empty-state columns. Only renders when the user has zero
-            trips; once they plan one, the past-trips section takes over
-            this row. Clicking a tile seeds /preferences via the same
-            sessionStorage seam the inspiration cards use. */}
-        {pastTrips.length === 0 && (
-          <GalleryStrip />
-        )}
+        {/* The picture gallery moved into the left hero slot — the
+            empty-state below this point is now just the past-trips
+            strip when there are trips, nothing otherwise. */}
 
         {/* Your trips — only rendered when the user actually has saved
             trips. Empty vault is uninteresting noise; deleting the last
