@@ -252,788 +252,115 @@ function LiveTravellersStrip({ onJump }) {
 }
 
 // ── Empty-state inspiration ───────────────────────────────────────────────
-// Tropical scenes powering the cinematic reel in the empty-state hero
-// slot. Each scene has a per-scene Ken-Burns direction so consecutive
-// shots feel like deliberate camera moves instead of the same drift
-// every time. Tagline is the "logline" of the shot — keep them poetic,
-// short enough that the typography breathes on the screen.
-const SCENES = [
-  { city: 'Bora Bora',       country: 'French Polynesia', tagline: "The world's last quiet place.",        pan: 'left'    },
-  { city: 'Palawan',         country: 'Philippines',      tagline: 'Lagoons hidden behind lagoons.',       pan: 'zoom-in' },
-  { city: 'Maldives',        country: 'Indian Ocean',     tagline: 'Where the sea breathes turquoise.',    pan: 'right'   },
-  { city: 'Bali',            country: 'Indonesia',        tagline: 'Temples wrapped in jungle smoke.',     pan: 'left'    },
-  { city: 'Phi Phi Islands', country: 'Thailand',         tagline: 'Cliffs that hold the sky in place.',   pan: 'zoom-in' },
-  { city: 'Tulum',           country: 'Mexico',           tagline: 'Cenotes leading to the underworld.',   pan: 'right'   },
-  { city: 'Zanzibar',        country: 'Tanzania',         tagline: 'Spice trails written in stone.',       pan: 'left'    },
-  { city: 'Seychelles',      country: 'East Africa',      tagline: 'Granite islands the colour of rose.',  pan: 'zoom-in' },
-  { city: 'Boracay',         country: 'Philippines',      tagline: 'Sand soft enough to disappear in.',    pan: 'right'   },
-  { city: 'Fiji',            country: 'South Pacific',    tagline: 'Where the day starts new.',            pan: 'left'    },
-  { city: 'Mauritius',       country: 'Indian Ocean',     tagline: 'A lagoon of impossible blue.',         pan: 'zoom-in' },
-  { city: 'Koh Samui',       country: 'Thailand',         tagline: 'Coconut palms and monsoon rain.',      pan: 'right'   },
+// Rendered in the right column when the user has zero trips. Matches
+// would be lying with no trip to scope to, so we replace the "Curated
+// for you" block with a soft inspiration card that nudges toward
+// planning. Four destination shortcuts pre-fill /preferences so a user
+// who's curious can land on the form already partway through.
+
+const INSPIRATION_DESTINATIONS = [
+  { city: 'Lisbon',    country: 'Portugal',     query: 'Lisbon, Portugal'   },
+  { city: 'Kyoto',     country: 'Japan',        query: 'Kyoto, Japan'       },
+  { city: 'Reykjavík', country: 'Iceland',      query: 'Reykjavík, Iceland' },
+  { city: 'Mexico City', country: 'Mexico',     query: 'Mexico City, Mexico' },
 ]
 
-function getKenBurns(pan) {
-  // Ken-Burns is the slow drift+zoom on a still photo that sells it as
-  // motion. Each pan direction gives a distinctly different camera move
-  // so the reel feels edited, not loop-cycled.
-  switch (pan) {
-    case 'left':    return { initial: { scale: 1.10, x: '5%',  y: '-2%' }, animate: { scale: 1.20, x: '-5%', y: '2%'  } }
-    case 'right':   return { initial: { scale: 1.10, x: '-5%', y: '2%'  }, animate: { scale: 1.20, x: '5%',  y: '-2%' } }
-    case 'zoom-in': return { initial: { scale: 1.04, x: '0%',  y: '0%'  }, animate: { scale: 1.26, x: '0%',  y: '0%'  } }
-    default:        return { initial: { scale: 1.10, x: '0%',  y: '0%'  }, animate: { scale: 1.18, x: '0%',  y: '0%'  } }
-  }
-}
-
-// One scene in the cinematic reel. Photo + per-scene Ken-Burns camera
-// move + staggered title-card typography reveals. Only the active
-// scene is fully painted; the rest fade to 0 opacity but stay mounted
-// so the photo cache stays warm and the next cut is instant.
-function CinematicScene({ scene, active }) {
-  const photo = useDestinationPhoto(scene.city, scene.country)
-  const kb = getKenBurns(scene.pan)
-  return (
-    <motion.div
-      initial={false}
-      animate={{ opacity: active ? 1 : 0 }}
-      transition={{ duration: 1.6, ease }}
-      style={{
-        position: 'absolute', inset: 0,
-        pointerEvents: active ? 'auto' : 'none',
-      }}
-    >
-      {/* Ken-Burns photo layer — overflows the bounds by 8% so the
-          drift doesn't reveal black edges as it pans. */}
-      <motion.div
-        initial={kb.initial}
-        animate={active ? kb.animate : kb.initial}
-        transition={{ duration: 11, ease: 'linear' }}
-        style={{
-          position: 'absolute', inset: '-8%',
-          background: photo ? `url(${photo}) center/cover no-repeat` : '#0a0807',
-          filter: 'saturate(1.18) contrast(1.06) brightness(0.95)',
-        }}
-      />
-      {/* Cinematic colour grade — warm highlights + heavy bottom darkness
-          so the typography reads cleanly against any photo. */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        background:
-          'radial-gradient(ellipse at 25% 25%, rgba(255,180,100,0.12), transparent 55%), ' +
-          'radial-gradient(ellipse at 75% 90%, rgba(20,40,80,0.18), transparent 60%), ' +
-          'linear-gradient(180deg, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0.50) 65%, rgba(0,0,0,0.92) 100%)',
-        pointerEvents: 'none',
-      }}/>
-
-      {/* Title-card stack — country eyebrow, city headline, tagline.
-          Each item enters with its own staggered delay so the shot
-          builds like a film cut, not a slide. */}
-      <div style={{
-        position: 'absolute', bottom: '12%', left: '6%', right: '6%',
-        zIndex: 5, pointerEvents: 'none',
-      }}>
-        <motion.span
-          initial={{ opacity: 0, y: 14 }}
-          animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: 14 }}
-          transition={{ duration: 1.2, delay: active ? 0.6 : 0, ease }}
-          style={{
-            display: 'block',
-            fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
-            letterSpacing: '0.46em', textTransform: 'uppercase',
-            color: GOLD, marginBottom: 16,
-            textShadow: `0 0 20px ${GOLD}88, 0 2px 8px rgba(0,0,0,0.85)`,
-            fontWeight: 500,
-          }}
-        >
-          {scene.country}
-        </motion.span>
-        <motion.h1
-          initial={{ opacity: 0, y: 24, filter: 'blur(10px)' }}
-          animate={active
-            ? { opacity: 1, y: 0,  filter: 'blur(0px)' }
-            : { opacity: 0, y: 24, filter: 'blur(10px)' }}
-          transition={{ duration: 1.6, delay: active ? 0.85 : 0, ease: [0.16, 1, 0.3, 1] }}
-          style={{
-            fontFamily: '"Cormorant Garamond",serif',
-            fontStyle: 'italic', fontWeight: 400,
-            fontSize: 'clamp(54px, 7.5vw, 88px)',
-            color: BONE, lineHeight: 0.92, margin: 0,
-            letterSpacing: '-0.025em',
-            textShadow: '0 6px 36px rgba(0,0,0,0.88)',
-          }}
-        >
-          {scene.city}
-        </motion.h1>
-        <motion.p
-          initial={{ opacity: 0, y: 12 }}
-          animate={active ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
-          transition={{ duration: 1.2, delay: active ? 1.3 : 0, ease }}
-          style={{
-            fontFamily: '"Cormorant Garamond",serif',
-            fontStyle: 'italic', fontWeight: 300,
-            fontSize: 'clamp(20px, 1.6vw, 26px)',
-            color: 'rgba(245,241,232,0.82)',
-            margin: '22px 0 0', maxWidth: 580,
-            lineHeight: 1.32,
-            textShadow: '0 2px 18px rgba(0,0,0,0.88)',
-          }}
-        >
-          {scene.tagline}
-        </motion.p>
-      </div>
-    </motion.div>
-  )
-}
-
-// Animated film-grain overlay — SVG fractal noise scrolled by a fast
-// opacity flicker. Gives the photo that "shot on celluloid" texture
-// instead of looking like a flat web background.
-function FilmGrain() {
-  return (
-    <motion.div
-      animate={{ opacity: [0.08, 0.14, 0.08, 0.12, 0.08] }}
-      transition={{ duration: 0.6, repeat: Infinity, ease: 'linear' }}
-      style={{
-        position: 'absolute', inset: 0, zIndex: 12,
-        pointerEvents: 'none', mixBlendMode: 'overlay',
-        backgroundImage:
-          "url(\"data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'>" +
-          "<filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter>" +
-          "<rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/></svg>\")",
-        backgroundSize: '220px 220px',
-      }}
-    />
-  )
-}
-
-// Drifts a warm lens-flare blob across the scene every ~22s, mixed
-// with screen blend so it brightens whatever's underneath. Sells the
-// "anamorphic lens catching sun" feel.
-function LensFlare() {
-  return (
-    <motion.div
-      animate={{
-        x: ['-15%', '115%'],
-        y: ['10%', '5%', '15%', '8%'],
-        opacity: [0, 0.55, 0.55, 0],
-      }}
-      transition={{
-        duration: 18, repeat: Infinity, ease: 'easeInOut',
-        repeatDelay: 5,
-        times: [0, 0.2, 0.8, 1],
-      }}
-      style={{
-        position: 'absolute', top: '15%', left: 0,
-        width: 280, height: 280,
-        background: 'radial-gradient(circle, rgba(255,220,140,0.6) 0%, rgba(255,180,80,0.28) 30%, transparent 70%)',
-        filter: 'blur(28px)',
-        pointerEvents: 'none', zIndex: 8,
-        mixBlendMode: 'screen',
-      }}
-    />
-  )
-}
-
-// Floating gold dust — 22 tiny particles drifting upward at staggered
-// speeds. Pure CSS, basically free.
-function GoldDust() {
-  const particles = useMemo(
-    () => Array.from({ length: 22 }).map(() => ({
-      x: Math.random() * 100,
-      delay: Math.random() * 10,
-      duration: 11 + Math.random() * 9,
-      size: 1 + Math.random() * 2.6,
-    })),
-    [],
-  )
-  return (
-    <div style={{
-      position: 'absolute', inset: 0, pointerEvents: 'none',
-      zIndex: 7, overflow: 'hidden',
-    }}>
-      {particles.map((p, i) => (
-        <motion.div
-          key={i}
-          initial={{ y: '110%', opacity: 0 }}
-          animate={{ y: '-12%', opacity: [0, 0.7, 0.7, 0] }}
-          transition={{ duration: p.duration, delay: p.delay, repeat: Infinity, ease: 'linear' }}
-          style={{
-            position: 'absolute', left: `${p.x}%`,
-            width: p.size, height: p.size, borderRadius: '50%',
-            background: GOLD,
-            boxShadow: `0 0 ${p.size * 4}px ${GOLD}`,
-          }}
-        />
-      ))}
-    </div>
-  )
-}
-
-// Pixabay luxury-destination images, aggressively Ken-Burns'd so each
-// shot reads as an aerial flyover. Heavy saturation + contrast filters
-// so the colours pop (the user explicitly hated muted Pexels videos).
-// Backend curates the queries + handles the API key in /api/luxury-
-// backdrops; we just animate the result.
-
-// Walking-perspective camera moves. Each one slowly pushes the
-// viewer FORWARD into the scene (scale ramps up over the duration)
-// with a subtle footstep bob (y oscillates) and a soft sway (x
-// drifts) — the same gentle motion you'd see from a phone held by
-// someone walking through the landscape. NOT a drone. NOT Ken-Burns.
-// Keyframe arrays drive the bob/sway; the wrapping motion.div
-// applies them with `times` so the wobble lands on a metronome
-// instead of easing through the whole shot.
-const WALKING_MOVES = [
-  // Walking straight forward, soft 4-step bob
-  {
-    scale: [1.00, 1.12],
-    x:     ['0%', '0%'],
-    y:     ['0%', '-0.9%', '0.4%', '-0.9%', '0.4%', '-0.9%', '0%'],
-    times: [0,   0.16,    0.33,   0.5,     0.67,   0.83,    1],
-  },
-  // Walking forward + drifting left like turning your head
-  {
-    scale: [1.02, 1.11],
-    x:     ['3%', '-3%'],
-    y:     ['0%', '-0.8%', '0.4%', '-0.8%', '0.4%', '-0.8%', '0%'],
-    times: [0,   0.16,    0.33,   0.5,     0.67,   0.83,    1],
-  },
-  // Walking forward + drifting right
-  {
-    scale: [1.02, 1.11],
-    x:     ['-3%', '3%'],
-    y:     ['0%', '-0.8%', '0.4%', '-0.8%', '0.4%', '-0.8%', '0%'],
-    times: [0,   0.16,    0.33,   0.5,     0.67,   0.83,    1],
-  },
-  // Slow push deeper into the scene (longer stride)
-  {
-    scale: [1.00, 1.14],
-    x:     ['0%', '0%'],
-    y:     ['0%', '-1.0%', '0.3%', '-1.0%', '0.3%', '-1.0%', '0%'],
-    times: [0,   0.18,    0.35,   0.52,    0.7,    0.86,    1],
-  },
-  // Stopping to look around — slight horizontal sway, gentle bob
-  {
-    scale: [1.05, 1.08],
-    x:     ['-3%', '3%'],
-    y:     ['0%', '-0.5%', '0%', '-0.5%', '0%'],
-    times: [0,   0.25,    0.5, 0.75,    1],
-  },
-]
-
-// Hard fallback when the backend hasn't reached Pixabay yet (or the
-// API key isn't set) — same shape as the API response, just empty.
-// We render nothing in that case (page stays dark + ambient grain),
-// so the dashboard never looks broken even with no internet.
-function useLuxuryBackdrops() {
-  const [urls, setUrls] = useState([])
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const r = await fetch('/api/luxury-backdrops')
-        if (cancelled) return
-        if (r.ok) {
-          const d = await r.json()
-          if (Array.isArray(d?.urls) && d.urls.length) setUrls(d.urls)
-        }
-      } catch { /* offline / route down — leave empty */ }
-    })()
-    return () => { cancelled = true }
-  }, [])
-  return urls
-}
-
-function CinematicVideoBackdrop() {
-  const urls = useLuxuryBackdrops()
-  const [idx, setIdx] = useState(0)
-  const [flashing, setFlashing] = useState(false)
-  const n = urls.length
-
-  // Hollywood pacing — 13s per shot. Long enough that the sweeping
-  // Ken-Burns reads as a real establishing shot; short enough that
-  // the cuts feel like edited footage, not a slideshow.
-  useEffect(() => {
-    if (n < 2) return
-    const t = setInterval(() => {
-      // Brief white flash on every cut — the "film burn" cinematographers
-      // use to land an emotional beat between shots.
-      setFlashing(true)
-      setTimeout(() => setFlashing(false), 280)
-      setIdx(i => (i + 1) % n)
-    }, 13000)
-    return () => clearInterval(t)
-  }, [n])
-
-  // No URLs yet (first paint, or Pixabay not wired) → render nothing.
-  // The page-level dark + grain still gives the dashboard atmosphere.
-  if (n === 0) {
-    return (
-      <div style={{
-        position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
-        background: 'radial-gradient(ellipse at 50% 30%, #1a1208 0%, #0a0706 60%, #040302 100%)',
-      }}/>
-    )
-  }
-
-  const current = urls[idx]
-  const move = WALKING_MOVES[idx % WALKING_MOVES.length]
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 0,
-      pointerEvents: 'none', overflow: 'hidden',
-      background: '#040302',
-    }}>
-      <AnimatePresence mode="sync">
-        <motion.div
-          key={`${idx}-${current}`}
-          initial={{
-            opacity: 0,
-            scale: Array.isArray(move.scale) ? move.scale[0] : move.scale,
-            x:     Array.isArray(move.x)     ? move.x[0]     : move.x,
-            y:     Array.isArray(move.y)     ? move.y[0]     : move.y,
-          }}
-          animate={{
-            opacity: 1,
-            scale: move.scale,
-            x:     move.x,
-            y:     move.y,
-          }}
-          exit={{ opacity: 0 }}
-          transition={{
-            opacity: { duration: 2.4, ease },
-            // Walking-pace push-forward: 15s slow stride. linear so
-            // the scale never decelerates into the cut.
-            scale:   { duration: 15, ease: 'linear' },
-            // x sway and y bob both follow the keyframe arrays, with
-            // `times` keeping the footsteps on a metronome instead of
-            // easing through the whole shot.
-            x:       { duration: 15, ease: 'easeInOut', times: move.times },
-            y:       { duration: 15, ease: 'easeInOut', times: move.times },
-          }}
-          style={{
-            position: 'absolute', inset: '-4%',
-            background: `url(${current}) center/cover no-repeat`,
-            // Sharpened-photo grade — gentle saturation lift + a real
-            // contrast bump so the photo reads crisp, like a phone shot,
-            // not a soft postcard. NO blur layer.
-            filter: 'saturate(1.15) contrast(1.14)',
-          }}
-        />
-      </AnimatePresence>
-
-      {/* Tight radial vignette only — no bloom pass, no blur layer.
-          Edge darkness comes from the gradient, not a separate blurred
-          image overlay. */}
-      <div style={{
-        position: 'absolute', inset: 0, pointerEvents: 'none',
-        background:
-          'radial-gradient(ellipse 130% 105% at center, transparent 55%, rgba(4,3,2,0.40) 88%, rgba(4,3,2,0.78) 100%), ' +
-          'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, transparent 18%, transparent 82%, rgba(0,0,0,0.45) 100%)',
-      }}/>
-
-      {/* Cinematic film-burn flash on every cut — brief white pulse,
-          fades over ~280ms. Sells the "edited footage" feel and lands
-          each scene change with weight instead of a soft fade. */}
-      <AnimatePresence>
-        {flashing && (
-          <motion.div
-            key="film-burn"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.32 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.28, ease: 'easeOut' }}
-            style={{
-              position: 'absolute', inset: 0, pointerEvents: 'none',
-              background: 'radial-gradient(ellipse at center, rgba(255,250,235,0.85) 0%, rgba(255,235,200,0.55) 35%, transparent 75%)',
-              mixBlendMode: 'screen',
-            }}
-          />
-        )}
-      </AnimatePresence>
-    </div>
-  )
-}
-
-// Page-level atmospheric stack — backdrop + grain + flare + dust,
-// all fixed-positioned so they ride the whole dashboard regardless
-// of scroll. Wraps the existing FilmGrain / LensFlare / GoldDust in
-// fixed containers so they cover the viewport instead of a single
-// parent box.
-function CinematicPageAtmosphere() {
-  return (
-    <>
-      <CinematicVideoBackdrop/>
-      {/* Drifting lens flare — fixed, much slower + dimmer than the
-          empty-hero version because it's running over the whole page
-          and should feel like ambient light, not an event. */}
-      <motion.div
-        animate={{
-          x: ['-12%', '112%'],
-          y: ['18%', '8%', '22%', '12%'],
-          opacity: [0, 0.30, 0.30, 0],
-        }}
-        transition={{
-          duration: 26, repeat: Infinity, ease: 'easeInOut',
-          repeatDelay: 12,
-          times: [0, 0.2, 0.8, 1],
-        }}
-        style={{
-          position: 'fixed', top: 0, left: 0,
-          width: 360, height: 360,
-          background: 'radial-gradient(circle, rgba(255,220,140,0.55) 0%, rgba(255,180,80,0.22) 30%, transparent 70%)',
-          filter: 'blur(36px)',
-          pointerEvents: 'none', zIndex: 220,
-          mixBlendMode: 'screen',
-        }}
-      />
-      {/* Sparse drifting gold dust — fewer particles than the empty-
-          hero version so the page doesn't feel crowded. */}
-      <PageGoldDust/>
-      {/* Animated film grain — overlay blend, low opacity, riding the
-          whole viewport. */}
-      <motion.div
-        animate={{ opacity: [0.05, 0.085, 0.05, 0.075, 0.05] }}
-        transition={{ duration: 0.6, repeat: Infinity, ease: 'linear' }}
-        style={{
-          position: 'fixed', inset: 0, zIndex: 250,
-          pointerEvents: 'none', mixBlendMode: 'overlay',
-          backgroundImage:
-            "url(\"data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'>" +
-            "<filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter>" +
-            "<rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/></svg>\")",
-          backgroundSize: '220px 220px',
-        }}
-      />
-    </>
-  )
-}
-
-function PageGoldDust() {
-  const particles = useMemo(
-    () => Array.from({ length: 14 }).map(() => ({
-      x: Math.random() * 100,
-      delay: Math.random() * 14,
-      duration: 16 + Math.random() * 14,
-      size: 1 + Math.random() * 2,
-    })),
-    [],
-  )
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, pointerEvents: 'none',
-      zIndex: 240, overflow: 'hidden',
-    }}>
-      {particles.map((p, i) => (
-        <motion.div
-          key={i}
-          initial={{ y: '110vh', opacity: 0 }}
-          animate={{ y: '-10vh', opacity: [0, 0.55, 0.55, 0] }}
-          transition={{ duration: p.duration, delay: p.delay, repeat: Infinity, ease: 'linear' }}
-          style={{
-            position: 'absolute', left: `${p.x}%`,
-            width: p.size, height: p.size, borderRadius: '50%',
-            background: GOLD,
-            boxShadow: `0 0 ${p.size * 4}px ${GOLD}`,
-          }}
-        />
-      ))}
-    </div>
-  )
-}
-
-// Empty-state overlay sitting on top of the cinematic video backdrop.
-// Replaced the "Pick a place. We'll build the rest." copy with the
-// time-of-day greeting moved out of the right-anchored chrome — the
-// dashboard's first beat is now "Good morning, Shreyas" painted huge
-// over a Hollywood landscape. Pointer-events off everywhere so taps
-// pass through to the video.
-function EmptyStateMovieOverlay({ greeting, firstName }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 1.8, ease, delay: 0.4 }}
-      style={{
-        flex: 1, position: 'relative', zIndex: 1,
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        textAlign: 'center', padding: '60px 32px 80px',
-        minHeight: '70vh',
-        pointerEvents: 'none',
-      }}
-    >
-      {/* Dark radial scrim BEHIND the text — guarantees legibility on
-          any backdrop (sand, snow, sky, cliff) the reel cuts to. Blurred
-          so the edge is feathered, opacity-pulsed slowly so it breathes
-          with the photo behind. */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: [0.55, 0.75, 0.55] }}
-        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-        style={{
-          position: 'absolute',
-          top: '20%', left: '10%', right: '10%', bottom: '20%',
-          background: 'radial-gradient(ellipse 70% 80% at center, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.45) 45%, transparent 80%)',
-          filter: 'blur(28px)',
-          pointerEvents: 'none', zIndex: 0,
-        }}
-      />
-
-      <motion.span
-        initial={{ opacity: 0, y: 8 }}
-        animate={{
-          opacity: 1, y: 0,
-          letterSpacing: ['0.50em', '0.56em', '0.50em'],
-        }}
-        transition={{
-          opacity: { duration: 1.4, delay: 0.6, ease },
-          y:       { duration: 1.4, delay: 0.6, ease },
-          letterSpacing: { duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 2 },
-        }}
-        style={{
-          position: 'relative', zIndex: 1,
-          fontFamily: '"Inter Tight",sans-serif', fontSize: 12,
-          textTransform: 'uppercase',
-          color: '#fff8e3', marginBottom: 22,
-          textShadow:
-            '0 2px 12px rgba(0,0,0,0.95), ' +
-            '0 0 18px rgba(0,0,0,0.85), ' +
-            '0 0 28px rgba(212,182,134,0.55)',
-          fontWeight: 600,
-        }}
-      >
-        ✦ {greeting}
-      </motion.span>
-
-      <motion.h1
-        initial={{ opacity: 0, y: 22, filter: 'blur(12px)' }}
-        animate={{
-          opacity: 1, y: 0, filter: 'blur(0px)',
-          // Light sweep — bright band travels across the letters every
-          // 6s. backgroundSize is 220% so there's a moving highlight on
-          // top of a near-white base.
-          backgroundPositionX: ['220%', '-120%'],
-        }}
-        transition={{
-          opacity: { duration: 1.8, delay: 0.85, ease: [0.16, 1, 0.3, 1] },
-          y:       { duration: 1.8, delay: 0.85, ease: [0.16, 1, 0.3, 1] },
-          filter:  { duration: 1.8, delay: 0.85, ease: [0.16, 1, 0.3, 1] },
-          backgroundPositionX: { duration: 6, repeat: Infinity, ease: 'linear', delay: 2.4 },
-        }}
-        style={{
-          position: 'relative', zIndex: 1,
-          fontFamily: '"Cormorant Garamond",serif',
-          fontStyle: 'italic', fontWeight: 400,
-          fontSize: 'clamp(72px, 10vw, 148px)',
-          lineHeight: 0.95, margin: 0,
-          letterSpacing: '-0.025em',
-          // Bright white base + a soft gold highlight band that pans
-          // across via backgroundPositionX. Reads cleanly on dark AND
-          // light backgrounds because the base is white, not warm gold.
-          background:
-            'linear-gradient(110deg, ' +
-              '#ffffff 0%, ' +
-              '#ffffff 38%, ' +
-              '#ffe9b8 50%, ' +   // shimmer highlight band
-              '#ffffff 62%, ' +
-              '#ffffff 100%)',
-          backgroundSize: '220% 100%',
-          backgroundClip: 'text',
-          WebkitBackgroundClip: 'text',
-          color: 'transparent',
-          WebkitTextFillColor: 'transparent',
-          // Stacked drop-shadows for separation: heavy dark for contrast,
-          // soft warm halo for glow. Stays readable on white sand AND
-          // dark sea cliffs.
-          filter:
-            'drop-shadow(0 4px 24px rgba(0,0,0,0.95)) ' +
-            'drop-shadow(0 0 36px rgba(0,0,0,0.55)) ' +
-            'drop-shadow(0 0 64px rgba(212,182,134,0.30))',
-        }}
-      >
-        {firstName || 'Welcome'}
-      </motion.h1>
-    </motion.div>
-  )
-}
-
-// Cinematic reel — replaces the cover-flow with an auto-cutting film:
-// Ken-Burns shots, letterbox bars, scene-based filmstrip nav, film
-// grain, drifting lens flare, floating gold dust, dramatic title-card
-// typography reveals, and a "Take me there" pill that seeds whatever
-// scene is on screen. ~12 scenes × ~9s each ≈ 108s loop.
-function CinematicReel() {
+function EmptyStateInspiration({ onPlan }) {
   const navigate = useNavigate()
-  const [idx, setIdx] = useState(0)
-  const [paused, setPaused] = useState(false)
-  const n = SCENES.length
-  const SHOT_MS = 9000
-
-  useEffect(() => {
-    if (paused) return
-    const t = setInterval(() => setIdx(i => (i + 1) % n), SHOT_MS)
-    return () => clearInterval(t)
-  }, [paused, n])
-
-  function pickCurrent() {
-    const s = SCENES[idx]
-    try { sessionStorage.setItem('sonder_seed_destination', `${s.city}, ${s.country}`) } catch { /* noop */ }
-    navigate('/preferences')
-  }
-
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 1.6, ease }}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onClick={(e) => {
-        // Clicking the body of the reel picks the current scene.
-        // Internal buttons stop propagation.
-        if (e.target === e.currentTarget) pickCurrent()
-      }}
-      style={{
-        position: 'relative', overflow: 'hidden',
-        borderRadius: 26, minHeight: 640,
-        background: '#000',
-        cursor: 'pointer',
-        boxShadow: `0 36px 110px rgba(0,0,0,0.72)`,
-        // Cinematic 2.35:1 widescreen aspect ratio when the parent
-        // gives us enough room — falls back to the minHeight floor on
-        // narrower screens so the title typography never crushes.
-        aspectRatio: '2.35 / 1',
-      }}
-    >
-      {/* Letterbox bars — top + bottom. Cinematic 2.35:1-ish feel
-          even though the actual aspect is dictated by the parent. */}
-      <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0,
-        height: 32, background: '#000', zIndex: 25,
-      }}/>
-      <div style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0,
-        height: 32, background: '#000', zIndex: 25,
-      }}/>
-
-      {/* All scenes — mounted, fade between */}
-      {SCENES.map((scene, i) => (
-        <CinematicScene key={scene.city} scene={scene} active={i === idx}/>
-      ))}
-
-      {/* Atmospheric effect stack */}
-      <GoldDust/>
-      <LensFlare/>
-      <FilmGrain/>
-
-      {/* Subtle outer vignette */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        background: 'radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,0.55) 100%)',
-        pointerEvents: 'none', zIndex: 10,
-      }}/>
-
-      {/* Top-left "presents" eyebrow inside the letterbox */}
-      <div style={{
-        position: 'absolute', top: 46, left: 0, right: 0,
-        textAlign: 'center', zIndex: 30, pointerEvents: 'none',
-      }}>
-        <motion.span
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.8, delay: 0.4 }}
+    <div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <motion.span
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+            style={{ width: 6, height: 6, borderRadius: '50%', background: GOLD, boxShadow: `0 0 10px ${GOLD}` }}
+          />
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+            A place to begin
+          </p>
+        </div>
+        <motion.h2
+          animate={{ filter: [`drop-shadow(0 0 12px rgba(212,182,134,0.18))`, `drop-shadow(0 0 28px rgba(212,182,134,0.45))`, `drop-shadow(0 0 12px rgba(212,182,134,0.18))`] }}
+          transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
           style={{
-            fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
-            letterSpacing: '0.52em', textTransform: 'uppercase',
-            color: 'rgba(212,182,134,0.92)', fontWeight: 500,
-            textShadow: `0 0 14px ${GOLD}66`,
+            fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
+            fontSize: 34, color: BONE, lineHeight: 1.02, margin: 0,
+            letterSpacing: '-0.015em',
           }}
         >
-          ✦ Sonder Presents
-        </motion.span>
+          Where would you go if you could?
+        </motion.h2>
       </div>
 
-      {/* Top-right "take me there" pill — sticky, follows the active
-          scene. Click to navigate to /preferences with the current
-          destination pre-filled. */}
+      <p style={{
+        fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
+        fontSize: 13, color: MUTE, lineHeight: 1.6, marginTop: 0, marginBottom: 22,
+      }}>
+        Plan one trip and the rest of the room — matches, journal, shared itineraries — opens up. Start with somewhere that's been on your mind, or borrow one of these.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
+        {INSPIRATION_DESTINATIONS.map((d, i) => (
+          <motion.button
+            key={d.city}
+            initial={{ opacity: 0, x: 18 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.45, delay: 0.15 + i * 0.08, ease }}
+            whileHover={{ x: 3, borderColor: `${GOLD}66` }}
+            whileTap={{ scale: 0.985 }}
+            onClick={() => {
+              // Hand the destination off to /preferences via sessionStorage.
+              // TripPreferences picks it up in its destination field if the
+              // user hasn't already started typing.
+              try { sessionStorage.setItem('sonder_seed_destination', d.query) } catch { /* noop */ }
+              navigate('/preferences')
+            }}
+            style={{
+              textAlign: 'left', padding: '14px 16px', borderRadius: 12,
+              background: 'rgba(232,212,168,0.03)',
+              border: `1px solid ${HAIRLINE}`,
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 12, transition: 'all 0.2s',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+              <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 19, color: BONE, lineHeight: 1.1 }}>
+                {d.city}
+              </span>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE }}>
+                {d.country}
+              </span>
+            </div>
+            <span style={{
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              color: GOLD, flexShrink: 0,
+            }}>
+              Start →
+            </span>
+          </motion.button>
+        ))}
+      </div>
+
       <motion.button
-        whileHover={{ y: -1, boxShadow: `0 12px 36px rgba(0,0,0,0.5), 0 0 36px ${GOLD}55` }}
-        whileTap={{ scale: 0.97 }}
-        onClick={(e) => { e.stopPropagation(); pickCurrent() }}
+        whileHover={{ y: -2, boxShadow: `0 0 28px ${GOLD}33` }}
+        whileTap={{ scale: 0.98 }}
+        onClick={onPlan}
         style={{
-          position: 'absolute', top: 52, right: 32, zIndex: 30,
-          padding: '12px 22px', borderRadius: 999,
-          background: 'rgba(10,8,7,0.55)',
-          backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)',
-          border: `1px solid ${GOLD}77`, cursor: 'pointer',
-          fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
-          letterSpacing: '0.32em', textTransform: 'uppercase',
-          color: GOLD, fontWeight: 600,
-          boxShadow: `0 8px 28px rgba(0,0,0,0.4), 0 0 22px ${GOLD}44`,
+          width: '100%', padding: '16px 20px',
+          background: `linear-gradient(135deg, ${GOLD} 0%, #B89668 100%)`,
+          border: 'none', borderRadius: 12, cursor: 'pointer',
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+          letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 600,
+          color: '#0a0807',
+          transition: 'all 0.25s',
         }}
       >
-        Take me there →
+        Plan something different
       </motion.button>
-
-      {/* Filmstrip-style scene markers — thin bars, active one wider
-          and brighter. Click to jump to a specific shot. */}
-      <div style={{
-        position: 'absolute', bottom: 50, left: 0, right: 0,
-        display: 'flex', justifyContent: 'center', gap: 5,
-        zIndex: 30,
-      }}>
-        {SCENES.map((_, i) => {
-          const isActive = i === idx
-          return (
-            <button
-              key={i}
-              onClick={(e) => { e.stopPropagation(); setIdx(i) }}
-              aria-label={`Scene ${i + 1}`}
-              style={{
-                width: isActive ? 38 : 14, height: 2.5, padding: 0,
-                borderRadius: 0, border: 'none', cursor: 'pointer',
-                background: isActive ? GOLD : 'rgba(212,182,134,0.20)',
-                transition: 'all 0.7s ease',
-                boxShadow: isActive ? `0 0 12px ${GOLD}aa` : 'none',
-              }}
-            />
-          )
-        })}
-      </div>
-
-      {/* Timecode in the bottom-left letterbox for movie-feel */}
-      <div style={{
-        position: 'absolute', bottom: 8, left: 18, zIndex: 30,
-        fontFamily: 'ui-monospace, monospace', fontSize: 9.5,
-        color: 'rgba(212,182,134,0.50)', letterSpacing: '0.20em',
-        pointerEvents: 'none',
-      }}>
-        SC {String(idx + 1).padStart(2, '0')} / {String(n).padStart(2, '0')}
-      </div>
-
-      {/* Bottom-right rec dot for movie-feel (subtle blink) */}
-      <motion.div
-        animate={{ opacity: [0.4, 1, 0.4] }}
-        transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
-        style={{
-          position: 'absolute', bottom: 11, right: 22, zIndex: 30,
-          display: 'flex', alignItems: 'center', gap: 8,
-          pointerEvents: 'none',
-        }}
-      >
-        <span style={{
-          width: 6, height: 6, borderRadius: '50%',
-          background: '#ef4444', boxShadow: '0 0 10px #ef4444aa',
-        }}/>
-        <span style={{
-          fontFamily: 'ui-monospace, monospace', fontSize: 9,
-          color: 'rgba(239,68,68,0.7)', letterSpacing: '0.20em',
-        }}>
-          REC
-        </span>
-      </motion.div>
-    </motion.div>
+    </div>
   )
 }
 
@@ -1850,16 +1177,11 @@ export default function Dashboard() {
   }
 
   return (
-    <div style={{ position: 'relative', minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
       <AppBackground accent="#F59E0B" />
-      {/* The whole dashboard sits inside a slowly cross-fading Ken-Burns
-          cycle of tropical destinations + persistent film grain +
-          drifting lens flare + floating gold dust. Content stays above
-          the backdrop via z-index on every dashboard section. */}
-      <CinematicPageAtmosphere />
 
       {/* nav */}
-      <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.42)', backdropFilter: 'blur(32px) saturate(1.4)', WebkitBackdropFilter: 'blur(32px) saturate(1.4)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
+      <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
         <SonderNav3D markSize={32}/>
         <NavTabs/>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -1965,37 +1287,34 @@ export default function Dashboard() {
         </div>
       </nav>
 
-      {/* Greeting + members card + stats strip. Relocated to a compact
-          right-anchored column so the cinematic backdrop owns the
-          centre stage instead of being walled off by full-width chrome.
-          Same content as before — italic first name, members card,
-          stats pill — just shrunk and tucked to the right edge so the
-          background reads as the hero. */}
-      <div style={{ padding: '24px 48px 0', position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 14, width: 320 }}>
-          {/* Time-of-day greeting moved up into the centred movie
-              overlay — top-right column is just the members card +
-              stats pill now. */}
+      {/* greeting */}
+      <div style={{ borderBottom: `1px solid ${HAIRLINE}`, padding: '44px 48px 40px', position: 'relative', zIndex: 1, overflow: 'hidden', textAlign: 'center' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'radial-gradient(ellipse 60% 140% at 50% 60%, rgba(212,182,134,0.10) 0%, transparent 65%)', pointerEvents: 'none' }}/>
+        <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease }}>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, marginBottom: 8 }}>{greeting}</p>
+          <motion.h1
+            animate={{ filter: ['drop-shadow(0 0 24px rgba(212,182,134,0.20))', 'drop-shadow(0 0 56px rgba(212,182,134,0.50))', 'drop-shadow(0 0 24px rgba(212,182,134,0.20))'] }}
+            transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+            style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 68, lineHeight: 0.95, letterSpacing: '-0.02em', background: GOLD_GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', display: 'inline-block' }}
+          >
+            {firstName}
+          </motion.h1>
+        </motion.div>
 
-          {/* TravelCard shrunk via CSS transform — preserves its
-              internal layout / aspect ratio while taking ~half the
-              original real estate so it doesn't dominate the page. */}
-          <div style={{ transform: 'scale(0.62)', transformOrigin: 'top right', marginBottom: -120, marginTop: -10 }}>
-            <TravelCard
-              firstName={firstName}
-              displayName={effectiveDisplayName || user?.displayName}
-              uid={user?.uid}
-            />
-          </div>
-        </div>
+        <TravelCard
+          firstName={firstName}
+          displayName={effectiveDisplayName || user?.displayName}
+          uid={user?.uid}
+        />
 
         {/* Live stats strip — small glass pill with key signals */}
         <motion.div
           initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease, delay: 0.4 }}
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: 22,
-            padding: '10px 22px', borderRadius: 999,
+            marginTop: 32,
+            display: 'inline-flex', alignItems: 'center', gap: 28,
+            padding: '12px 26px', borderRadius: 999,
             background: 'rgba(8,8,7,0.55)', backdropFilter: 'blur(20px)',
             border: `1px solid ${HAIRLINE}`,
             boxShadow: `0 10px 30px rgba(0,0,0,0.4)`,
@@ -2136,14 +1455,7 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* Empty state — the video backdrop IS the page. No inspiration
-          cards, no photo reel, no dice, no nothing. A single floating
-          title overlay points users at the "Plan a trip" CTA in the nav.
-          Trip state below renders the regular dashboard grid on top of
-          the same video. */}
-      {pastTrips.length === 0 ? (
-        <EmptyStateMovieOverlay greeting={greeting} firstName={firstName} />
-      ) : (
+      {/* main grid */}
       <motion.div variants={stagger} initial="hidden" animate="show"
         style={{ flex: 1, display: 'grid', gridTemplateColumns: '1.4fr 1fr', maxWidth: 1240, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
 
@@ -2257,7 +1569,23 @@ export default function Dashboard() {
               </div>
             </motion.div>
           ) : (
-            <CinematicReel />
+            <motion.div
+              onClick={() => navigate('/preferences')}
+              whileHover={{ y: -4, borderColor: 'rgba(245,158,11,0.35)', transition: spring }}
+              whileTap={{ scale: 0.99 }}
+              style={{ cursor: 'pointer', padding: '48px 40px', borderRadius: 26, background: 'rgba(245,158,11,0.04)', border: `1px solid rgba(245,158,11,0.18)`, textAlign: 'center', transition: 'all 0.25s' }}
+            >
+              <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 32, color: BONE, lineHeight: 1.15, marginBottom: 12 }}>
+                Your next trip is one decision away.
+              </p>
+              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, marginBottom: 28, lineHeight: 1.6, maxWidth: 360, margin: '0 auto 28px' }}>
+                Plan a trip and your itinerary will live here.
+              </p>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: `1px solid rgba(245,158,11,0.30)` }}>
+                <Plus size={12} style={{ color: AMBER }}/>
+                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: AMBER }}>Plan your first trip</span>
+              </div>
+            </motion.div>
           )}
 
           {/* Trip actions row — outside the clickable card so taps never
@@ -2589,9 +1917,6 @@ export default function Dashboard() {
 
         </motion.div>
 
-        {/* Empty state moved up into the full-width cinematic film; no
-            extra strips beneath the grid when the user has zero trips. */}
-
         {/* Your trips — only rendered when the user actually has saved
             trips. Empty vault is uninteresting noise; deleting the last
             trip should collapse the section entirely (not leave a
@@ -2770,7 +2095,6 @@ export default function Dashboard() {
             on the user's trip. NavTabs in the top nav switches between
             the two surfaces. */}
       </motion.div>
-      )}
     </div>
   )
 }
