@@ -378,6 +378,82 @@ function EmptyStateInspiration() {
   )
 }
 
+// Amex-Centurion-style premium portfolio frame. Matte black gradient
+// with a thin gold hairline border, embossed inset highlight, and
+// engraved-feel L-bracket corner ornaments in each corner. Drop in
+// to wrap any dashboard section that should read as "private member
+// concierge", not "web UI".
+function PremiumFrame({ children, accent = '#D4B686', padding = '48px 56px', style = {} }) {
+  const corner = (pos) => (
+    <svg width="16" height="16" viewBox="0 0 16 16"
+      style={{ position: 'absolute', pointerEvents: 'none', ...pos.style }}>
+      <path d={pos.d} fill="none" stroke={accent} strokeOpacity="0.55" strokeWidth="0.8"/>
+    </svg>
+  )
+  return (
+    <div style={{
+      position: 'relative',
+      background:
+        'linear-gradient(180deg, rgba(22,17,11,0.62) 0%, rgba(12,9,6,0.52) 100%)',
+      border: `1px solid ${accent}26`,
+      borderRadius: 4,
+      padding,
+      boxShadow:
+        `inset 0 1px 0 rgba(255,250,240,0.05), ` +
+        `inset 0 0 0 1px ${accent}10, ` +
+        `0 28px 70px rgba(0,0,0,0.55), ` +
+        `0 4px 14px rgba(0,0,0,0.30)`,
+      ...style,
+    }}>
+      {corner({ style: { top: 10, left: 10 },     d: 'M0 16 L0 0 L16 0' })}
+      {corner({ style: { top: 10, right: 10 },    d: 'M0 0 L16 0 L16 16' })}
+      {corner({ style: { bottom: 10, left: 10 },  d: 'M0 0 L0 16 L16 16' })}
+      {corner({ style: { bottom: 10, right: 10 }, d: 'M0 16 L16 16 L16 0' })}
+      {/* Top centre micro-hairline ornament — Centurion houses a small
+          flourish at the top edge; we mirror it with a thin gold
+          gradient tick. */}
+      <div style={{
+        position: 'absolute', top: -1, left: '50%', transform: 'translateX(-50%)',
+        width: 96, height: 1,
+        background: `linear-gradient(to right, transparent, ${accent}, transparent)`,
+        pointerEvents: 'none',
+      }}/>
+      {children}
+    </div>
+  )
+}
+
+// Standard concierge-style section header — gold caps eyebrow above
+// an italic Cormorant headline, with a thin gold hairline divider
+// underneath. Used inside PremiumFrame to set the tone consistently.
+function PremiumHeader({ eyebrow, headline, accent = '#D4B686' }) {
+  return (
+    <div style={{ marginBottom: 30, position: 'relative' }}>
+      <p style={{
+        fontFamily: '"Inter Tight",sans-serif',
+        fontSize: 9, fontWeight: 500,
+        letterSpacing: '0.42em', textTransform: 'uppercase',
+        color: `${accent}cc`, margin: 0, marginBottom: 10,
+        textShadow: `0 0 16px ${accent}33`,
+      }}>
+        {eyebrow}
+      </p>
+      <h2 style={{
+        fontFamily: '"Cormorant Garamond",serif',
+        fontStyle: 'italic', fontWeight: 400,
+        fontSize: 32, color: BONE, lineHeight: 1.05,
+        margin: 0, letterSpacing: '-0.015em',
+      }}>
+        {headline}
+      </h2>
+      <div style={{
+        marginTop: 16, height: 1, width: 120,
+        background: `linear-gradient(to right, ${accent}88, transparent)`,
+      }}/>
+    </div>
+  )
+}
+
 // One past-trip card. Extracted so each card's useDestinationPhoto hook
 // can fetch its own photo — hooks can't run inside a .map().
 function PastTripCard({ trip, index, isCurrent, deleting, switching, onSelect, onDelete }) {
@@ -1566,16 +1642,36 @@ export default function Dashboard() {
               </div>
             </motion.div>
           ) : (
-            <div
-              style={{ padding: '48px 40px', borderRadius: 26, background: 'rgba(245,158,11,0.04)', border: `1px solid rgba(245,158,11,0.18)`, textAlign: 'center' }}
-            >
-              <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 32, color: BONE, lineHeight: 1.15, marginBottom: 12 }}>
-                Your next trip is one decision away.
-              </p>
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, lineHeight: 1.6, maxWidth: 360, margin: '0 auto' }}>
-                Plan a trip and your itinerary will live here.
-              </p>
-            </div>
+            <PremiumFrame padding="48px 44px">
+              <div style={{ textAlign: 'center' }}>
+                <p style={{
+                  fontFamily: '"Inter Tight",sans-serif', fontWeight: 500, fontSize: 9,
+                  letterSpacing: '0.46em', textTransform: 'uppercase',
+                  color: 'rgba(212,182,134,0.78)', margin: 0, marginBottom: 22,
+                }}>
+                  Awaiting your next journey
+                </p>
+                <p style={{
+                  fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+                  fontWeight: 400, fontSize: 32, color: BONE,
+                  lineHeight: 1.12, margin: 0, marginBottom: 14,
+                  letterSpacing: '-0.015em',
+                }}>
+                  Your next trip is one decision away.
+                </p>
+                <div style={{
+                  width: 72, height: 1, margin: '0 auto 16px',
+                  background: `linear-gradient(to right, transparent, ${GOLD}88, transparent)`,
+                }}/>
+                <p style={{
+                  fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+                  fontWeight: 300, fontSize: 15, color: MUTE,
+                  lineHeight: 1.5, maxWidth: 340, margin: '0 auto',
+                }}>
+                  The concierge will assemble it the moment you choose a place.
+                </p>
+              </div>
+            </PremiumFrame>
           )}
 
           {/* Trip actions row — outside the clickable card so taps never
@@ -1763,29 +1859,10 @@ export default function Dashboard() {
             <EmptyStateInspiration/>
           ) : (
           <div>
-            <div style={{ marginBottom: 24 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <motion.span
-                  animate={{ opacity: [0.4, 1, 0.4] }}
-                  transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-                  style={{ width: 6, height: 6, borderRadius: '50%', background: GOLD, boxShadow: `0 0 10px ${GOLD}` }}
-                />
-                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
-                  Curated for you
-                </p>
-              </div>
-              <motion.h2
-                animate={{ filter: [`drop-shadow(0 0 12px rgba(212,182,134,0.18))`, `drop-shadow(0 0 28px rgba(212,182,134,0.45))`, `drop-shadow(0 0 12px rgba(212,182,134,0.18))`] }}
-                transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-                style={{
-                  fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
-                  fontSize: 34, color: BONE, lineHeight: 1.02, margin: 0,
-                  letterSpacing: '-0.015em',
-                }}
-              >
-                Travellers tuned to your rhythm.
-              </motion.h2>
-            </div>
+            <PremiumHeader
+              eyebrow="By Appointment Only"
+              headline="Travellers tuned to your rhythm."
+            />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* Gender backfill prompt — replaces the matches list when
                   the user is solo and their profile has no gender set.
@@ -1918,60 +1995,37 @@ export default function Dashboard() {
             transition={{ duration: 0.5, ease, delay: 0.2 }}
             style={{
               gridColumn: '1 / -1',
-              padding: '40px 52px 24px',
-              borderTop: `1px solid ${HAIRLINE}`,
+              padding: '36px 28px 18px',
               position: 'relative',
             }}
           >
-            {/* gold gradient hairline ornament */}
-            <div style={{
-              position: 'absolute', top: -1, left: '50%', transform: 'translateX(-50%)',
-              width: 120, height: 1,
-              background: `linear-gradient(to right, transparent, ${GOLD}, transparent)`,
-            }}/>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 22 }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <motion.span
-                    animate={{ opacity: [0.4, 1, 0.4] }}
-                    transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-                    style={{ width: 6, height: 6, borderRadius: '50%', background: AMBER, boxShadow: `0 0 10px ${AMBER}` }}
-                  />
-                  <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
-                    Your trip vault
-                  </p>
-                </div>
-                <h2 style={{
-                  fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
-                  fontSize: 30, color: BONE, lineHeight: 1.05, margin: 0,
-                  letterSpacing: '-0.015em',
-                }}>
-                  Every trip you've planned.
-                </h2>
+            <PremiumFrame padding="44px 48px 36px">
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, gap: 24 }}>
+                <PremiumHeader eyebrow="The Travel Ledger" headline="Every journey on file." />
+                {/* Live travellers — hovered avatar shows the persona's
+                    name + city. Click scrolls to the Pulse feed. */}
+                <LiveTravellersStrip onJump={() => {
+                  document.querySelector('[data-pulse-anchor]')?.scrollIntoView({
+                    behavior: 'smooth', block: 'start',
+                  })
+                }}/>
               </div>
-              {/* Live travellers — hovered avatar shows the persona's
-                  name + city. Click scrolls to the Pulse feed. */}
-              <LiveTravellersStrip onJump={() => {
-                document.querySelector('[data-pulse-anchor]')?.scrollIntoView({
-                  behavior: 'smooth', block: 'start',
-                })
-              }}/>
-            </div>
-            <PastTripsRow
-              trips={pastTrips}
-              onSelect={handleSwitchTrip}
-              switching={switchingTrip}
-              onDelete={handleDeleteTrip}
-              deletingId={deletingId}
-            />
-            {deleteError && (
-              <p style={{
-                marginTop: 10, fontFamily: '"Inter Tight",sans-serif',
-                fontSize: 11, color: '#F87171',
-              }}>
-                {deleteError}
-              </p>
-            )}
+              <PastTripsRow
+                trips={pastTrips}
+                onSelect={handleSwitchTrip}
+                switching={switchingTrip}
+                onDelete={handleDeleteTrip}
+                deletingId={deletingId}
+              />
+              {deleteError && (
+                <p style={{
+                  marginTop: 14, fontFamily: '"Inter Tight",sans-serif',
+                  fontSize: 11, color: '#F87171',
+                }}>
+                  {deleteError}
+                </p>
+              )}
+            </PremiumFrame>
           </motion.section>
         )}
 
@@ -1987,40 +2041,26 @@ export default function Dashboard() {
           transition={{ duration: 0.5, ease, delay: 0.25 }}
           style={{
             gridColumn: '1 / -1',
-            padding: '40px 52px 24px',
-            borderTop: `1px solid ${HAIRLINE}`,
+            padding: '36px 28px 18px',
             position: 'relative',
           }}
         >
-          <div style={{
-            position: 'absolute', top: -1, left: '50%', transform: 'translateX(-50%)',
-            width: 120, height: 1,
-            background: `linear-gradient(to right, transparent, #10B981, transparent)`,
-          }}/>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 22 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <motion.span
-                  animate={{ opacity: [0.4, 1, 0.4] }}
-                  transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-                  style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 10px #10B981' }}
-                />
-                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
-                  Planned together
-                </p>
-              </div>
-              <h2 style={{
-                fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
-                fontSize: 30, color: BONE, lineHeight: 1.05, margin: 0,
-                letterSpacing: '-0.015em',
+          <PremiumFrame accent="#10B981" padding="44px 48px 36px">
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 26, gap: 24 }}>
+              <PremiumHeader
+                eyebrow="Concierge Co-Plans"
+                headline="In progress with your travelling party."
+                accent="#10B981"
+              />
+              <p style={{
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                letterSpacing: '0.34em', textTransform: 'uppercase',
+                color: 'rgba(16,185,129,0.85)', margin: 0,
+                whiteSpace: 'nowrap', paddingTop: 2,
               }}>
-                Your shared trips.
-              </h2>
+                {sharedTrips.length} on file
+              </p>
             </div>
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: DIM, margin: 0 }}>
-              {sharedTrips.length}
-            </p>
-          </div>
           <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'thin' }}>
             {sharedTrips.map((t, i) => {
               const accent = t.finalized ? '#10B981' : '#F59E0B'
@@ -2078,6 +2118,7 @@ export default function Dashboard() {
               )
             })}
           </div>
+          </PremiumFrame>
         </motion.section>
         )}
 
