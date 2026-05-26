@@ -67,7 +67,7 @@ Both work with Pinecone and AI, but do different things:
 | AI — Voice | **ElevenLabs TTS** via `ali/voice/elevenlabs.py` — persona voice_id assigned via deterministic `profile_id` hash. Output MP3s cached in Firebase Storage keyed by `sha256(text + voice_id)` so re-plays are free |
 | Email | Resend / SendGrid / SES — `EMAIL_PROVIDER` |
 | Web Push | Service worker (`public/sw.js`) + VAPID + `pywebpush` |
-| Frontend hosting | Vercel |
+| Frontend hosting | Cloudflare Pages |
 | Backend hosting | Render |
 | Monitoring | Sentry (errors) + PostHog (analytics) |
 
@@ -1120,7 +1120,7 @@ A sweep across every code file surfaced a long tail of load-bearing decisions wo
 | `scripts/preview_avatars.py` | Dry-run preview for the `gpt-image-1` portrait prompt. Renders 5 portraits across a diverse slice of the seed matrix and dumps PNGs into `seed_assets/preview/` so you can eyeball the new prompt before paying to re-render all 192. Skips persona-infer, emotional-signature, Pinecone, and Firebase entirely. |
 | `scripts/purge_firebase_avatars.py` | Wipes every blob under `cotraveller_avatars/` in Firebase Storage. Use before a `--purge` re-seed so stale avatars from older runs don't accumulate (Pinecone purge clears metadata pointers, but the actual PNGs in Storage are orphaned otherwise). |
 | `scripts/check_pinecone.py` | Quick CLI dump of `describe_index_stats()` — per-namespace vector counts + total. Use to verify a seed / backfill landed before doing live testing. |
-| `scripts/generate_vapid_keys.py` | One-time VAPID keypair generator for Web Push. Prints `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` to paste into `.env` (or the secret store on ECS / Render). Public key is also exposed to the frontend so the service worker can subscribe — backend serves it via `/api/push/vapid-public-key`. |
+| `scripts/generate_vapid_keys.py` | One-time VAPID keypair generator for Web Push. Prints `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` to paste into `.env` (or Render's secret store). Public key is also exposed to the frontend so the service worker can subscribe — backend serves it via `/api/push/vapid-public-key`. |
 | `scripts/progress.py` | Auto-updates `TASKS.md` checkboxes based on actual implementation state. A Python file task is checked off when none of its public functions raise `NotImplementedError`. Non-Python tasks (Figma, deployment, JS) are left unchanged. Runs in CI on every push that touches a `.py`. |
 | `scripts/sync_trello.py` | Mirrors `TASKS.md` sections to a Trello board. Creates one card per section, moves cards to Done / Doing / per-person To Do based on checkbox state. Mostly used for stakeholder visibility. |
 
