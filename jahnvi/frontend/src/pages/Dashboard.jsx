@@ -393,6 +393,179 @@ function CinematicEmptyHero() {
   )
 }
 
+// Hand-curated mood pool for the full-width gallery on the empty
+// dashboard. Skews toward visually distinctive places that look
+// great as photo tiles — these don't have to match the inspiration
+// list or the dice-roll pool, and intentional overlap is fine.
+const GALLERY_DESTINATIONS = [
+  { city: 'Santorini',     country: 'Greece'        },
+  { city: 'Marrakech',     country: 'Morocco'       },
+  { city: 'Hoi An',        country: 'Vietnam'       },
+  { city: 'Petra',         country: 'Jordan'        },
+  { city: 'Patagonia',     country: 'Argentina'     },
+  { city: 'Hokkaido',      country: 'Japan'         },
+  { city: 'Cinque Terre',  country: 'Italy'         },
+  { city: 'Jaipur',        country: 'India'         },
+  { city: 'Cape Town',     country: 'South Africa'  },
+  { city: 'Banff',         country: 'Canada'        },
+  { city: 'Tórshavn',      country: 'Faroe Islands' },
+  { city: 'Cartagena',     country: 'Colombia'      },
+]
+
+function GalleryTile({ city, country, index }) {
+  const navigate = useNavigate()
+  const photo = useDestinationPhoto(city, country)
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.55, delay: 0.05 + index * 0.05, ease }}
+      whileHover={{ y: -6, boxShadow: `0 28px 48px rgba(0,0,0,0.55), 0 0 32px ${GOLD}22` }}
+      whileTap={{ scale: 0.98 }}
+      onClick={() => {
+        try {
+          sessionStorage.setItem('sonder_seed_destination', `${city}, ${country}`)
+        } catch { /* noop */ }
+        navigate('/preferences')
+      }}
+      style={{
+        position: 'relative', overflow: 'hidden',
+        flex: '0 0 auto', width: 260, height: 340,
+        background: photo
+          ? `url(${photo}) center/cover no-repeat`
+          : `linear-gradient(135deg, #1a140d 0%, #0a0807 100%)`,
+        border: `1px solid ${HAIRLINE}`,
+        borderRadius: 18, cursor: 'pointer',
+        textAlign: 'left',
+        transition: 'all 0.35s',
+        scrollSnapAlign: 'start',
+      }}
+    >
+      {/* Dark gradient overlay so the typography stays legible. */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(180deg, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0.20) 45%, rgba(0,0,0,0.88) 100%)',
+        pointerEvents: 'none',
+      }}/>
+
+      {/* Subtle gold sweep on hover — handled via CSS-in-JS would be
+          cleaner with a stylesheet, but a static gradient + the parent
+          hover scale carries the drama enough. */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: `radial-gradient(ellipse at top right, ${GOLD}10, transparent 60%)`,
+        pointerEvents: 'none', mixBlendMode: 'screen',
+      }}/>
+
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        padding: '20px 22px 22px', zIndex: 1,
+      }}>
+        <span style={{
+          display: 'block',
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 8.5,
+          letterSpacing: '0.32em', textTransform: 'uppercase',
+          color: GOLD, marginBottom: 6,
+          textShadow: `0 0 14px ${GOLD}66`,
+        }}>
+          {country}
+        </span>
+        <span style={{
+          display: 'block',
+          fontFamily: '"Cormorant Garamond",serif',
+          fontStyle: 'italic', fontWeight: 400,
+          fontSize: 28, color: BONE, lineHeight: 1.05,
+          letterSpacing: '-0.01em',
+          textShadow: `0 2px 14px rgba(0,0,0,0.7)`,
+        }}>
+          {city}
+        </span>
+      </div>
+
+      {/* Small "→ start" affordance in the top-right that fades in on
+          hover. Pure CSS would need a wrapper rule; using motion's
+          whileHover on the parent doesn't propagate. Keep static here
+          and let the hover scale + glow do the affordance work. */}
+      <div style={{
+        position: 'absolute', top: 14, right: 14,
+        width: 28, height: 28, borderRadius: '50%',
+        background: 'rgba(10,8,7,0.6)', border: `1px solid ${GOLD}44`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        backdropFilter: 'blur(8px)',
+      }}>
+        <ChevronRight size={12} style={{ color: GOLD }}/>
+      </div>
+    </motion.button>
+  )
+}
+
+function GalleryStrip() {
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, ease, delay: 0.3 }}
+      style={{
+        gridColumn: '1 / -1',
+        padding: '52px 52px 40px',
+        borderTop: `1px solid ${HAIRLINE}`,
+        position: 'relative',
+      }}
+    >
+      {/* gold gradient hairline ornament — matches "Your trips" header */}
+      <div style={{
+        position: 'absolute', top: -1, left: '52px', width: '120px', height: '1px',
+        background: `linear-gradient(90deg, ${GOLD} 0%, transparent 100%)`,
+      }}/>
+
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <motion.span
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+            style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: GOLD, boxShadow: `0 0 10px ${GOLD}`,
+            }}
+          />
+          <p style={{
+            fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+            letterSpacing: '0.34em', textTransform: 'uppercase',
+            color: MUTE, margin: 0,
+          }}>
+            A gallery of dreams
+          </p>
+        </div>
+        <h2 style={{
+          fontFamily: '"Cormorant Garamond",serif', fontWeight: 400,
+          fontStyle: 'italic', fontSize: 38, color: BONE,
+          lineHeight: 1.02, margin: 0, letterSpacing: '-0.02em',
+        }}>
+          What if…
+        </h2>
+        <p style={{
+          fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
+          fontSize: 13, color: MUTE, lineHeight: 1.6,
+          margin: '12px 0 0', maxWidth: 520,
+        }}>
+          Twelve places that earn their photographs. Pick one and we'll
+          build the trip around it.
+        </p>
+      </div>
+
+      <div style={{
+        display: 'flex', gap: 18, overflowX: 'auto', overflowY: 'visible',
+        paddingBottom: 18, paddingTop: 4,
+        scrollSnapType: 'x mandatory', scrollbarWidth: 'thin',
+      }}>
+        {GALLERY_DESTINATIONS.map((d, i) => (
+          <GalleryTile key={d.city} city={d.city} country={d.country} index={i}/>
+        ))}
+      </div>
+    </motion.section>
+  )
+}
+
 // Rendered in the right column when the user has zero trips. Matches
 // would be lying with no trip to scope to, so we replace the "Curated
 // for you" block with a soft inspiration card that nudges toward
@@ -2133,6 +2306,15 @@ export default function Dashboard() {
           )}
 
         </motion.div>
+
+        {/* Picture gallery — full-width "what if" mood strip below the
+            two empty-state columns. Only renders when the user has zero
+            trips; once they plan one, the past-trips section takes over
+            this row. Clicking a tile seeds /preferences via the same
+            sessionStorage seam the inspiration cards use. */}
+        {pastTrips.length === 0 && (
+          <GalleryStrip />
+        )}
 
         {/* Your trips — only rendered when the user actually has saved
             trips. Empty vault is uninteresting noise; deleting the last
