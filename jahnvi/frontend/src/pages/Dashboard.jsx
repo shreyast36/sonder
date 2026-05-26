@@ -468,6 +468,145 @@ function GoldDust() {
   )
 }
 
+// Page-level cinematic backdrop. A slow Ken-Burns cycle through the
+// same SCENES list, blurred + dimmed + vignetted so dashboard content
+// stays legible on top. Cycles every ~12s — slower than the empty-
+// hero reel so it feels like ambient atmosphere, not a slideshow.
+function CinematicPageBackdrop() {
+  const [idx, setIdx] = useState(0)
+  const n = SCENES.length
+  useEffect(() => {
+    const t = setInterval(() => setIdx(i => (i + 1) % n), 12000)
+    return () => clearInterval(t)
+  }, [n])
+  const current = SCENES[idx]
+  const photo = useDestinationPhoto(current.city, current.country)
+  const kb = getKenBurns(current.pan)
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 0,
+      pointerEvents: 'none', overflow: 'hidden',
+    }}>
+      <AnimatePresence mode="sync">
+        <motion.div
+          key={`${current.city}-${photo}`}
+          initial={{ opacity: 0, ...kb.initial }}
+          animate={{ opacity: 0.32, ...kb.animate }}
+          exit={{ opacity: 0 }}
+          transition={{
+            opacity: { duration: 2.4, ease },
+            scale:   { duration: 14, ease: 'linear' },
+            x:       { duration: 14, ease: 'linear' },
+            y:       { duration: 14, ease: 'linear' },
+          }}
+          style={{
+            position: 'absolute', inset: '-10%',
+            background: photo
+              ? `url(${photo}) center/cover no-repeat`
+              : `radial-gradient(ellipse at 30% 40%, rgba(245,158,11,0.10), transparent 60%), #050403`,
+            filter: 'blur(6px) saturate(1.10) contrast(1.04)',
+          }}
+        />
+      </AnimatePresence>
+      {/* Strong dark vignette + colour grade so the photo is *atmosphere*,
+          never something that competes with the dashboard content. */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background:
+          'radial-gradient(ellipse at center, rgba(4,3,2,0.55) 0%, rgba(4,3,2,0.82) 60%, rgba(4,3,2,0.96) 100%), ' +
+          'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.72) 100%)',
+      }}/>
+    </div>
+  )
+}
+
+// Page-level atmospheric stack — backdrop + grain + flare + dust,
+// all fixed-positioned so they ride the whole dashboard regardless
+// of scroll. Wraps the existing FilmGrain / LensFlare / GoldDust in
+// fixed containers so they cover the viewport instead of a single
+// parent box.
+function CinematicPageAtmosphere() {
+  return (
+    <>
+      <CinematicPageBackdrop/>
+      {/* Drifting lens flare — fixed, much slower + dimmer than the
+          empty-hero version because it's running over the whole page
+          and should feel like ambient light, not an event. */}
+      <motion.div
+        animate={{
+          x: ['-12%', '112%'],
+          y: ['18%', '8%', '22%', '12%'],
+          opacity: [0, 0.30, 0.30, 0],
+        }}
+        transition={{
+          duration: 26, repeat: Infinity, ease: 'easeInOut',
+          repeatDelay: 12,
+          times: [0, 0.2, 0.8, 1],
+        }}
+        style={{
+          position: 'fixed', top: 0, left: 0,
+          width: 360, height: 360,
+          background: 'radial-gradient(circle, rgba(255,220,140,0.55) 0%, rgba(255,180,80,0.22) 30%, transparent 70%)',
+          filter: 'blur(36px)',
+          pointerEvents: 'none', zIndex: 220,
+          mixBlendMode: 'screen',
+        }}
+      />
+      {/* Sparse drifting gold dust — fewer particles than the empty-
+          hero version so the page doesn't feel crowded. */}
+      <PageGoldDust/>
+      {/* Animated film grain — overlay blend, low opacity, riding the
+          whole viewport. */}
+      <motion.div
+        animate={{ opacity: [0.05, 0.085, 0.05, 0.075, 0.05] }}
+        transition={{ duration: 0.6, repeat: Infinity, ease: 'linear' }}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 250,
+          pointerEvents: 'none', mixBlendMode: 'overlay',
+          backgroundImage:
+            "url(\"data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'>" +
+            "<filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter>" +
+            "<rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/></svg>\")",
+          backgroundSize: '220px 220px',
+        }}
+      />
+    </>
+  )
+}
+
+function PageGoldDust() {
+  const particles = useMemo(
+    () => Array.from({ length: 14 }).map(() => ({
+      x: Math.random() * 100,
+      delay: Math.random() * 14,
+      duration: 16 + Math.random() * 14,
+      size: 1 + Math.random() * 2,
+    })),
+    [],
+  )
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, pointerEvents: 'none',
+      zIndex: 240, overflow: 'hidden',
+    }}>
+      {particles.map((p, i) => (
+        <motion.div
+          key={i}
+          initial={{ y: '110vh', opacity: 0 }}
+          animate={{ y: '-10vh', opacity: [0, 0.55, 0.55, 0] }}
+          transition={{ duration: p.duration, delay: p.delay, repeat: Infinity, ease: 'linear' }}
+          style={{
+            position: 'absolute', left: `${p.x}%`,
+            width: p.size, height: p.size, borderRadius: '50%',
+            background: GOLD,
+            boxShadow: `0 0 ${p.size * 4}px ${GOLD}`,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
 // Cinematic reel — replaces the cover-flow with an auto-cutting film:
 // Ken-Burns shots, letterbox bars, scene-based filmstrip nav, film
 // grain, drifting lens flare, floating gold dust, dramatic title-card
@@ -1812,11 +1951,16 @@ export default function Dashboard() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ position: 'relative', minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
       <AppBackground accent="#F59E0B" />
+      {/* The whole dashboard sits inside a slowly cross-fading Ken-Burns
+          cycle of tropical destinations + persistent film grain +
+          drifting lens flare + floating gold dust. Content stays above
+          the backdrop via z-index on every dashboard section. */}
+      <CinematicPageAtmosphere />
 
       {/* nav */}
-      <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
+      <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.72)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
         <SonderNav3D markSize={32}/>
         <NavTabs/>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
