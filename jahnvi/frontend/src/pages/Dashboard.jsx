@@ -1739,7 +1739,7 @@ export default function Dashboard() {
       <CinematicPageAtmosphere />
 
       {/* nav */}
-      <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.72)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
+      <nav style={{ position: 'sticky', top: 0, zIndex: 50, borderBottom: `1px solid ${HAIRLINE}`, background: 'rgba(10,8,5,0.42)', backdropFilter: 'blur(32px) saturate(1.4)', WebkitBackdropFilter: 'blur(32px) saturate(1.4)', padding: '0 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
         <SonderNav3D markSize={32}/>
         <NavTabs/>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -1845,7 +1845,12 @@ export default function Dashboard() {
         </div>
       </nav>
 
-      {/* greeting */}
+      {/* Greeting + members card + stats strip. Hidden entirely on the
+          empty state so the cinematic backdrop owns the whole stage —
+          there's nothing meaningful these widgets can show when the
+          user hasn't planned a trip yet, and they were blocking the
+          background. They come back the moment pastTrips lands. */}
+      {pastTrips.length > 0 && (
       <div style={{ borderBottom: `1px solid ${HAIRLINE}`, padding: '44px 48px 40px', position: 'relative', zIndex: 1, overflow: 'hidden', textAlign: 'center' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'radial-gradient(ellipse 60% 140% at 50% 60%, rgba(212,182,134,0.10) 0%, transparent 65%)', pointerEvents: 'none' }}/>
         <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease }}>
@@ -1916,6 +1921,7 @@ export default function Dashboard() {
           )}
         </motion.div>
       </div>
+      )}
 
       {/* Push-notification prompt — only shown when the browser supports
           push, permission is still 'default' (never asked), and the user
