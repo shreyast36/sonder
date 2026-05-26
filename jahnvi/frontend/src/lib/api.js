@@ -19,7 +19,15 @@ async function _readError(res) {
       const data = await res.json()
       return (data && (data.detail || data.message || data.error)) || res.statusText
     }
+    // Guard against HTML error pages (e.g. Cloudflare 504 gateway pages) leaking
+    // raw markup into error messages. Return a friendly fallback instead.
+    if (ct.includes('text/html')) {
+      return `Server error (${res.status}) — please try again.`
+    }
     const text = await res.text()
+    if (text.trimStart().startsWith('<!DOCTYPE') || text.trimStart().startsWith('<html')) {
+      return `Server error (${res.status}) — please try again.`
+    }
     return text.slice(0, 300) || res.statusText
   } catch {
     return res.statusText
