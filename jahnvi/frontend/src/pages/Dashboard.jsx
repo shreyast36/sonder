@@ -378,78 +378,148 @@ function EmptyStateInspiration() {
   )
 }
 
-// Amex-Centurion-style premium portfolio frame. Matte black gradient
-// with a thin gold hairline border, embossed inset highlight, and
-// engraved-feel L-bracket corner ornaments in each corner. Drop in
-// to wrap any dashboard section that should read as "private member
-// concierge", not "web UI".
-function PremiumFrame({ children, accent = '#D4B686', padding = '48px 56px', style = {} }) {
-  const corner = (pos) => (
-    <svg width="16" height="16" viewBox="0 0 16 16"
+// Amex-Centurion premium portfolio frame. Heavy velvet-black gradient,
+// engraved double-border (outer gold rule + inner brushed-gold
+// hairline), ornate fleur corner crests, top-centre crowned ornament.
+// Designed to feel like an inset in a leather-bound member portfolio —
+// every dashboard section that uses it reads as private concierge,
+// not web UI.
+function FleurCorner({ accent, pos }) {
+  // SVG corner crest — three radiating gold strokes meeting at a small
+  // diamond marker. More ornate than a plain L-bracket.
+  return (
+    <svg width="34" height="34" viewBox="0 0 34 34"
       style={{ position: 'absolute', pointerEvents: 'none', ...pos.style }}>
-      <path d={pos.d} fill="none" stroke={accent} strokeOpacity="0.55" strokeWidth="0.8"/>
+      <defs>
+        <linearGradient id={pos.id} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%"  stopColor="#fdf2d4"/>
+          <stop offset="50%" stopColor={accent}/>
+          <stop offset="100%" stopColor="#6e5430"/>
+        </linearGradient>
+      </defs>
+      <g transform={pos.transform} stroke={`url(#${pos.id})`} fill="none" strokeWidth="0.9" strokeLinecap="round">
+        {/* primary L */}
+        <path d="M2 18 L2 2 L18 2"/>
+        {/* secondary inset L */}
+        <path d="M6 14 L6 6 L14 6" strokeOpacity="0.65"/>
+        {/* diagonal flourish */}
+        <path d="M10 2 L2 10" strokeOpacity="0.45"/>
+        {/* diamond marker at the inside corner */}
+        <path d="M14 14 L17 11 L20 14 L17 17 Z" strokeOpacity="0.8" fill={`url(#${pos.id})`} fillOpacity="0.35"/>
+      </g>
     </svg>
   )
+}
+
+function PremiumFrame({ children, accent = '#D4B686', padding = '52px 56px', style = {} }) {
+  const idPrefix = Math.random().toString(36).slice(2, 8)
   return (
     <div style={{
       position: 'relative',
+      // Velvet-black gradient with a faint warm centre glow — reads as
+      // leather portfolio paper under low gallery light, not flat web bg.
       background:
-        'linear-gradient(180deg, rgba(22,17,11,0.62) 0%, rgba(12,9,6,0.52) 100%)',
-      border: `1px solid ${accent}26`,
-      borderRadius: 4,
+        `radial-gradient(ellipse 80% 60% at 50% 0%, rgba(212,182,134,0.05) 0%, transparent 70%), ` +
+        'linear-gradient(180deg, rgba(28,22,14,0.78) 0%, rgba(14,10,6,0.72) 100%)',
+      // Outer engraved double-border + inset highlight + heavy floor shadow.
+      border: `1.5px solid ${accent}55`,
+      borderRadius: 3,
       padding,
       boxShadow:
-        `inset 0 1px 0 rgba(255,250,240,0.05), ` +
-        `inset 0 0 0 1px ${accent}10, ` +
-        `0 28px 70px rgba(0,0,0,0.55), ` +
-        `0 4px 14px rgba(0,0,0,0.30)`,
+        // top inner highlight (light catching the edge)
+        `inset 0 1px 0 rgba(255,250,235,0.10), ` +
+        // inner brushed-gold rule
+        `inset 0 0 0 1px ${accent}22, ` +
+        // second inset rule, 6px in (the "engraved double border" feel)
+        `inset 0 0 0 7px rgba(212,182,134,0.05), ` +
+        `inset 0 0 0 8px ${accent}18, ` +
+        // floor shadow + atmospheric drop
+        `0 40px 90px rgba(0,0,0,0.65), ` +
+        `0 6px 18px rgba(0,0,0,0.40)`,
       ...style,
     }}>
-      {corner({ style: { top: 10, left: 10 },     d: 'M0 16 L0 0 L16 0' })}
-      {corner({ style: { top: 10, right: 10 },    d: 'M0 0 L16 0 L16 16' })}
-      {corner({ style: { bottom: 10, left: 10 },  d: 'M0 0 L0 16 L16 16' })}
-      {corner({ style: { bottom: 10, right: 10 }, d: 'M0 16 L16 16 L16 0' })}
-      {/* Top centre micro-hairline ornament — Centurion houses a small
-          flourish at the top edge; we mirror it with a thin gold
-          gradient tick. */}
-      <div style={{
-        position: 'absolute', top: -1, left: '50%', transform: 'translateX(-50%)',
-        width: 96, height: 1,
-        background: `linear-gradient(to right, transparent, ${accent}, transparent)`,
-        pointerEvents: 'none',
-      }}/>
+      {/* Engraved double-rule border drawn as SVG so corners can be
+          mitred properly — the boxShadow inset above gives us the
+          two-rule visual without lining up corners. The SVG below
+          carries the corner crests. */}
+      <FleurCorner accent={accent} pos={{ id: `${idPrefix}-tl`, style: { top: 10, left: 10 },     transform: 'rotate(0 17 17)' }}/>
+      <FleurCorner accent={accent} pos={{ id: `${idPrefix}-tr`, style: { top: 10, right: 10 },    transform: 'translate(34 0) scale(-1 1)' }}/>
+      <FleurCorner accent={accent} pos={{ id: `${idPrefix}-bl`, style: { bottom: 10, left: 10 },  transform: 'translate(0 34) scale(1 -1)' }}/>
+      <FleurCorner accent={accent} pos={{ id: `${idPrefix}-br`, style: { bottom: 10, right: 10 }, transform: 'translate(34 34) scale(-1 -1)' }}/>
+
+      {/* Top-centre crown ornament — small gold flourish capping the
+          frame, like a stamped crest on a hotel keycard. */}
+      <svg width="58" height="14" viewBox="0 0 58 14"
+        style={{ position: 'absolute', top: -7, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none' }}>
+        <defs>
+          <linearGradient id={`${idPrefix}-crown`} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%"  stopColor="transparent"/>
+            <stop offset="25%" stopColor={accent} stopOpacity="0.4"/>
+            <stop offset="50%" stopColor="#fdf2d4"/>
+            <stop offset="75%" stopColor={accent} stopOpacity="0.4"/>
+            <stop offset="100%" stopColor="transparent"/>
+          </linearGradient>
+        </defs>
+        <line x1="0" y1="7" x2="58" y2="7" stroke={`url(#${idPrefix}-crown)`} strokeWidth="0.8"/>
+        <circle cx="29" cy="7" r="3.2" fill="none" stroke={`url(#${idPrefix}-crown)`} strokeWidth="0.9"/>
+        <circle cx="29" cy="7" r="1.2" fill={accent} fillOpacity="0.85"/>
+      </svg>
+
       {children}
     </div>
   )
 }
 
-// Standard concierge-style section header — gold caps eyebrow above
-// an italic Cormorant headline, with a thin gold hairline divider
-// underneath. Used inside PremiumFrame to set the tone consistently.
+// Standard concierge-style section header — bigger, bolder, with gold
+// gradient text on the headline and an ornamental SVG divider beneath.
+// Used inside PremiumFrame so every section reads with the same
+// concierge cadence.
 function PremiumHeader({ eyebrow, headline, accent = '#D4B686' }) {
+  const dividerId = 'pmh-' + Math.random().toString(36).slice(2, 8)
   return (
-    <div style={{ marginBottom: 30, position: 'relative' }}>
+    <div style={{ marginBottom: 34, position: 'relative' }}>
       <p style={{
         fontFamily: '"Inter Tight",sans-serif',
-        fontSize: 9, fontWeight: 500,
-        letterSpacing: '0.42em', textTransform: 'uppercase',
-        color: `${accent}cc`, margin: 0, marginBottom: 10,
-        textShadow: `0 0 16px ${accent}33`,
+        fontSize: 11, fontWeight: 600,
+        letterSpacing: '0.48em', textTransform: 'uppercase',
+        color: accent, margin: 0, marginBottom: 14,
+        textShadow: `0 0 22px ${accent}55, 0 0 4px ${accent}33`,
+        // Slight uppercase indent for that engraved-plaque feel
+        textIndent: '0.48em',
       }}>
         {eyebrow}
       </p>
       <h2 style={{
         fontFamily: '"Cormorant Garamond",serif',
         fontStyle: 'italic', fontWeight: 400,
-        fontSize: 32, color: BONE, lineHeight: 1.05,
-        margin: 0, letterSpacing: '-0.015em',
+        fontSize: 44, lineHeight: 1.02,
+        margin: 0, letterSpacing: '-0.02em',
+        // Metallic gold gradient text — light catches the top, brushed
+        // tone in the middle, darker base at the bottom.
+        background: `linear-gradient(180deg, #fdf2d4 0%, ${accent} 50%, #7a5a36 100%)`,
+        WebkitBackgroundClip: 'text',
+        backgroundClip: 'text',
+        color: 'transparent',
+        WebkitTextFillColor: 'transparent',
+        textShadow: `0 2px 24px rgba(212,182,134,0.18)`,
       }}>
         {headline}
       </h2>
-      <div style={{
-        marginTop: 16, height: 1, width: 120,
-        background: `linear-gradient(to right, ${accent}88, transparent)`,
-      }}/>
+      {/* Ornamental divider — hairline → diamond → hairline. Looks like
+          a foiled rule on a hotel menu card. */}
+      <svg width="220" height="14" viewBox="0 0 220 14"
+        style={{ marginTop: 20, display: 'block' }}>
+        <defs>
+          <linearGradient id={dividerId} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%"  stopColor={accent} stopOpacity="0.9"/>
+            <stop offset="50%" stopColor={accent} stopOpacity="0.4"/>
+            <stop offset="100%" stopColor="transparent"/>
+          </linearGradient>
+        </defs>
+        <line x1="0"   y1="7" x2="90"  y2="7" stroke={`url(#${dividerId})`} strokeWidth="0.8"/>
+        <path d="M100 7 L106 3 L112 7 L106 11 Z" fill={accent} fillOpacity="0.75"/>
+        <line x1="122" y1="7" x2="220" y2="7" stroke={`url(#${dividerId})`} strokeWidth="0.8" transform="scale(-1 1) translate(-220 0)"/>
+      </svg>
     </div>
   )
 }
@@ -1359,6 +1429,50 @@ export default function Dashboard() {
           </div>
         </div>
       </nav>
+
+      {/* Concierge banner — sits between the nav and the greeting like
+          the foyer of a private members' club. Brass-plate vibe with
+          a centred crest, separator hairlines, and Latin established-
+          year markers. Sets the entire dashboard's tone before any
+          content surface renders. */}
+      <div style={{
+        position: 'relative', zIndex: 1,
+        background: 'linear-gradient(180deg, rgba(18,14,8,0.65) 0%, rgba(8,6,4,0.45) 100%)',
+        borderBottom: `1px solid rgba(212,182,134,0.32)`,
+        padding: '14px 48px',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        gap: 22, overflow: 'hidden',
+      }}>
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: `linear-gradient(90deg, transparent 0%, rgba(212,182,134,0.05) 50%, transparent 100%)`,
+          pointerEvents: 'none',
+        }}/>
+        <span style={{
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 600,
+          letterSpacing: '0.52em', textTransform: 'uppercase',
+          color: 'rgba(212,182,134,0.78)', textIndent: '0.52em',
+          textShadow: `0 0 14px rgba(212,182,134,0.45)`,
+          position: 'relative', zIndex: 1,
+        }}>
+          Sonder · Private Travel Concierge
+        </span>
+        <span style={{
+          fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+          fontSize: 11, color: 'rgba(212,182,134,0.55)',
+          position: 'relative', zIndex: 1,
+        }}>
+          ·
+        </span>
+        <span style={{
+          fontFamily: 'ui-monospace, monospace', fontSize: 9,
+          letterSpacing: '0.28em', textTransform: 'uppercase',
+          color: 'rgba(212,182,134,0.55)',
+          position: 'relative', zIndex: 1,
+        }}>
+          Est. MMXXVI
+        </span>
+      </div>
 
       {/* greeting */}
       <div style={{ borderBottom: `1px solid ${HAIRLINE}`, padding: '44px 48px 40px', position: 'relative', zIndex: 1, overflow: 'hidden', textAlign: 'center' }}>
