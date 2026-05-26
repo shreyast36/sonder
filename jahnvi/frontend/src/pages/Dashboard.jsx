@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
 import MatchCard from '../components/MatchCard'
-import { SonderNav3D } from '../components/SonderMark3D'
+import { SonderNav3D, SonderMark3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
 import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, deleteItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest, getUserProfile, patchProfileGender, listMyShared } from '../lib/api'
@@ -1420,22 +1420,21 @@ export default function Dashboard() {
         </div>
       </nav>
 
-      {/* Concierge banner — brass foyer plate. Heavy black plate with
-          a strong gold gradient sheen, double hairline borders top
-          and bottom (engraved feel), a centred crest flanked by two
-          ornamental gold rules, and a metallic-gold gradient on the
-          wordmark itself. Sets the dashboard tone the moment the
-          page lands. */}
+      {/* Concierge banner — brass foyer plate housing a slowly
+          rotating 3D Sonder mark. No wordmark text, no tagline —
+          the metal S spinning under studio lighting carries the
+          entire brand cue. Top + bottom hairlines + brass sheen
+          + warm centre glow round it out. */}
       <div style={{
         position: 'relative', zIndex: 1,
         background:
-          'radial-gradient(ellipse 70% 90% at 50% 50%, rgba(212,182,134,0.10) 0%, transparent 70%), ' +
+          'radial-gradient(ellipse 70% 120% at 50% 50%, rgba(212,182,134,0.14) 0%, transparent 70%), ' +
           'linear-gradient(180deg, rgba(28,22,14,0.92) 0%, rgba(10,8,5,0.88) 100%)',
         borderTop: `1px solid rgba(212,182,134,0.55)`,
         borderBottom: `1px solid rgba(212,182,134,0.55)`,
-        padding: '22px 48px',
+        padding: '18px 48px',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        gap: 18, overflow: 'hidden',
+        overflow: 'hidden',
         boxShadow:
           `inset 0 1px 0 rgba(255,250,235,0.12), ` +
           `inset 0 -1px 0 rgba(212,182,134,0.20), ` +
@@ -1453,9 +1452,9 @@ export default function Dashboard() {
           }}
         />
 
-        {/* Left ornament — diamond + hairline tail */}
+        {/* Left ornament — hairline + gold diamond marker */}
         <svg width="70" height="14" viewBox="0 0 70 14"
-          style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}>
+          style={{ position: 'relative', zIndex: 1, flexShrink: 0, marginRight: 18 }}>
           <defs>
             <linearGradient id="banner-left" x1="0" y1="0" x2="1" y2="0">
               <stop offset="0%"  stopColor="transparent"/>
@@ -1466,27 +1465,14 @@ export default function Dashboard() {
           <path d="M56 7 L62 3 L68 7 L62 11 Z" fill="#d4b686" fillOpacity="0.85"/>
         </svg>
 
-        {/* Foiled wordmark — metallic gold gradient text + heavy spacing */}
-        <span style={{
-          fontFamily: '"Inter Tight",sans-serif',
-          fontSize: 13, fontWeight: 700,
-          letterSpacing: '0.55em', textTransform: 'uppercase',
-          textIndent: '0.55em',
-          background: 'linear-gradient(180deg, #fdf2d4 0%, #d4b686 55%, #7a5a36 100%)',
-          WebkitBackgroundClip: 'text',
-          backgroundClip: 'text',
-          color: 'transparent',
-          WebkitTextFillColor: 'transparent',
-          textShadow: `0 0 26px rgba(212,182,134,0.55)`,
-          position: 'relative', zIndex: 1,
-          whiteSpace: 'nowrap',
-        }}>
-          Sonder · Private Travel Concierge
-        </span>
+        {/* Centre — rotating 3D Sonder mark */}
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <SonderMark3D size={64} spin spinSpeed={0.45} />
+        </div>
 
-        {/* Right ornament — diamond + hairline tail (mirror of left) */}
+        {/* Right ornament — mirror of left */}
         <svg width="70" height="14" viewBox="0 0 70 14"
-          style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}>
+          style={{ position: 'relative', zIndex: 1, flexShrink: 0, marginLeft: 18 }}>
           <defs>
             <linearGradient id="banner-right" x1="1" y1="0" x2="0" y2="0">
               <stop offset="0%"  stopColor="transparent"/>
@@ -1497,7 +1483,7 @@ export default function Dashboard() {
           <line x1="20" y1="7" x2="70" y2="7" stroke="url(#banner-right)" strokeWidth="0.8"/>
         </svg>
 
-        {/* Latin year tag — right edge, tiny, separator-style */}
+        {/* Latin year tag — right edge, monospace separator-style */}
         <span style={{
           fontFamily: 'ui-monospace, monospace', fontSize: 10,
           letterSpacing: '0.32em', textTransform: 'uppercase',

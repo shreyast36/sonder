@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { useMemo, useRef } from 'react'
+import { Canvas, useFrame } from '@react-three/fiber'
 import { Environment } from '@react-three/drei'
 import * as THREE from 'three'
 
@@ -37,9 +37,10 @@ function buildBotBlade() {
   return new THREE.ExtrudeGeometry(s, EXTRUDE)
 }
 
-function Scene() {
+function Scene({ spin = false, spinSpeed = 0.3 }) {
   const topGeo = useMemo(buildTopBlade, [])
   const botGeo = useMemo(buildBotBlade, [])
+  const groupRef = useRef()
 
   const mat = useMemo(() => new THREE.MeshPhysicalMaterial({
     color: new THREE.Color('#C8A86A'),
@@ -49,30 +50,43 @@ function Scene() {
     envMapIntensity: 2.2,
   }), [])
 
+  // Continuous slow Y-axis rotation when spin=true. ~3.5s per revolution
+  // at the default 0.3 speed feels like a slowly turning hotel-lobby
+  // brass display, not a frantic web spinner.
+  useFrame((_, delta) => {
+    if (spin && groupRef.current) {
+      groupRef.current.rotation.y += delta * spinSpeed
+    }
+  })
+
   return (
     <>
       <Environment preset="studio" />
       <directionalLight position={[2, 5, 4]}  intensity={5}   color="#FFFFFF" />
       <directionalLight position={[-3, -4, 2]} intensity={1.5} color="#B89464" />
       <ambientLight intensity={0.06} />
-      {/* top blade in front at top, bot blade in front at bottom */}
-      <mesh geometry={topGeo} material={mat} position={[0, 0, 0.02]} />
-      <mesh geometry={botGeo} material={mat} position={[0, 0, 0]}    />
+      <group ref={groupRef}>
+        {/* top blade in front at top, bot blade in front at bottom */}
+        <mesh geometry={topGeo} material={mat} position={[0, 0, 0.02]} />
+        <mesh geometry={botGeo} material={mat} position={[0, 0, 0]}    />
+      </group>
     </>
   )
 }
 
-export function SonderMark3D({ size = 80 }) {
+export function SonderMark3D({ size = 80, spin = false, spinSpeed = 0.3 }) {
   const w = Math.round(size * (200 / 280))
   return (
     <div style={{ width: w, height: size, flexShrink: 0 }}>
       <Canvas
         style={{ width: '100%', height: '100%' }}
         camera={{ position: [0, 0, 3.4], fov: 36 }}
-        frameloop="demand"
+        // Static lockups keep frameloop="demand" to save CPU; spinning
+        // marks need a continuous render loop.
+        frameloop={spin ? 'always' : 'demand'}
         gl={{ antialias: true, alpha: true }}
       >
-        <Scene />
+        <Scene spin={spin} spinSpeed={spinSpeed} />
       </Canvas>
     </div>
   )
