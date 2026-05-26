@@ -364,16 +364,6 @@ function EmptyStateInspiration() {
         </div>
       </div>
 
-      <p style={{
-        position: 'relative', zIndex: 1,
-        fontFamily: '"Cormorant Garamond",serif', fontWeight: 300,
-        fontStyle: 'italic',
-        fontSize: 17, color: MUTE, lineHeight: 1.45,
-        marginTop: 8,
-      }}>
-        Plan one trip and the rest of the room — matches, journal,
-        shared itineraries — opens up.
-      </p>
     </div>
   )
 }
@@ -1430,45 +1420,92 @@ export default function Dashboard() {
         </div>
       </nav>
 
-      {/* Concierge banner — sits between the nav and the greeting like
-          the foyer of a private members' club. Brass-plate vibe with
-          a centred crest, separator hairlines, and Latin established-
-          year markers. Sets the entire dashboard's tone before any
-          content surface renders. */}
+      {/* Concierge banner — brass foyer plate. Heavy black plate with
+          a strong gold gradient sheen, double hairline borders top
+          and bottom (engraved feel), a centred crest flanked by two
+          ornamental gold rules, and a metallic-gold gradient on the
+          wordmark itself. Sets the dashboard tone the moment the
+          page lands. */}
       <div style={{
         position: 'relative', zIndex: 1,
-        background: 'linear-gradient(180deg, rgba(18,14,8,0.65) 0%, rgba(8,6,4,0.45) 100%)',
-        borderBottom: `1px solid rgba(212,182,134,0.32)`,
-        padding: '14px 48px',
+        background:
+          'radial-gradient(ellipse 70% 90% at 50% 50%, rgba(212,182,134,0.10) 0%, transparent 70%), ' +
+          'linear-gradient(180deg, rgba(28,22,14,0.92) 0%, rgba(10,8,5,0.88) 100%)',
+        borderTop: `1px solid rgba(212,182,134,0.55)`,
+        borderBottom: `1px solid rgba(212,182,134,0.55)`,
+        padding: '22px 48px',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        gap: 22, overflow: 'hidden',
+        gap: 18, overflow: 'hidden',
+        boxShadow:
+          `inset 0 1px 0 rgba(255,250,235,0.12), ` +
+          `inset 0 -1px 0 rgba(212,182,134,0.20), ` +
+          `0 8px 24px rgba(0,0,0,0.45)`,
       }}>
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: `linear-gradient(90deg, transparent 0%, rgba(212,182,134,0.05) 50%, transparent 100%)`,
-          pointerEvents: 'none',
-        }}/>
+        {/* Slow drifting warm highlight across the plate so it reads
+            as polished brass, not flat ink. */}
+        <motion.div
+          animate={{ x: ['-30%', '130%'] }}
+          transition={{ duration: 22, repeat: Infinity, ease: 'linear' }}
+          style={{
+            position: 'absolute', top: 0, bottom: 0, left: 0, width: '35%',
+            background: 'linear-gradient(90deg, transparent 0%, rgba(212,182,134,0.18) 50%, transparent 100%)',
+            pointerEvents: 'none',
+          }}
+        />
+
+        {/* Left ornament — diamond + hairline tail */}
+        <svg width="70" height="14" viewBox="0 0 70 14"
+          style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}>
+          <defs>
+            <linearGradient id="banner-left" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%"  stopColor="transparent"/>
+              <stop offset="100%" stopColor="#d4b686" stopOpacity="0.9"/>
+            </linearGradient>
+          </defs>
+          <line x1="0" y1="7" x2="50" y2="7" stroke="url(#banner-left)" strokeWidth="0.8"/>
+          <path d="M56 7 L62 3 L68 7 L62 11 Z" fill="#d4b686" fillOpacity="0.85"/>
+        </svg>
+
+        {/* Foiled wordmark — metallic gold gradient text + heavy spacing */}
         <span style={{
-          fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 600,
-          letterSpacing: '0.52em', textTransform: 'uppercase',
-          color: 'rgba(212,182,134,0.78)', textIndent: '0.52em',
-          textShadow: `0 0 14px rgba(212,182,134,0.45)`,
+          fontFamily: '"Inter Tight",sans-serif',
+          fontSize: 13, fontWeight: 700,
+          letterSpacing: '0.55em', textTransform: 'uppercase',
+          textIndent: '0.55em',
+          background: 'linear-gradient(180deg, #fdf2d4 0%, #d4b686 55%, #7a5a36 100%)',
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          color: 'transparent',
+          WebkitTextFillColor: 'transparent',
+          textShadow: `0 0 26px rgba(212,182,134,0.55)`,
           position: 'relative', zIndex: 1,
+          whiteSpace: 'nowrap',
         }}>
           Sonder · Private Travel Concierge
         </span>
+
+        {/* Right ornament — diamond + hairline tail (mirror of left) */}
+        <svg width="70" height="14" viewBox="0 0 70 14"
+          style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}>
+          <defs>
+            <linearGradient id="banner-right" x1="1" y1="0" x2="0" y2="0">
+              <stop offset="0%"  stopColor="transparent"/>
+              <stop offset="100%" stopColor="#d4b686" stopOpacity="0.9"/>
+            </linearGradient>
+          </defs>
+          <path d="M2 7 L8 3 L14 7 L8 11 Z" fill="#d4b686" fillOpacity="0.85"/>
+          <line x1="20" y1="7" x2="70" y2="7" stroke="url(#banner-right)" strokeWidth="0.8"/>
+        </svg>
+
+        {/* Latin year tag — right edge, tiny, separator-style */}
         <span style={{
-          fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
-          fontSize: 11, color: 'rgba(212,182,134,0.55)',
+          fontFamily: 'ui-monospace, monospace', fontSize: 10,
+          letterSpacing: '0.32em', textTransform: 'uppercase',
+          color: 'rgba(212,182,134,0.7)', fontWeight: 500,
+          textShadow: `0 0 14px rgba(212,182,134,0.35)`,
           position: 'relative', zIndex: 1,
-        }}>
-          ·
-        </span>
-        <span style={{
-          fontFamily: 'ui-monospace, monospace', fontSize: 9,
-          letterSpacing: '0.28em', textTransform: 'uppercase',
-          color: 'rgba(212,182,134,0.55)',
-          position: 'relative', zIndex: 1,
+          paddingLeft: 18, borderLeft: '1px solid rgba(212,182,134,0.3)',
+          marginLeft: 4,
         }}>
           Est. MMXXVI
         </span>
