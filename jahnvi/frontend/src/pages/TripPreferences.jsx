@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Globe, Check } from 'lucide-react'
@@ -78,7 +78,7 @@ const PERSONA_SCREENS = [
 
 const TOTAL_STEPS = STRUCTURED_STEPS + PERSONA_SCREENS.length
 
-function ElegantInput({ value, onChange, placeholder, type = 'text', icon: Icon }) {
+function ElegantInput({ value, onChange, placeholder, type = 'text', icon: Icon, min, max }) {
   const [focused, setFocused] = useState(false)
   return (
     <div style={{ position: 'relative' }}>
@@ -90,6 +90,8 @@ function ElegantInput({ value, onChange, placeholder, type = 'text', icon: Icon 
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         placeholder={placeholder}
+        min={min}
+        max={max}
         style={{
           width: '100%', padding: `16px 0 16px ${Icon ? '28px' : '0'}`,
           background: 'none', border: 'none',
@@ -108,6 +110,16 @@ function ElegantInput({ value, onChange, placeholder, type = 'text', icon: Icon 
       )}
     </div>
   )
+}
+
+// Today's date in ISO yyyy-mm-dd, used as the min attr on the
+// departure date picker so the browser blocks past dates at the
+// widget level (in addition to the canProceed JS guard).
+function todayISO() {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
 }
 
 function Toggle({ value, onChange, label }) {
@@ -220,13 +232,38 @@ export default function TripPreferences() {
   const personaIdx    = step - STRUCTURED_STEPS
   const currentPersona = PERSONA_SCREENS[personaIdx]
 
+  // Per-screen persona validation. Each screen type has its own
+  // notion of "answered" — radio/multi need a selection, textarea
+  // needs non-empty text, dual_text needs both inputs.
+  function isPersonaScreenAnswered(screen) {
+    if (!screen) return false
+    if (screen.type === 'radio')    return !!persona[screen.key]
+    if (screen.type === 'multi')    return Array.isArray(persona[screen.key]) && persona[screen.key].length >= 1
+    if (screen.type === 'textarea') return (persona[screen.key] || '').trim().length > 0
+    if (screen.type === 'dual_text') {
+      const [k1, k2] = screen.keys
+      return (persona[k1] || '').trim().length > 0 && (persona[k2] || '').trim().length > 0
+    }
+    return false
+  }
+
+  // Date validation: departure must be today or later; return must
+  // be on or after departure. Used both by canProceed (JS gate) and
+  // the date pickers' `min` attrs (browser-level gate).
+  const today = todayISO()
+  const datesValid = (
+    !!departure && !!returnDate &&
+    departure >= today &&
+    returnDate >= departure
+  )
+
   const canProceed = isPersonaStep
-    ? true
+    ? isPersonaScreenAnswered(currentPersona)
     : [
         destination.trim().length > 0,
-        departure && returnDate,
+        datesValid,
         styles.length > 0 && pace.length > 0,
-        budget.trim().length > 0,
+        budget.trim().length > 0 && parseFloat(budget) > 0,
         travelsWith.length > 0 &&
           (
             travelsWith === 'solo'   ? (groupSize === 1 && (gender === 'male' || gender === 'female')) :
@@ -234,6 +271,15 @@ export default function TripPreferences() {
             groupSize >= 2 && groupSize <= MAX_PARTY_SIZE
           ),
       ][step]
+
+  // Final-submit gate: every persona screen must be answered before
+  // the "Determine your persona" button fires. Without this the user
+  // can land on the last screen, hit Continue, and skip past
+  // unanswered earlier persona screens because each screen-level
+  // check was independent.
+  const allPersonaAnswered = PERSONA_SCREENS.every(isPersonaScreenAnswered)
+  const isFinalStep = step === TOTAL_STEPS - 1
+  const canSubmit = isFinalStep ? allPersonaAnswered : canProceed
 
   function toggleMulti(key, value, max = null) {
     setPersona(prev => {
@@ -277,10 +323,39 @@ export default function TripPreferences() {
   }
 
   function advance() {
-    if (!canProceed && !isPersonaStep) return
-    if (step < TOTAL_STEPS - 1) setStep(s => s + 1)
-    else if (!submitting) handleSubmit()
+    if (!canProceed) return
+    if (step < TOTAL_STEPS - 1) {
+      setStep(s => s + 1)
+      return
+    }
+    // Final step — only fire submit when every persona screen is
+    // answered, never just the current one. Prevents skipping past
+    // earlier unanswered screens by tabbing through to the end.
+    if (!allPersonaAnswered) return
+    if (submitting) return
+    handleSubmit()
   }
+
+  // Enter advances when the current step is valid. Skipped inside
+  // textareas (Enter there should newline) and during submit. Listens
+  // at the window level so it works regardless of which field is
+  // focused — including persona radio screens where no field has
+  // focus by default.
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== 'Enter') return
+      const tag = (e.target?.tagName || '').toUpperCase()
+      if (tag === 'TEXTAREA') return
+      if (!canProceed) return
+      if (isFinalStep && !allPersonaAnswered) return
+      if (submitting) return
+      e.preventDefault()
+      advance()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canProceed, isFinalStep, allPersonaAnswered, submitting, step])
 
   const STRUCTURED_CONTENT = [
     {
@@ -298,10 +373,10 @@ export default function TripPreferences() {
       content: (
         <div style={{ marginTop: 52 }}>
           <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Departure</p>
-          <ElegantInput value={departure} onChange={setDepart} placeholder="" type="date"/>
+          <ElegantInput value={departure} onChange={setDepart} placeholder="" type="date" min={today}/>
           <div style={{ marginTop: 44 }}>
             <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Return</p>
-            <ElegantInput value={returnDate} onChange={setReturn} placeholder="" type="date"/>
+            <ElegantInput value={returnDate} onChange={setReturn} placeholder="" type="date" min={departure || today}/>
           </div>
         </div>
       ),
@@ -561,11 +636,34 @@ export default function TripPreferences() {
 
         <div style={{ padding: '32px 48px 52px', maxWidth: 720, margin: '0 auto', width: '100%', boxSizing: 'border-box', position: 'relative', zIndex: 1 }}>
           <motion.button
-            whileHover={{ y: -2, boxShadow: `0 0 48px ${ORANGE}44`, transition: spring }} whileTap={{ scale: 0.98 }}
+            whileHover={canSubmit && !submitting ? { y: -2, boxShadow: `0 0 48px ${ORANGE}44`, transition: spring } : {}}
+            whileTap={canSubmit && !submitting ? { scale: 0.98 } : {}}
             onClick={advance}
-            style={{ width: '100%', padding: '18px 0', background: `linear-gradient(135deg, ${ORANGE} 0%, #EA580C 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff', transition: 'all 0.25s', boxShadow: `0 0 40px ${ORANGE}28` }}
+            disabled={!canSubmit || submitting}
+            title={!canSubmit && isFinalStep ? 'Answer every question to reveal your persona' : (!canSubmit ? 'Complete this question first' : '')}
+            style={{
+              width: '100%', padding: '18px 0',
+              background: (!canSubmit || submitting)
+                ? 'rgba(232,212,168,0.06)'
+                : `linear-gradient(135deg, ${ORANGE} 0%, #EA580C 100%)`,
+              border: (!canSubmit || submitting) ? `1px solid ${HAIRLINE}` : 'none',
+              borderRadius: 12,
+              cursor: (!canSubmit || submitting) ? 'not-allowed' : 'pointer',
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+              letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500,
+              color: (!canSubmit || submitting) ? MUTE : '#fff',
+              transition: 'all 0.25s',
+              boxShadow: (!canSubmit || submitting) ? 'none' : `0 0 40px ${ORANGE}28`,
+              opacity: (!canSubmit || submitting) ? 0.7 : 1,
+            }}
           >
-            {step < TOTAL_STEPS - 1 ? 'Continue' : submitting ? 'Reading your persona…' : 'Determine your persona'}
+            {step < TOTAL_STEPS - 1
+              ? 'Continue'
+              : submitting
+                ? 'Reading your persona…'
+                : allPersonaAnswered
+                  ? 'Determine your persona'
+                  : 'Answer every question to continue'}
           </motion.button>
         </div>
       </div>
@@ -637,7 +735,9 @@ export default function TripPreferences() {
               whileHover={canProceed ? { y: -3, boxShadow: `0 0 64px ${ORANGE}55, 0 0 128px ${ORANGE}18`, transition: spring } : {}}
               whileTap={canProceed ? { scale: 0.98 } : {}}
               onClick={advance}
-              style={{ width: '100%', padding: '19px 0', background: canProceed ? `linear-gradient(135deg, ${ORANGE} 0%, #EA580C 100%)` : 'rgba(212,182,134,0.06)', border: `1px solid ${canProceed ? 'transparent' : HAIRLINE}`, borderRadius: 12, cursor: canProceed ? 'pointer' : 'default', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: canProceed ? '#fff' : 'rgba(212,182,134,0.28)', transition: 'all 0.25s', boxShadow: canProceed ? `0 0 48px ${ORANGE}33, 0 0 96px ${ORANGE}11` : 'none' }}
+              disabled={!canProceed}
+              title={!canProceed ? 'Fill out this step to continue' : ''}
+              style={{ width: '100%', padding: '19px 0', background: canProceed ? `linear-gradient(135deg, ${ORANGE} 0%, #EA580C 100%)` : 'rgba(212,182,134,0.06)', border: `1px solid ${canProceed ? 'transparent' : HAIRLINE}`, borderRadius: 12, cursor: canProceed ? 'pointer' : 'not-allowed', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: canProceed ? '#fff' : 'rgba(212,182,134,0.28)', transition: 'all 0.25s', boxShadow: canProceed ? `0 0 48px ${ORANGE}33, 0 0 96px ${ORANGE}11` : 'none' }}
             >
               Continue
             </motion.button>

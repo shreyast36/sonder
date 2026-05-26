@@ -76,6 +76,24 @@ export default function PersonaReveal() {
     navigate('/itinerary')
   }
 
+  // Enter confirms once the persona is ready — keeps the whole
+  // preferences → reveal → itinerary flow keyboard-only. Skipped
+  // during loading / error and inside any focused textarea (none
+  // on this page today, but the guard is cheap and forward-safe).
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== 'Enter') return
+      if (state.status !== 'ready') return
+      const tag = (e.target?.tagName || '').toUpperCase()
+      if (tag === 'TEXTAREA') return
+      e.preventDefault()
+      handleConfirm()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.status])
+
   function handleAdjust() {
     localStorage.removeItem(PERSONA_CACHE_KEY)
     navigate('/preferences')
