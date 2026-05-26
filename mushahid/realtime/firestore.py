@@ -157,11 +157,13 @@ async def delete_itinerary_and_related(itinerary_id: str) -> dict:
     """Hard-delete an itinerary and every doc bound to it.
 
     Cleans up: the itinerary doc, its shared-itinerary twin (if any),
-    its companion_prefs doc, every journal entry tagged to it, and
-    every chat_session anchored to it (along with each session's
-    messages subcollection). Cotraveller matches are unique per trip
-    — when the trip is deleted, the conversation context is gone too,
-    so the match goes with it.
+    its companion_prefs doc, every journal entry tagged to it, every
+    chat_session anchored to it (along with each session's messages
+    subcollection), every join_request scoped to it, and every
+    social_post with linked_trip_id pointing here (along with each
+    post's comments subcollection). Cotraveller matches are unique
+    per trip — when the trip is deleted, the conversation context is
+    gone too, so the match goes with it.
 
     Returns a count breakdown so the caller can log / surface what
     was removed. Caller is responsible for purging the user_profile
@@ -171,6 +173,7 @@ async def delete_itinerary_and_related(itinerary_id: str) -> dict:
     removed = {
         "itinerary": 0, "shared_itinerary": 0, "companion_prefs": 0,
         "journal_entries": 0, "chat_sessions": 0, "chat_messages": 0,
+        "join_requests": 0, "social_posts": 0, "social_comments": 0,
     }
     if LOCAL_MODE:
         if _store.pop(f"itinerary:{itinerary_id}", None) is not None:
@@ -196,6 +199,29 @@ async def delete_itinerary_and_related(itinerary_id: str) -> dict:
             v = _store.pop(k, {}) or {}
             removed["chat_messages"] += len(v.get("messages") or [])
         removed["chat_sessions"] = len(c_keys)
+        # Join requests scoped to this trip — both incoming (owner-side)
+        # and outgoing (requester-side that referenced this itinerary).
+        jr_keys = [k for k, v in _store.items()
+                   if k.startswith("join_request:")
+                   and isinstance(v, dict)
+                   and v.get("itinerary_id") == itinerary_id]
+        for k in jr_keys:
+            _store.pop(k, None)
+        removed["join_requests"] = len(jr_keys)
+        # Social posts with linked_trip_id == this trip + their comments.
+        sp_keys = [k for k, v in _store.items()
+                   if k.startswith("post:")
+                   and isinstance(v, dict)
+                   and v.get("linked_trip_id") == itinerary_id]
+        for k in sp_keys:
+            post_id = k.split(":", 1)[1] if ":" in k else None
+            _store.pop(k, None)
+            if post_id:
+                c_keys = [ck for ck in list(_store.keys()) if ck.startswith(f"comment:{post_id}:")]
+                for ck in c_keys:
+                    _store.pop(ck, None)
+                removed["social_comments"] += len(c_keys)
+        removed["social_posts"] = len(sp_keys)
         return removed
 
     db = get_db()
@@ -277,6 +303,61 @@ async def delete_itinerary_and_related(itinerary_id: str) -> dict:
                 logger.warning("delete chat session %s failed: %s", sid, e)
     except Exception as e:
         logger.warning("query chat_sessions for delete failed: %s", e)
+
+    # Join requests anchored to this trip. discover.py writes one doc per
+    # (itinerary_id, requester_id) pair — without this sweep, the user's
+    # inbox keeps surfacing "X wants to join your trip" rows after the
+    # trip itself is gone.
+    try:
+        jr_docs = await asyncio.to_thread(
+            lambda: list(db.collection("join_requests")
+                           .where("itinerary_id", "==", itinerary_id)
+                           .stream())
+        )
+        for jd in jr_docs:
+            try:
+                await asyncio.to_thread(lambda r=jd.reference: r.delete())
+                removed["join_requests"] += 1
+            except Exception as e:
+                logger.warning("delete join_request %s failed: %s", jd.id, e)
+    except Exception as e:
+        logger.warning("query join_requests for delete failed: %s", e)
+
+    # Social posts linked to this trip + their comments subcollection.
+    # feed.py stores the link as `linked_trip_id` (not itinerary_id), so
+    # the previous cascade missed every persona post that referenced this
+    # itinerary, and the Pulse / Discover surfaces kept rendering them
+    # after deletion.
+    try:
+        sp_docs = await asyncio.to_thread(
+            lambda: list(db.collection("social_posts")
+                           .where("linked_trip_id", "==", itinerary_id)
+                           .stream())
+        )
+        for pd in sp_docs:
+            pid = pd.id
+            # Best-effort wipe of comments first, then the post doc.
+            try:
+                comment_refs = await asyncio.to_thread(
+                    lambda: [d.reference for d in
+                             db.collection("social_posts").document(pid)
+                                .collection("comments").stream()]
+                )
+                for cref in comment_refs:
+                    try:
+                        await asyncio.to_thread(lambda r=cref: r.delete())
+                        removed["social_comments"] += 1
+                    except Exception as e:
+                        logger.warning("delete comment under %s failed: %s", pid, e)
+            except Exception as e:
+                logger.warning("query comments for post %s failed: %s", pid, e)
+            try:
+                await asyncio.to_thread(lambda r=pd.reference: r.delete())
+                removed["social_posts"] += 1
+            except Exception as e:
+                logger.warning("delete social_post %s failed: %s", pid, e)
+    except Exception as e:
+        logger.warning("query social_posts for delete failed: %s", e)
 
     return removed
 

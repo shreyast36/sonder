@@ -206,6 +206,9 @@ async def delete_itinerary(itinerary_id: str, uid: str = Depends(verify_token)):
       - all journal_entries tagged to this trip
       - every chat_session anchored to this trip + its messages
         subcollection (cotraveller matches are unique per trip)
+      - every join_request scoped to this trip (inbox cleanup)
+      - every social_post with linked_trip_id == this trip + its
+        comments subcollection (Pulse / Discover cleanup)
       - the itinerary_id from the user's saved_itinerary_ids
       - the current_itinerary_id pointer if it pointed here
 
