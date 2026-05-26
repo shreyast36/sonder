@@ -41,6 +41,47 @@ async def destination_photo(
     return {"url": None, "query": None}
 
 
+# Hand-curated luxury destination queries powering the dashboard's
+# cinematic Pixabay backdrop. Skews toward aerial / drone / overwater
+# vibes so the Ken-Burns simulation reads as flyover. Pixabay's
+# relevance engine handles the actual photo pick per query.
+_LUXURY_BACKDROP_QUERIES = [
+    "Maldives aerial",
+    "Bora Bora overwater",
+    "Santorini aerial",
+    "Bali rice terraces aerial",
+    "Seychelles beach",
+    "Amalfi Coast aerial",
+    "Capri Italy aerial",
+    "Tahiti lagoon aerial",
+    "Mauritius aerial",
+    "Dubai luxury aerial",
+    "Tulum aerial",
+    "Phi Phi Islands aerial",
+]
+
+
+@router.get("/luxury-backdrops")
+async def luxury_backdrops():
+    """Curated luxury-destination Pixabay photos for the dashboard's
+    cinematic backdrop. One image per query (most popular). Cached
+    by query in `shared.pixabay`, so repeated calls are free.
+
+    Public — no auth. Returns whatever subset of queries Pixabay had
+    hits for; never errors. Frontend Ken-Burnses through whatever
+    comes back.
+    """
+    urls: list[str] = []
+    for q in _LUXURY_BACKDROP_QUERIES:
+        try:
+            url = await fetch_image_url(q)
+        except Exception:
+            url = None
+        if url:
+            urls.append(url)
+    return {"urls": urls}
+
+
 @router.get("/destination-photos")
 async def destination_photos(
     city: str = Query(..., min_length=1, max_length=120),

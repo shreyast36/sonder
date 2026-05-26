@@ -468,45 +468,74 @@ function GoldDust() {
   )
 }
 
-// Page-level cinematic VIDEO backdrop. The dashboard is the movie.
-// Cycles through hand-picked Pexels CDN clips of tropical / exotic
-// destinations, full-viewport, auto-advancing with cross-fades.
-// Heavy dark vignette layered on top so trip cards, match cards and
-// every other dashboard surface stays legible on the moving footage.
-//
-// Hot-linked Pexels video URLs — Pexels license allows direct embed
-// for any purpose. If any single URL 404s the onError handler skips
-// to the next clip immediately rather than holding a black frame.
-const CINEMATIC_VIDEO_URLS = [
-  // Aerial drone — tropical lagoons
-  'https://videos.pexels.com/video-files/4763824/4763824-hd_1920_1080_24fps.mp4',
-  // Tropical beach with palms
-  'https://videos.pexels.com/video-files/1739010/1739010-hd_1920_1080_25fps.mp4',
-  // Drone over coast
-  'https://videos.pexels.com/video-files/856974/856974-hd_1920_1080_30fps.mp4',
-  // Underwater / coral reef
-  'https://videos.pexels.com/video-files/2098989/2098989-hd_1920_1080_24fps.mp4',
-  // Aerial — paradise islands
-  'https://videos.pexels.com/video-files/5752729/5752729-hd_1920_1080_30fps.mp4',
-  // Palm trees swaying
-  'https://videos.pexels.com/video-files/2169307/2169307-hd_1920_1080_24fps.mp4',
-  // Ocean waves
-  'https://videos.pexels.com/video-files/2169880/2169880-hd_1920_1080_25fps.mp4',
-  // Tropical paradise / beach
-  'https://videos.pexels.com/video-files/3209828/3209828-hd_1920_1080_25fps.mp4',
+// Pixabay luxury-destination images, aggressively Ken-Burns'd so each
+// shot reads as an aerial flyover. Heavy saturation + contrast filters
+// so the colours pop (the user explicitly hated muted Pexels videos).
+// Backend curates the queries + handles the API key in /api/luxury-
+// backdrops; we just animate the result.
+
+// Bigger Ken-Burns range than the helper used by the scene reel — this
+// is meant to feel like a sweeping drone shot, not subtle drift.
+const FLYOVER_MOVES = [
+  // pan-right + slow zoom-in
+  { initial: { scale: 1.05, x: '-7%', y: '2%'  }, animate: { scale: 1.28, x: '7%',  y: '-3%' } },
+  // pan-left + slow zoom-in
+  { initial: { scale: 1.05, x: '7%',  y: '-2%' }, animate: { scale: 1.28, x: '-7%', y: '3%'  } },
+  // zoom-in from wide
+  { initial: { scale: 1.02, x: '0%',  y: '3%'  }, animate: { scale: 1.32, x: '0%',  y: '-3%' } },
+  // diagonal drift
+  { initial: { scale: 1.08, x: '-5%', y: '-3%' }, animate: { scale: 1.24, x: '5%',  y: '3%'  } },
 ]
 
-function CinematicVideoBackdrop() {
-  const [idx, setIdx] = useState(0)
-  const n = CINEMATIC_VIDEO_URLS.length
-
-  // Cycle every ~22s. Most Pexels tropical clips are 10-30s long; if
-  // the clip ends before we cycle, `loop` keeps it playing until we
-  // do. This duration is the cut cadence, not the clip length.
+// Hard fallback when the backend hasn't reached Pixabay yet (or the
+// API key isn't set) — same shape as the API response, just empty.
+// We render nothing in that case (page stays dark + ambient grain),
+// so the dashboard never looks broken even with no internet.
+function useLuxuryBackdrops() {
+  const [urls, setUrls] = useState([])
   useEffect(() => {
-    const t = setInterval(() => setIdx(i => (i + 1) % n), 22000)
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch('/api/luxury-backdrops')
+        if (cancelled) return
+        if (r.ok) {
+          const d = await r.json()
+          if (Array.isArray(d?.urls) && d.urls.length) setUrls(d.urls)
+        }
+      } catch { /* offline / route down — leave empty */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
+  return urls
+}
+
+function CinematicVideoBackdrop() {
+  const urls = useLuxuryBackdrops()
+  const [idx, setIdx] = useState(0)
+  const n = urls.length
+
+  // Cycle every ~9s so the Ken-Burns gets enough time to feel like a
+  // sweeping shot, but doesn't outstay its welcome before the next cut.
+  useEffect(() => {
+    if (n < 2) return
+    const t = setInterval(() => setIdx(i => (i + 1) % n), 9000)
     return () => clearInterval(t)
   }, [n])
+
+  // No URLs yet (first paint, or Pixabay not wired) → render nothing.
+  // The page-level dark + grain still gives the dashboard atmosphere.
+  if (n === 0) {
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
+        background: 'radial-gradient(ellipse at 50% 30%, #1a1208 0%, #0a0706 60%, #040302 100%)',
+      }}/>
+    )
+  }
+
+  const current = urls[idx]
+  const move = FLYOVER_MOVES[idx % FLYOVER_MOVES.length]
 
   return (
     <div style={{
@@ -515,37 +544,35 @@ function CinematicVideoBackdrop() {
       background: '#040302',
     }}>
       <AnimatePresence mode="sync">
-        <motion.video
-          key={`${idx}-${CINEMATIC_VIDEO_URLS[idx]}`}
-          src={CINEMATIC_VIDEO_URLS[idx]}
-          autoPlay muted loop playsInline preload="auto"
-          onError={() => {
-            // Bad URL or load failure — skip to the next clip rather
-            // than freeze on a black frame.
-            setIdx(i => (i + 1) % n)
-          }}
-          initial={{ opacity: 0, scale: 1.06 }}
-          animate={{ opacity: 0.55, scale: 1.0 }}
+        <motion.div
+          key={`${idx}-${current}`}
+          initial={{ opacity: 0, ...move.initial }}
+          animate={{ opacity: 0.85, ...move.animate }}
           exit={{ opacity: 0 }}
           transition={{
-            opacity: { duration: 2.6, ease },
-            scale:   { duration: 24, ease: 'linear' },
+            opacity: { duration: 2.0, ease },
+            scale:   { duration: 11, ease: 'linear' },
+            x:       { duration: 11, ease: 'linear' },
+            y:       { duration: 11, ease: 'linear' },
           }}
           style={{
-            position: 'absolute', inset: 0,
-            width: '100%', height: '100%',
-            objectFit: 'cover',
-            filter: 'saturate(1.15) contrast(1.06)',
+            position: 'absolute', inset: '-8%',
+            background: `url(${current}) center/cover no-repeat`,
+            // Aggressive colour grade so blues/teals/golds pop. The user
+            // hated muted footage — this is the "colours POPPING" fix.
+            filter: 'saturate(1.55) contrast(1.12) brightness(1.04)',
           }}
         />
       </AnimatePresence>
-      {/* Dark vignette + colour grade so the video is atmosphere, not
-          a thing competing with the UI cards on top. */}
+      {/* Dark vignette + colour-grade overlay so the image is
+          atmosphere, never competing with the UI cards on top. Slightly
+          warmer than the video version because the Pixabay shots are
+          already vibrant. */}
       <div style={{
         position: 'absolute', inset: 0,
         background:
-          'radial-gradient(ellipse at center, rgba(4,3,2,0.40) 0%, rgba(4,3,2,0.72) 60%, rgba(4,3,2,0.90) 100%), ' +
-          'linear-gradient(180deg, rgba(0,0,0,0.40) 0%, rgba(0,0,0,0.62) 100%)',
+          'radial-gradient(ellipse at center, rgba(4,3,2,0.20) 0%, rgba(4,3,2,0.50) 65%, rgba(4,3,2,0.82) 100%), ' +
+          'linear-gradient(180deg, rgba(0,0,0,0.20) 0%, rgba(0,0,0,0.55) 100%)',
       }}/>
     </div>
   )
