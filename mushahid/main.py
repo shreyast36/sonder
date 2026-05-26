@@ -99,6 +99,20 @@ async def lifespan(app: FastAPI):
             await synth_task
         except (asyncio.CancelledError, Exception):
             pass
+        # Drain PostHog's in-memory event buffer before the process
+        # exits. Without this, every Render restart / rolling deploy
+        # drops whatever events were captured in the last ~10s
+        # (PostHog SDK auto-flush interval). On a busy day that's
+        # dozens of itinerary_validation / match_found events lost
+        # per worker shutdown.
+        try:
+            from mushahid.monitoring import _get_ph
+            ph = _get_ph()
+            if ph is not None:
+                ph.flush()
+                ph.shutdown()
+        except Exception as e:
+            logger.warning("PostHog shutdown flush failed: %s", e)
 
 
 app = FastAPI(title="Sonder API", version="0.1.0", lifespan=lifespan)
