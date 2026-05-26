@@ -48,6 +48,7 @@ async def destination_photo(
 # engine handles the actual photo pick per query; "aerial" keyword
 # keeps the Ken-Burns simulation reading as flyover.
 _LUXURY_BACKDROP_QUERIES = [
+    # Tropical + jungle landscapes
     "Bali rice terraces aerial",
     "Maldives atoll aerial lagoon",
     "Bora Bora lagoon aerial",
@@ -59,6 +60,15 @@ _LUXURY_BACKDROP_QUERIES = [
     "Phi Phi Islands aerial nature",
     "Seychelles granite islands aerial",
     "Banaue rice terraces aerial",
+    # Mountain / fjord / alpine drama
+    "Patagonia Torres del Paine aerial",
+    "Swiss Alps Matterhorn aerial",
+    "New Zealand Milford Sound aerial",
+    "Banff Moraine Lake aerial",
+    "Dolomites Italy aerial",
+    "Iceland glacier mountain aerial",
+    "Norway fjord aerial",
+    "Himalaya mountain valley aerial",
     "Faroe Islands cliffs aerial",
 ]
 

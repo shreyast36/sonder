@@ -474,17 +474,20 @@ function GoldDust() {
 // Backend curates the queries + handles the API key in /api/luxury-
 // backdrops; we just animate the result.
 
-// Bigger Ken-Burns range than the helper used by the scene reel — this
-// is meant to feel like a sweeping drone shot, not subtle drift.
+// Sweeping drone moves tuned for Hollywood-tier drama. Bigger scale
+// ranges + longer drift than typical Ken-Burns so each shot reads as
+// a real establishing shot, not a slideshow zoom.
 const FLYOVER_MOVES = [
-  // pan-right + slow zoom-in
-  { initial: { scale: 1.05, x: '-7%', y: '2%'  }, animate: { scale: 1.28, x: '7%',  y: '-3%' } },
-  // pan-left + slow zoom-in
-  { initial: { scale: 1.05, x: '7%',  y: '-2%' }, animate: { scale: 1.28, x: '-7%', y: '3%'  } },
-  // zoom-in from wide
-  { initial: { scale: 1.02, x: '0%',  y: '3%'  }, animate: { scale: 1.32, x: '0%',  y: '-3%' } },
-  // diagonal drift
-  { initial: { scale: 1.08, x: '-5%', y: '-3%' }, animate: { scale: 1.24, x: '5%',  y: '3%'  } },
+  // slow pan-right + push-in
+  { initial: { scale: 1.04, x: '-9%', y: '3%'  }, animate: { scale: 1.36, x: '9%',  y: '-4%' } },
+  // slow pan-left + push-in
+  { initial: { scale: 1.04, x: '9%',  y: '-3%' }, animate: { scale: 1.36, x: '-9%', y: '4%'  } },
+  // long zoom-in from wide
+  { initial: { scale: 1.00, x: '0%',  y: '4%'  }, animate: { scale: 1.42, x: '0%',  y: '-4%' } },
+  // diagonal aerial drift
+  { initial: { scale: 1.06, x: '-7%', y: '-4%' }, animate: { scale: 1.32, x: '7%',  y: '4%'  } },
+  // pull-out reveal
+  { initial: { scale: 1.32, x: '0%',  y: '0%'  }, animate: { scale: 1.02, x: '0%',  y: '0%'  } },
 ]
 
 // Hard fallback when the backend hasn't reached Pixabay yet (or the
@@ -513,13 +516,21 @@ function useLuxuryBackdrops() {
 function CinematicVideoBackdrop() {
   const urls = useLuxuryBackdrops()
   const [idx, setIdx] = useState(0)
+  const [flashing, setFlashing] = useState(false)
   const n = urls.length
 
-  // Cycle every ~9s so the Ken-Burns gets enough time to feel like a
-  // sweeping shot, but doesn't outstay its welcome before the next cut.
+  // Hollywood pacing — 13s per shot. Long enough that the sweeping
+  // Ken-Burns reads as a real establishing shot; short enough that
+  // the cuts feel like edited footage, not a slideshow.
   useEffect(() => {
     if (n < 2) return
-    const t = setInterval(() => setIdx(i => (i + 1) % n), 9000)
+    const t = setInterval(() => {
+      // Brief white flash on every cut — the "film burn" cinematographers
+      // use to land an emotional beat between shots.
+      setFlashing(true)
+      setTimeout(() => setFlashing(false), 280)
+      setIdx(i => (i + 1) % n)
+    }, 13000)
     return () => clearInterval(t)
   }, [n])
 
@@ -547,33 +558,66 @@ function CinematicVideoBackdrop() {
         <motion.div
           key={`${idx}-${current}`}
           initial={{ opacity: 0, ...move.initial }}
-          animate={{ opacity: 0.85, ...move.animate }}
+          animate={{ opacity: 0.92, ...move.animate }}
           exit={{ opacity: 0 }}
           transition={{
-            opacity: { duration: 2.0, ease },
-            scale:   { duration: 11, ease: 'linear' },
-            x:       { duration: 11, ease: 'linear' },
-            y:       { duration: 11, ease: 'linear' },
+            opacity: { duration: 2.4, ease },
+            scale:   { duration: 15, ease: 'linear' },
+            x:       { duration: 15, ease: 'linear' },
+            y:       { duration: 15, ease: 'linear' },
           }}
           style={{
             position: 'absolute', inset: '-8%',
             background: `url(${current}) center/cover no-repeat`,
-            // Aggressive colour grade so blues/teals/golds pop. The user
-            // hated muted footage — this is the "colours POPPING" fix.
-            filter: 'saturate(1.55) contrast(1.12) brightness(1.04)',
+            // Hollywood colour grade — saturated blues/teals/greens, lifted
+            // contrast, slight brightness boost so the highlights bloom.
+            filter: 'saturate(1.85) contrast(1.18) brightness(1.06)',
           }}
         />
       </AnimatePresence>
-      {/* Dark vignette + colour-grade overlay so the image is
-          atmosphere, never competing with the UI cards on top. Slightly
-          warmer than the video version because the Pixabay shots are
-          already vibrant. */}
+
+      {/* Bloom-pass overlay — same backdrop colour-graded harder + blurred,
+          mixed with screen blend so the highlights softly bleed into each
+          other. Imitates the anamorphic-lens highlight bloom of cinema
+          cameras without needing a real shader. */}
       <div style={{
-        position: 'absolute', inset: 0,
-        background:
-          'radial-gradient(ellipse at center, rgba(4,3,2,0.20) 0%, rgba(4,3,2,0.50) 65%, rgba(4,3,2,0.82) 100%), ' +
-          'linear-gradient(180deg, rgba(0,0,0,0.20) 0%, rgba(0,0,0,0.55) 100%)',
+        position: 'absolute', inset: '-8%',
+        background: `url(${current}) center/cover no-repeat`,
+        filter: 'saturate(2.2) contrast(1.25) blur(36px) brightness(1.2)',
+        opacity: 0.32,
+        mixBlendMode: 'screen',
+        pointerEvents: 'none',
       }}/>
+
+      {/* Letterbox + radial vignette overlay — heavier than before, with
+          a strong edge falloff for that "shot through a wide lens" feel.
+          Atmosphere only; the UI cards still read on top. */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background:
+          'radial-gradient(ellipse 110% 90% at center, transparent 30%, rgba(4,3,2,0.40) 70%, rgba(4,3,2,0.85) 100%), ' +
+          'linear-gradient(180deg, rgba(0,0,0,0.32) 0%, transparent 20%, transparent 80%, rgba(0,0,0,0.55) 100%)',
+      }}/>
+
+      {/* Cinematic film-burn flash on every cut — brief white pulse,
+          fades over ~280ms. Sells the "edited footage" feel and lands
+          each scene change with weight instead of a soft fade. */}
+      <AnimatePresence>
+        {flashing && (
+          <motion.div
+            key="film-burn"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.32 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.28, ease: 'easeOut' }}
+            style={{
+              position: 'absolute', inset: 0, pointerEvents: 'none',
+              background: 'radial-gradient(ellipse at center, rgba(255,250,235,0.85) 0%, rgba(255,235,200,0.55) 35%, transparent 75%)',
+              mixBlendMode: 'screen',
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
