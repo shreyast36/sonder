@@ -34,6 +34,10 @@ function matchToCard(m) {
     avatar_url:   p.avatar_url || null,
     reasons:      Array.isArray(m?.match_reasons) ? m.match_reasons : [],
     is_seed:      Boolean(p.is_seed),
+    // Forward the raw Pinecone cosine so MatchDetail can pass it back to
+    // /cotraveller/profile/{id} and /chat/start — keeps pinecone_passthrough
+    // honest end-to-end instead of dropping to 0 on every recompute.
+    retrieval_score: typeof m?.retrieval_score === 'number' ? m.retrieval_score : null,
   }
 }
 
@@ -255,7 +259,10 @@ export default function Companions() {
               loading={matchesLoading}
               onRefine={() => setPhase('intake')}
               onDone={() => navigate('/dashboard')}
-              onTap={(id) => navigate(`/match/${id}`)}
+              onTap={(id, rs) => {
+                const q = typeof rs === 'number' && Number.isFinite(rs) ? `?rs=${rs}` : ''
+                navigate(`/match/${id}${q}`)
+              }}
             />
           )}
 
@@ -456,7 +463,10 @@ function MatchesView({ matches, loading, onRefine, onDone, onTap }) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.05 + i * 0.08, ease }}
             >
-              <MatchCard match={m} onClick={() => onTap(m.id)}/>
+              <MatchCard
+                match={m}
+                onClick={() => onTap(m.id, typeof m.retrieval_score === 'number' ? m.retrieval_score : null)}
+              />
             </motion.div>
           ))}
         </div>

@@ -121,3 +121,9 @@ class CoTravellerMatch(BaseModel):
     match_score:             float = Field(ge=0.0, le=1.0)
     match_reasons:           list[str]
     compatibility_breakdown: dict
+    # Raw Pinecone cosine for this candidate, surfaced so /chat/start can
+    # persist it on ChatSession and the in-chat live re-rank can honour the
+    # same retrieval signal that produced the original match_score. Without
+    # this, score_compatibility re-runs with retrieval_score=0 and silently
+    # deflates the persona's reciprocal-approval probability.
+    retrieval_score:         float = 0.0

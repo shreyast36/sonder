@@ -58,6 +58,11 @@ class ChatStartRequest(BaseModel):
     # reciprocal approval can use the same ground-truth number instead
     # of guessing at decision time.
     match_score: float | None = None
+    # Raw Pinecone cosine that surfaced this candidate. Persisted so the
+    # live chat-signal re-rank threads the same retrieval signal back into
+    # pinecone_passthrough — otherwise the recompute zeros it and the
+    # persona's reciprocal-approval probability deflates turn after turn.
+    retrieval_score: float | None = None
 
 
 @router.post("/chat/start", response_model=ChatStartResponse)
@@ -178,6 +183,7 @@ async def start_chat(body: ChatStartRequest, uid: str = Depends(verify_token)):
         approval_status=ApprovalStatus.pending,
         created_at=datetime.now(timezone.utc).isoformat(),
         match_score=body.match_score,
+        retrieval_score=body.retrieval_score,
     )
     _sessions[session_id] = {"session": session, "messages": []}
     await write_chat_session(session)
@@ -523,13 +529,26 @@ async def _apply_chat_signals(
             travel_style_embedding=viewer_doc.get("travel_style_embedding") or [],
         )
 
-        match = score_compatibility(viewer, candidate)
-        new_score = float(match.match_score)
-
-        updated = current.model_copy(update={
-            "live_weights": new_weights,
-            "match_score":  new_score,
-        })
+        # Thread the original retrieval cosine back into pinecone_passthrough.
+        # Without this the recompute drops 1/6 of the weighted sum every time
+        # chat signals fire, and the persona's reciprocal-approval probability
+        # silently deflates. Sessions that pre-date the retrieval_score field
+        # fall back to skipping the match_score overwrite — better stale than
+        # silently deflated.
+        if current.retrieval_score is None:
+            logger.info(
+                "chat_signal session=%s skipping match_score refresh — "
+                "session pre-dates retrieval_score capture",
+                session_id,
+            )
+            updated = current.model_copy(update={"live_weights": new_weights})
+        else:
+            match = score_compatibility(viewer, candidate, retrieval_score=current.retrieval_score)
+            new_score = float(match.match_score)
+            updated = current.model_copy(update={
+                "live_weights": new_weights,
+                "match_score":  new_score,
+            })
         if sess_meta:
             sess_meta["session"] = updated
         else:
@@ -539,10 +558,11 @@ async def _apply_chat_signals(
         except Exception as e:
             logger.warning("chat signal write_chat_session failed for %s: %s", session_id, e)
 
+        logged_new = updated.match_score if updated.match_score is not None else -1.0
+        logged_old = current.match_score if current.match_score is not None else -1.0
         logger.info(
             "chat_signal session=%s fired=%s score=%.3f (was %.3f)",
-            session_id, fired, new_score,
-            current.match_score if current.match_score is not None else -1.0,
+            session_id, fired, logged_new, logged_old,
         )
     except Exception as e:
         logger.warning("chat signal scan failed for session=%s: %s", session_id, e)

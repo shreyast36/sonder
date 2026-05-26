@@ -66,6 +66,14 @@ class ChatSession(BaseModel):
     # pre-chat retrieval. None means "unknown" → persona defaults to
     # approve.
     match_score:      float | None   = None
+    # Raw Pinecone cosine that surfaced this candidate, captured at
+    # /chat/start so the chat-signal re-rank honours the same retrieval
+    # signal that produced the original match_score. Without this the
+    # live re-rank sets pinecone_passthrough=0 and silently deflates the
+    # persona's reciprocal-approval probability turn after turn. None
+    # means the session pre-dates this field — the re-rank falls back to
+    # not overwriting match_score in that case.
+    retrieval_score:  float | None   = None
     # Per-session feature weights for cotraveller ranking. Starts at the
     # policy's default; chat_signal_scanner boosts features whose keywords
     # fire in user messages, then we re-rank the candidate with these

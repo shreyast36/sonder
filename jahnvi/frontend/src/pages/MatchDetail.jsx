@@ -98,6 +98,19 @@ export default function MatchDetail() {
   const navigate = useNavigate()
   const { id }    = useParams()
   const { user, loading: authLoading } = useAuth()
+  // Pinecone cosine forwarded from the matches list (?rs=…) so the detail
+  // recompute honours the same retrieval signal that produced the original
+  // match_score. Without it the recompute sets pinecone_passthrough=0 and
+  // shows a score ~1/6 below what /matches displayed for the same person.
+  const rsFromUrl = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const raw = params.get('rs')
+      if (raw === null) return null
+      const n = Number(raw)
+      return Number.isFinite(n) ? n : null
+    } catch { return null }
+  })()
 
   const [data, setData]       = useState(null)   // {profile, match_score, match_reasons, compatibility_breakdown}
   const [loading, setLoading] = useState(true)
@@ -120,7 +133,7 @@ export default function MatchDetail() {
           const cur = await getCurrentItinerary()
           itineraryId = cur?.itinerary?.itinerary_id || null
         } catch { /* no current trip — that's fine */ }
-        const res = await getCotravellerProfile(id, itineraryId)
+        const res = await getCotravellerProfile(id, itineraryId, rsFromUrl)
         if (cancelled) return
         setData(res)
         setCurrentItineraryId(itineraryId)
@@ -272,6 +285,7 @@ export default function MatchDetail() {
                     profile.profile_id,
                     currentItineraryId || '',
                     typeof data?.match_score === 'number' ? data.match_score : null,
+                    typeof data?.retrieval_score === 'number' ? data.retrieval_score : null,
                   )
                   navigate(`/chat/${session.session_id}`)
                 } catch (e) {

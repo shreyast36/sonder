@@ -170,9 +170,12 @@ export async function regenerateCotravellers(excludedProfileIds, feedback) {
 // One-shot fetch of a co-traveller's full profile + match score against the
 // current user. Falls back to the cached persona signals so existing users
 // see real (non-28%) scores immediately.
-export async function getCotravellerProfile(profileId, itineraryId) {
+export async function getCotravellerProfile(profileId, itineraryId, retrievalScore = null) {
   const params = new URLSearchParams()
   if (itineraryId) params.set('itinerary_id', itineraryId)
+  if (typeof retrievalScore === 'number' && Number.isFinite(retrievalScore)) {
+    params.set('retrieval_score', String(retrievalScore))
+  }
   try {
     const cached = JSON.parse(localStorage.getItem('sonder_persona_v1') || 'null')
     ;(cached?.persona?.top_push      || []).forEach(v => params.append('top_push', v))
@@ -184,12 +187,17 @@ export async function getCotravellerProfile(profileId, itineraryId) {
 
 // `matchScore` is the 0..1 value from CoTravellerMatch — persisted on the
 // session so the persona's reciprocal approval can read the same ground
-// truth instead of guessing at decision time. Optional for back-compat.
-export async function startChat(profileId, itineraryId, matchScore = null) {
+// truth instead of guessing at decision time. `retrievalScore` is the raw
+// Pinecone cosine for the same candidate; persisted so the live chat-signal
+// re-rank threads the same retrieval signal back into pinecone_passthrough
+// and the recomputed match_score doesn't deflate turn after turn. Both
+// optional for back-compat.
+export async function startChat(profileId, itineraryId, matchScore = null, retrievalScore = null) {
   return post('/api/chat/start', {
-    profile_id:   profileId,
-    itinerary_id: itineraryId,
-    match_score:  matchScore,
+    profile_id:      profileId,
+    itinerary_id:    itineraryId,
+    match_score:     matchScore,
+    retrieval_score: retrievalScore,
   })
 }
 

@@ -71,6 +71,7 @@ def _build_match(viewer: UserProfile, rc: RankedCandidate) -> CoTravellerMatch:
         match_score=rc.final_score,
         match_reasons=reasons[:4],
         compatibility_breakdown={**legacy_breakdown, **raw_breakdown},
+        retrieval_score=rc.retrieval_score,
     )
 
 
@@ -87,14 +88,22 @@ def _resolve_salience(viewer: UserProfile) -> dict[str, float]:
     return compute_answer_salience(viewer.persona_answers, viewer.constraints)
 
 
-def score_compatibility(viewer: UserProfile, candidate: CoTravellerProfile) -> CoTravellerMatch:
+def score_compatibility(
+    viewer: UserProfile,
+    candidate: CoTravellerProfile,
+    retrieval_score: float = 0.0,
+) -> CoTravellerMatch:
     """One-candidate convenience wrapper. Runs the engine with a single
-    candidate and unwraps the result. Used by the profile-detail endpoint."""
+    candidate and unwraps the result. Used by the profile-detail endpoint
+    and the chat-signal live re-rank.
+
+    `retrieval_score` is the original Pinecone cosine for this candidate.
+    Callers that have it (the chat-signal re-rank reads it off ChatSession)
+    MUST pass it — otherwise pinecone_passthrough scores 0 in the weighted
+    sum and the recomputed match_score lands ~1/6 below the original."""
     policy = load_policy("cotraveller")
     salience = _resolve_salience(viewer)
-    # No retrieval score available for a one-off (this code path doesn't
-    # come from Pinecone) — pass 0.0 and let other features carry it.
-    ranked = rank(viewer, [(candidate, 0.0)], policy, ctx={"salience": salience})
+    ranked = rank(viewer, [(candidate, retrieval_score)], policy, ctx={"salience": salience})
     if not ranked:
         # Shouldn't happen, but be defensive.
         return CoTravellerMatch(
@@ -102,24 +111,31 @@ def score_compatibility(viewer: UserProfile, candidate: CoTravellerProfile) -> C
             match_score=0.0,
             match_reasons=[f"Reads as a {candidate.archetype.lower()}"],
             compatibility_breakdown={},
+            retrieval_score=retrieval_score,
         )
     return _build_match(viewer, ranked[0])
 
 
 def get_top_matches(
     viewer: UserProfile,
-    candidates: list[CoTravellerProfile],
+    candidates: list[tuple[CoTravellerProfile, float]],
     top_n: int = 6,
 ) -> list[CoTravellerMatch]:
-    """Score + sort + cap. Candidates come from Pinecone retrieval with no
-    score attached today; we pass retrieval_score=0 and let features carry
-    the signal. Once `search_cotravellers` is updated to return
-    (profile, score) tuples, this is the seam to thread them through."""
+    """Score + sort + cap. `candidates` is the (profile, pinecone_cosine)
+    shape produced by `search_cotravellers` — the cosine flows through to
+    the `pinecone_passthrough` feature so the weighted-sum honours the
+    actual retrieval signal. Bare-list callers (legacy) are also accepted:
+    each item is treated as (profile, 0.0)."""
     if not candidates:
         return []
     policy = load_policy("cotraveller")
     salience = _resolve_salience(viewer)
-    pairs = [(c, 0.0) for c in candidates]
+    pairs: list[tuple[CoTravellerProfile, float]] = []
+    for item in candidates:
+        if isinstance(item, tuple):
+            pairs.append((item[0], float(item[1]) if item[1] is not None else 0.0))
+        else:
+            pairs.append((item, 0.0))
     ranked = rank(viewer, pairs, policy, ctx={"salience": salience}, top_n=top_n)
     return [_build_match(viewer, rc) for rc in ranked]
 
@@ -140,6 +156,7 @@ async def regenerate_matches(
         refined_vec = await embed_text(build_refined_query(viewer, feedback))
         viewer = viewer.model_copy(update={"travel_style_embedding": refined_vec})
 
-    candidates = await search_cotravellers(viewer, top_k=80)
-    fresh = [c for c in candidates if c.profile_id not in (excluded_profile_ids or [])]
+    scored = await search_cotravellers(viewer, top_k=80)
+    excluded = set(excluded_profile_ids or [])
+    fresh = [(c, s) for (c, s) in scored if c.profile_id not in excluded]
     return get_top_matches(viewer, fresh, top_n)
