@@ -255,10 +255,20 @@ async def _emit_open_trip(persona) -> None:
             if key in _store:
                 _store[key] = {**_store[key], **merge_payload}
         else:
-            await asyncio.to_thread(
-                lambda: get_db().collection("itineraries").document(itinerary_id)
-                                .set(merge_payload, merge=True)
-            )
+            # Guard: never merge sidecar fields onto a doc that doesn't
+            # already exist — that would create an orphan partial doc
+            # (only sidecar fields) which later fails Itinerary
+            # validation on read via get_itinerary.
+            doc_ref = get_db().collection("itineraries").document(itinerary_id)
+            snap = await asyncio.to_thread(lambda: doc_ref.get())
+            if not snap.exists:
+                logger.warning(
+                    "[synthetic_agents] base itinerary doc %s missing; "
+                    "skipping synthetic sidecar merge to avoid orphan doc",
+                    itinerary_id,
+                )
+                return
+            await asyncio.to_thread(lambda: doc_ref.set(merge_payload, merge=True))
     except Exception as e:
         logger.debug("synthetic_agents: merge persist failed: %s", e)
 
