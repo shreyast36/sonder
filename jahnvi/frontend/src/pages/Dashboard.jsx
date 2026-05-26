@@ -474,20 +474,21 @@ function GoldDust() {
 // Backend curates the queries + handles the API key in /api/luxury-
 // backdrops; we just animate the result.
 
-// Sweeping drone moves tuned for Hollywood-tier drama. Bigger scale
-// ranges + longer drift than typical Ken-Burns so each shot reads as
-// a real establishing shot, not a slideshow zoom.
+// Restrained drone moves — small enough that the photo never upscales
+// past its native pixel grid (anything above ~1.18 starts to look
+// soft on a 1920px viewport from a 1920-1280px source). Reads as a
+// real handheld camera move instead of a digital zoom.
 const FLYOVER_MOVES = [
-  // slow pan-right + push-in
-  { initial: { scale: 1.04, x: '-9%', y: '3%'  }, animate: { scale: 1.36, x: '9%',  y: '-4%' } },
-  // slow pan-left + push-in
-  { initial: { scale: 1.04, x: '9%',  y: '-3%' }, animate: { scale: 1.36, x: '-9%', y: '4%'  } },
-  // long zoom-in from wide
-  { initial: { scale: 1.00, x: '0%',  y: '4%'  }, animate: { scale: 1.42, x: '0%',  y: '-4%' } },
-  // diagonal aerial drift
-  { initial: { scale: 1.06, x: '-7%', y: '-4%' }, animate: { scale: 1.32, x: '7%',  y: '4%'  } },
+  // gentle pan-right + light push-in
+  { initial: { scale: 1.00, x: '-5%', y: '2%'  }, animate: { scale: 1.10, x: '5%',  y: '-2%' } },
+  // gentle pan-left + light push-in
+  { initial: { scale: 1.00, x: '5%',  y: '-2%' }, animate: { scale: 1.10, x: '-5%', y: '2%'  } },
+  // slow zoom-in from native
+  { initial: { scale: 1.00, x: '0%',  y: '2%'  }, animate: { scale: 1.14, x: '0%',  y: '-2%' } },
+  // diagonal drift
+  { initial: { scale: 1.04, x: '-4%', y: '-2%' }, animate: { scale: 1.12, x: '4%',  y: '2%'  } },
   // pull-out reveal
-  { initial: { scale: 1.32, x: '0%',  y: '0%'  }, animate: { scale: 1.02, x: '0%',  y: '0%'  } },
+  { initial: { scale: 1.14, x: '0%',  y: '0%'  }, animate: { scale: 1.00, x: '0%',  y: '0%'  } },
 ]
 
 // Hard fallback when the backend hasn't reached Pixabay yet (or the
@@ -558,7 +559,7 @@ function CinematicVideoBackdrop() {
         <motion.div
           key={`${idx}-${current}`}
           initial={{ opacity: 0, ...move.initial }}
-          animate={{ opacity: 0.92, ...move.animate }}
+          animate={{ opacity: 1, ...move.animate }}
           exit={{ opacity: 0 }}
           transition={{
             opacity: { duration: 2.4, ease },
@@ -567,37 +568,25 @@ function CinematicVideoBackdrop() {
             y:       { duration: 15, ease: 'linear' },
           }}
           style={{
-            position: 'absolute', inset: '-8%',
+            position: 'absolute', inset: '-4%',
             background: `url(${current}) center/cover no-repeat`,
-            // Restrained Hollywood grade — gentle saturation lift, slight
-            // contrast pop, tiny brightness bump. Over-saturated reads as
-            // cheap stock photography; the wow comes from restraint, not
-            // every channel cranked.
-            filter: 'saturate(1.20) contrast(1.10) brightness(1.03)',
+            // Sharpened-photo grade — gentle saturation lift + a real
+            // contrast bump so the photo reads crisp, like a phone shot,
+            // not a soft postcard. NO blur layer. Brightness untouched
+            // so the highlights aren't washed.
+            filter: 'saturate(1.15) contrast(1.14)',
           }}
         />
       </AnimatePresence>
 
-      {/* Bloom-pass overlay — same backdrop, softer + blurred, screen-
-          blended at low opacity. Imitates anamorphic-lens highlight bloom
-          without making the photo look radioactive. */}
-      <div style={{
-        position: 'absolute', inset: '-8%',
-        background: `url(${current}) center/cover no-repeat`,
-        filter: 'saturate(1.35) contrast(1.12) blur(42px) brightness(1.10)',
-        opacity: 0.18,
-        mixBlendMode: 'screen',
-        pointerEvents: 'none',
-      }}/>
-
-      {/* Letterbox + radial vignette overlay — heavier than before, with
-          a strong edge falloff for that "shot through a wide lens" feel.
-          Atmosphere only; the UI cards still read on top. */}
+      {/* Tight radial vignette only — no bloom pass, no blur layer.
+          Edge darkness comes from the gradient, not a separate blurred
+          image overlay. */}
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none',
         background:
-          'radial-gradient(ellipse 110% 90% at center, transparent 30%, rgba(4,3,2,0.40) 70%, rgba(4,3,2,0.85) 100%), ' +
-          'linear-gradient(180deg, rgba(0,0,0,0.32) 0%, transparent 20%, transparent 80%, rgba(0,0,0,0.55) 100%)',
+          'radial-gradient(ellipse 130% 105% at center, transparent 55%, rgba(4,3,2,0.40) 88%, rgba(4,3,2,0.78) 100%), ' +
+          'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, transparent 18%, transparent 82%, rgba(0,0,0,0.45) 100%)',
       }}/>
 
       {/* Cinematic film-burn flash on every cut — brief white pulse,
