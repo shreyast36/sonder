@@ -666,12 +666,11 @@ function PageGoldDust() {
 }
 
 // Empty-state overlay sitting on top of the cinematic video backdrop.
-// No cards, no widgets — the video is doing the work. Just a centred
-// title-card-style typographic moment + a single "Plan your trip" CTA
-// that routes to /preferences. Pointer-events on the wrapper are off
-// so taps still hit the video; only the button intercepts clicks.
+// No cards, no widgets, no CTA button — the nav already has a Plan a
+// trip button. This is just a centred title-card typographic moment
+// painted over the playing footage. Pointer-events off everywhere so
+// taps pass through to the video.
 function EmptyStateMovieOverlay() {
-  const navigate = useNavigate()
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -735,27 +734,6 @@ function EmptyStateMovieOverlay() {
         Itinerary, companions, shared planning — all of it unlocks
         the moment you tell us where.
       </motion.p>
-
-      <motion.button
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1.2, delay: 1.9, ease }}
-        whileHover={{ y: -3, boxShadow: `0 16px 48px rgba(0,0,0,0.5), 0 0 56px ${GOLD}66` }}
-        whileTap={{ scale: 0.97 }}
-        onClick={() => navigate('/preferences')}
-        style={{
-          marginTop: 44, padding: '18px 34px',
-          background: `linear-gradient(135deg, ${GOLD} 0%, #B89668 100%)`,
-          border: 'none', borderRadius: 14,
-          fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
-          letterSpacing: '0.32em', textTransform: 'uppercase',
-          fontWeight: 600, color: '#0a0807',
-          cursor: 'pointer', pointerEvents: 'auto',
-          boxShadow: `0 12px 36px rgba(0,0,0,0.4), 0 0 32px ${GOLD}44`,
-        }}
-      >
-        ✦  Begin a trip
-      </motion.button>
     </motion.div>
   )
 }
