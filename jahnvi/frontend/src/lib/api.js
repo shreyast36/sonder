@@ -57,6 +57,36 @@ async function get(path) {
   return res.json()
 }
 
+// Unauthenticated GET — for public endpoints (e.g. /api/shared/{id})
+// that must be reachable by visitors who are not signed in. Opportunistically
+// attaches a Bearer token when a Firebase user is already available so the
+// backend can return a richer/participant view, but never fails when the
+// user is anonymous.
+async function getPublic(path) {
+  const headers = { 'Content-Type': 'application/json' }
+  try {
+    if (auth.currentUser) {
+      const token = await auth.currentUser.getIdToken()
+      headers.Authorization = `Bearer ${token}`
+    }
+  } catch {
+    // Token fetch failed (revoked, offline, etc.) — fall through anonymous.
+  }
+  let res
+  try {
+    res = await fetch(`${BASE}${path}`, { headers })
+  } catch (networkErr) {
+    _reportIfServerError(networkErr, 'GET', path)
+    throw networkErr
+  }
+  if (!res.ok) {
+    const err = Object.assign(new Error(await _readError(res)), { status: res.status })
+    _reportIfServerError(err, 'GET', path)
+    throw err
+  }
+  return res.json()
+}
+
 async function post(path, body) {
   let res
   try {
@@ -481,7 +511,8 @@ export async function addComment(postId, text) {
 // ── Shared itinerary (collaborative negotiation) ───────────────────────────
 
 export async function getSharedItinerary(itineraryId) {
-  return get(`/api/shared/${encodeURIComponent(itineraryId)}`)
+  // /shared/{id} is a public share link — must work for anonymous visitors.
+  return getPublic(`/api/shared/${encodeURIComponent(itineraryId)}`)
 }
 
 export async function proposeChange(itineraryId, {
