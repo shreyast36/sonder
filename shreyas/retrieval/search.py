@@ -249,6 +249,13 @@ async def search_cotravellers(
                 pace         = PacePreference(md.get("pace", "moderate")),
                 budget_style = BudgetStyle(md.get("budget_style", "mid_range")),
                 travel_style = TravelStyle(md.get("travel_style", "solo")),
+                # Read gender off Pinecone metadata — without this the
+                # same-gender filter in /cotraveller sees `c.gender = None`
+                # on every candidate (schema default) and the fail-open
+                # branch logs "no candidates have gender metadata" even
+                # though Pinecone actually has it. get_cotraveller_by_id
+                # already does this; search_cotravellers was the gap.
+                gender       = (md.get("gender") or "").strip().lower() or None,
                 avatar_url   = md.get("avatar_url"),
                 preferred_destination = md.get("preferred_destination"),
                 persona_answers       = _json_decode(md.get("persona_answers_json")),
