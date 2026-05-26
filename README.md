@@ -172,15 +172,18 @@ POST /plan-trip
 
 ### LLM Architecture
 
-| Slot | Owner | Purpose | Config |
-|---|---|---|---|
-| **Small** | Ali | Chat topics, opener, persona label, quick edits, emotional-signature inference, "Why this?", **synthetic post / open-trip notes**, **proposal evaluator**, **chat reply** | `*_SMALL_MODEL` |
-| **Large** | Ali | Itinerary generation, complex refinement | `*_LARGE_MODEL` |
-| **Small Validator** | Mushahid | Verifies Small outputs + **async chat-reply validator (edit-in-place)** | `SMALL_VALIDATOR_*` |
-| **Large Validator** | Mushahid | Verifies full itineraries | `LARGE_VALIDATOR_*` |
-| **Image** | seed-time only | gpt-image-1 portraits | `OPENAI_API_KEY` |
+Concrete model assignments per slot. Each row lists the primary model in use today plus the fallback the router falls back to on provider failure. Provider per tier is env-driven (`*_PROVIDER`), and each provider client reads its own model id (`ANTHROPIC_SMALL_MODEL`, `OPENAI_SMALL_MODEL`, …) so cross-provider fallback can't 404.
 
-The router engine reads provider per tier from env; each provider client reads its own model name so cross-provider fallback can't 404.
+| Slot | Primary model | Fallback | What it does | Owner |
+|---|---|---|---|---|
+| **Small generation** | Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) | GPT-4o-mini | Chat topics, opener, persona label, quick edits, emotional-signature inference, "Why this?" RAG explanations, synthetic post / open-trip notes, proposal evaluator, chat reply | Ali |
+| **Large generation** | Claude Sonnet 4.6 (`claude-sonnet-4-6`) | GPT-4o | Itinerary generation, complex refinement, conflict resolution | Ali |
+| **Small validator** | NVIDIA NIM (`nvidia/llama-3.1-nemotron-nano-8b-v1`) | swappable via `SMALL_VALIDATOR_PROVIDER` | Structural / rule-shaped checks on Small outputs + async chat-reply validator (edit-in-place). Cross-provider critique principle — validator must be a different provider family than the generator it grades | Mushahid |
+| **Large validator** | OpenAI `gpt-5-mini` | swappable via `LARGE_VALIDATOR_PROVIDER` | Semantic critic on full itineraries (persona-fit, plausibility). Five surface-specific critic prompts: itinerary, persona-reveal, cotraveller-match, chat-reply, chat-reply-repair | Mushahid |
+| **Embeddings** | OpenAI `text-embedding-3-small` (1536-dim) | — | Shared vector space across all three Pinecone namespaces (destinations, activities, cotravellers) | Ali |
+| **Image** | OpenAI `gpt-image-1` | — | Synthetic persona portraits, seed-time only — never called in the live request path | seed scripts |
+| **Voice** | ElevenLabs `eleven_multilingual_v2` | — | Persona TTS; voice_id assigned by deterministic `profile_id` hash; MP3s cached in Firebase Storage | Ali |
+| **Emotion classifier** | GoEmotions 27-label cosine over anchor vectors (in-process, no API) | — | Weak-evidence tone signal on persona answers + chat | Mushahid |
 
 ### Real-Time Layer
 
