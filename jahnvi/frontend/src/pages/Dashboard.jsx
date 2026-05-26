@@ -579,8 +579,87 @@ const INSPIRATION_DESTINATIONS = [
   { city: 'Mexico City', country: 'Mexico',     query: 'Mexico City, Mexico' },
 ]
 
-function EmptyStateInspiration({ onPlan }) {
+// One photo-backed inspiration card. Wikipedia hero photo as the
+// backdrop, strong horizontal dark gradient on top so the typography
+// reads cleanly against any image. Hover lifts + glows.
+function InspirationCard({ destination, index }) {
   const navigate = useNavigate()
+  const photo = useDestinationPhoto(destination.city, destination.country)
+  return (
+    <motion.button
+      initial={{ opacity: 0, x: 18 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.55, delay: 0.15 + index * 0.08, ease }}
+      whileHover={{ x: 4, boxShadow: `0 16px 36px rgba(0,0,0,0.55), 0 0 28px ${GOLD}33` }}
+      whileTap={{ scale: 0.985 }}
+      onClick={() => {
+        try { sessionStorage.setItem('sonder_seed_destination', destination.query) } catch { /* noop */ }
+        navigate('/preferences')
+      }}
+      style={{
+        position: 'relative', overflow: 'hidden',
+        width: '100%', minHeight: 110,
+        background: photo
+          ? `url(${photo}) center/cover no-repeat`
+          : 'linear-gradient(135deg, #1a140b 0%, #0a0807 100%)',
+        border: `1px solid ${GOLD}22`,
+        borderRadius: 14, cursor: 'pointer',
+        textAlign: 'left',
+        transition: 'all 0.3s',
+        boxShadow: `0 8px 20px rgba(0,0,0,0.35)`,
+      }}
+    >
+      {/* Horizontal dark gradient so title side stays readable on
+          any photo — heavy on the left, light on the right. */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(90deg, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.55) 55%, rgba(0,0,0,0.18) 100%)',
+        pointerEvents: 'none',
+      }}/>
+      {/* Gold sweep on the right edge — subliminal "warm" cue. */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: `radial-gradient(ellipse at right, ${GOLD}14 0%, transparent 65%)`,
+        pointerEvents: 'none', mixBlendMode: 'screen',
+      }}/>
+      <div style={{
+        position: 'relative', zIndex: 1, padding: '20px 22px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+      }}>
+        <div style={{ minWidth: 0 }}>
+          <span style={{
+            display: 'block',
+            fontFamily: '"Cormorant Garamond",serif',
+            fontStyle: 'italic', fontWeight: 400,
+            fontSize: 24, color: BONE,
+            lineHeight: 1.05, marginBottom: 5,
+            textShadow: '0 2px 14px rgba(0,0,0,0.75)',
+            letterSpacing: '-0.01em',
+          }}>
+            {destination.city}
+          </span>
+          <span style={{
+            fontFamily: '"Inter Tight",sans-serif', fontSize: 8.5,
+            letterSpacing: '0.34em', textTransform: 'uppercase',
+            color: GOLD,
+            textShadow: `0 0 12px ${GOLD}66`,
+          }}>
+            {destination.country}
+          </span>
+        </div>
+        <span style={{
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+          letterSpacing: '0.30em', textTransform: 'uppercase',
+          color: GOLD, flexShrink: 0,
+        }}>
+          Start →
+        </span>
+      </div>
+    </motion.button>
+  )
+}
+
+function EmptyStateInspiration({ onPlan }) {
   return (
     <div>
       <div style={{ marginBottom: 24 }}>
@@ -611,54 +690,16 @@ function EmptyStateInspiration({ onPlan }) {
         fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
         fontSize: 13, color: MUTE, lineHeight: 1.6, marginTop: 0, marginBottom: 22,
       }}>
-        Plan one trip and the rest of the room — matches, journal, shared itineraries — opens up. Start with somewhere that's been on your mind, or borrow one of these.
+        Plan one trip and the rest of the room — matches, journal, shared itineraries — opens up. Start with somewhere that's been on your mind, or roll the dice.
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 32 }}>
         {INSPIRATION_DESTINATIONS.map((d, i) => (
-          <motion.button
-            key={d.city}
-            initial={{ opacity: 0, x: 18 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.45, delay: 0.15 + i * 0.08, ease }}
-            whileHover={{ x: 3, borderColor: `${GOLD}66` }}
-            whileTap={{ scale: 0.985 }}
-            onClick={() => {
-              // Hand the destination off to /preferences via sessionStorage.
-              // TripPreferences picks it up in its destination field if the
-              // user hasn't already started typing.
-              try { sessionStorage.setItem('sonder_seed_destination', d.query) } catch { /* noop */ }
-              navigate('/preferences')
-            }}
-            style={{
-              textAlign: 'left', padding: '14px 16px', borderRadius: 12,
-              background: 'rgba(232,212,168,0.03)',
-              border: `1px solid ${HAIRLINE}`,
-              cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              gap: 12, transition: 'all 0.2s',
-            }}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-              <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 19, color: BONE, lineHeight: 1.1 }}>
-                {d.city}
-              </span>
-              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE }}>
-                {d.country}
-              </span>
-            </div>
-            <span style={{
-              fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
-              letterSpacing: '0.22em', textTransform: 'uppercase',
-              color: GOLD, flexShrink: 0,
-            }}>
-              Start →
-            </span>
-          </motion.button>
+          <InspirationCard key={d.city} destination={d} index={i}/>
         ))}
       </div>
 
-      <DiceRollButton />
+      <DiceRoll3D />
     </div>
   )
 }
@@ -686,87 +727,198 @@ const DICE_DESTINATIONS = [
   'Bukhara, Uzbekistan',
 ]
 
-// Right-panel CTA on the empty dashboard. Instead of yet another "plan
-// something" button (the four city cards already cover that), this
-// rolls the dice across a curated dramatic-destination pool. Shuffles
-// city names for ~700ms before resolving so the click feels like a
-// moment, not a form-fill.
-function DiceRollButton() {
+// Cube face configuration: each of the 6 faces of the cube needs a
+// transform that places it at the right position with the right
+// orientation, AND a "resting rotation" of the parent cube that
+// brings that face to front-facing the camera.
+const DICE_FACE_SIZE = 156
+const DICE_HALF      = DICE_FACE_SIZE / 2
+
+const DICE_FACES = [
+  { name: 'front',  faceTransform: `rotateY(0deg) translateZ(${DICE_HALF}px)`,    restingX: 0,    restingY: 0    },
+  { name: 'back',   faceTransform: `rotateY(180deg) translateZ(${DICE_HALF}px)`,  restingX: 0,    restingY: 180  },
+  { name: 'right',  faceTransform: `rotateY(90deg) translateZ(${DICE_HALF}px)`,   restingX: 0,    restingY: -90  },
+  { name: 'left',   faceTransform: `rotateY(-90deg) translateZ(${DICE_HALF}px)`,  restingX: 0,    restingY: 90   },
+  { name: 'top',    faceTransform: `rotateX(90deg) translateZ(${DICE_HALF}px)`,   restingX: -90,  restingY: 0    },
+  { name: 'bottom', faceTransform: `rotateX(-90deg) translateZ(${DICE_HALF}px)`,  restingX: 90,   restingY: 0    },
+]
+
+function shuffleSix() {
+  const pool = [...DICE_DESTINATIONS]
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+  }
+  return pool.slice(0, 6)
+}
+
+// Right-panel CTA on the empty dashboard. Real 3D cube that tumbles
+// for ~2s and lands on one of six destinations face-up — the destination
+// on the visible face is what the trip planner seeds with. Each roll
+// reshuffles which six destinations appear on the cube from the larger
+// curated pool, so consecutive rolls don't feel identical.
+function DiceRoll3D() {
   const navigate = useNavigate()
   const [rolling, setRolling] = useState(false)
-  const [shown, setShown]     = useState(DICE_DESTINATIONS[0])
+  const [faces, setFaces] = useState(() => shuffleSix())
+  const [rotation, setRotation] = useState({ x: -22, y: -28 })
+  const [landingIdx, setLandingIdx] = useState(null)
+
+  const ANIM_MS = 2100
 
   function roll() {
     if (rolling) return
     setRolling(true)
-    let ticks = 0
-    const TOTAL_TICKS = 14
-    const interval = setInterval(() => {
-      ticks += 1
-      // Pick a random city each tick — drift visible to the user.
-      const next = DICE_DESTINATIONS[Math.floor(Math.random() * DICE_DESTINATIONS.length)]
-      setShown(next)
-      if (ticks >= TOTAL_TICKS) {
-        clearInterval(interval)
-        const final = DICE_DESTINATIONS[Math.floor(Math.random() * DICE_DESTINATIONS.length)]
-        setShown(final)
-        // Hand off to /preferences via the same sessionStorage seam the
-        // city cards use, then navigate after a tiny beat so the final
-        // city flash registers.
-        try { sessionStorage.setItem('sonder_seed_destination', final) } catch { /* noop */ }
-        setTimeout(() => navigate('/preferences'), 350)
-      }
-    }, 50)
+    setLandingIdx(null)
+
+    const fresh = shuffleSix()
+    setFaces(fresh)
+
+    const land = Math.floor(Math.random() * 6)
+    const restFace = DICE_FACES[land]
+
+    // Cumulative rotation so the cube never snaps backward. Add 3-4
+    // random full turns on each axis to sell the tumble before
+    // settling into the resting orientation for the landing face.
+    const spinX = 3 * 360 + Math.floor(Math.random() * 360)
+    const spinY = 3 * 360 + Math.floor(Math.random() * 360)
+    setRotation(prev => ({
+      x: prev.x + spinX + restFace.restingX,
+      y: prev.y + spinY + restFace.restingY,
+    }))
+
+    // Hand off ~500ms after the cube comes to rest so the landed face
+    // registers visually before the page transitions.
+    setTimeout(() => setLandingIdx(land), ANIM_MS)
+    setTimeout(() => {
+      const final = fresh[land]
+      try { sessionStorage.setItem('sonder_seed_destination', final) } catch { /* noop */ }
+      navigate('/preferences')
+    }, ANIM_MS + 700)
   }
 
   return (
-    <motion.button
-      whileHover={!rolling ? { y: -2, boxShadow: `0 0 36px ${GOLD}44` } : {}}
-      whileTap={!rolling ? { scale: 0.98 } : {}}
-      onClick={roll}
-      disabled={rolling}
-      style={{
-        position: 'relative', overflow: 'hidden',
-        width: '100%', padding: '18px 20px',
-        background: rolling
-          ? `linear-gradient(135deg, #2a1f10 0%, #1a1308 100%)`
-          : `linear-gradient(135deg, ${GOLD} 0%, #B89668 100%)`,
-        border: rolling ? `1px solid ${GOLD}66` : 'none',
-        borderRadius: 12, cursor: rolling ? 'wait' : 'pointer',
-        fontFamily: '"Inter Tight",sans-serif',
-        transition: 'all 0.25s',
-      }}
-    >
-      {rolling ? (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-          <span style={{
-            fontSize: 9, letterSpacing: '0.35em', textTransform: 'uppercase',
-            fontWeight: 500, color: GOLD,
-          }}>
-            Rolling
-          </span>
-          <motion.span
-            key={shown}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.12 }}
-            style={{
-              fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
-              fontSize: 17, color: BONE,
-            }}
-          >
-            {shown}
-          </motion.span>
-        </div>
-      ) : (
-        <span style={{
-          fontSize: 11, letterSpacing: '0.28em', textTransform: 'uppercase',
-          fontWeight: 600, color: '#0a0807',
-        }}>
-          ✦ Roll the dice
-        </span>
-      )}
-    </motion.button>
+    <div style={{
+      position: 'relative', padding: '32px 0 24px',
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      gap: 22, userSelect: 'none',
+    }}>
+      {/* Eyebrow */}
+      <span style={{
+        fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+        letterSpacing: '0.40em', textTransform: 'uppercase',
+        color: MUTE,
+      }}>
+        Or let the world decide
+      </span>
+
+      {/* 3D scene */}
+      <div
+        onClick={roll}
+        style={{
+          perspective: 900,
+          width: DICE_FACE_SIZE, height: DICE_FACE_SIZE,
+          cursor: rolling ? 'wait' : 'pointer',
+          position: 'relative',
+        }}
+      >
+        {/* Soft gold halo under the cube — shimmers while rolling. */}
+        <motion.div
+          animate={rolling
+            ? { opacity: [0.35, 0.7, 0.35], scale: [1, 1.15, 1] }
+            : { opacity: 0.4, scale: 1 }
+          }
+          transition={{ duration: 1.2, repeat: rolling ? Infinity : 0, ease: 'easeInOut' }}
+          style={{
+            position: 'absolute', inset: -30, zIndex: 0,
+            background: `radial-gradient(circle at center, ${GOLD}33 0%, transparent 65%)`,
+            filter: 'blur(20px)', pointerEvents: 'none',
+          }}
+        />
+
+        <motion.div
+          animate={{ rotateX: rotation.x, rotateY: rotation.y }}
+          transition={{ duration: ANIM_MS / 1000, ease: [0.16, 1, 0.3, 1] }}
+          style={{
+            position: 'relative', width: '100%', height: '100%',
+            transformStyle: 'preserve-3d',
+          }}
+        >
+          {DICE_FACES.map((face, i) => {
+            const city = faces[i]
+            const cityShort = (city || '').split(',')[0]
+            const country = (city || '').split(',').slice(1).join(',').trim()
+            const isLanding = landingIdx === i
+            return (
+              <div
+                key={face.name}
+                style={{
+                  position: 'absolute',
+                  width: DICE_FACE_SIZE, height: DICE_FACE_SIZE,
+                  background: isLanding
+                    ? `linear-gradient(135deg, ${GOLD} 0%, #b8895a 100%)`
+                    : `linear-gradient(135deg, #15100a 0%, #0a0807 100%)`,
+                  border: `1.5px solid ${isLanding ? '#fff8' : GOLD + '55'}`,
+                  borderRadius: 14,
+                  boxShadow: isLanding
+                    ? `inset 0 0 40px ${GOLD}66, 0 0 36px ${GOLD}88`
+                    : `inset 0 0 28px ${GOLD}15, 0 0 18px rgba(0,0,0,0.6)`,
+                  display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center',
+                  padding: 16, textAlign: 'center',
+                  transform: face.faceTransform,
+                  backfaceVisibility: 'hidden',
+                  transition: 'background 0.4s, box-shadow 0.4s, border-color 0.4s',
+                }}
+              >
+                <span style={{
+                  fontFamily: '"Cormorant Garamond",serif',
+                  fontStyle: 'italic', fontWeight: 400,
+                  fontSize: 22, lineHeight: 1.05,
+                  color: isLanding ? '#1a0f05' : BONE,
+                  textShadow: isLanding ? 'none' : '0 2px 12px rgba(0,0,0,0.7)',
+                  letterSpacing: '-0.01em',
+                }}>
+                  {cityShort}
+                </span>
+                {country && (
+                  <span style={{
+                    marginTop: 8,
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 7.5,
+                    letterSpacing: '0.32em', textTransform: 'uppercase',
+                    color: isLanding ? '#1a0f05' : GOLD,
+                    opacity: isLanding ? 0.85 : 1,
+                  }}>
+                    {country}
+                  </span>
+                )}
+              </div>
+            )
+          })}
+        </motion.div>
+      </div>
+
+      {/* CTA below the cube — also clickable, also rolls. */}
+      <motion.button
+        whileHover={!rolling ? { y: -1, letterSpacing: '0.40em' } : {}}
+        whileTap={!rolling ? { scale: 0.96 } : {}}
+        onClick={roll}
+        disabled={rolling}
+        style={{
+          background: 'transparent', border: 'none',
+          padding: '8px 12px',
+          cursor: rolling ? 'wait' : 'pointer',
+          fontFamily: '"Inter Tight",sans-serif',
+          fontSize: 10.5, letterSpacing: '0.36em',
+          textTransform: 'uppercase', fontWeight: 500,
+          color: GOLD,
+          textShadow: `0 0 14px ${GOLD}55`,
+          transition: 'all 0.3s',
+        }}
+      >
+        {rolling ? 'Rolling…' : '✦ Roll the dice'}
+      </motion.button>
+    </div>
   )
 }
 
