@@ -667,7 +667,8 @@ function TravelCard({ firstName, displayName, uid }) {
 function matchToCard(m) {
   // Backend returns CoTravellerMatch: { profile: {profile_id, display_name,
   // location, interests, pace, budget_style, ...}, match_score: 0..1,
-  // match_reasons: [...] }. Flatten + humanise for MatchCard.
+  // retrieval_score: 0..1, match_reasons: [...] }. Flatten + humanise
+  // for MatchCard.
   const p = m?.profile || {}
   const dimTags = (p.interests || []).slice(0, 2).map(d => DIM_TAG[d]).filter(Boolean)
   const paceTag = _PACE_TAG[p.pace]
@@ -680,6 +681,12 @@ function matchToCard(m) {
     tags:         [...dimTags, paceTag, budgetTag].filter(Boolean).slice(0, 3),
     avatar_url:   p.avatar_url || null,
     is_seed:      Boolean(p.is_seed),
+    // Forward Pinecone cosine so the dashboard's MatchCard → MatchDetail
+    // navigation can carry it via ?rs=. Without this, MatchDetail recomputes
+    // with retrieval_score=0, deflates the score by ~1/6, persists the
+    // deflated value on the ChatSession, and the persona's p_approve lands
+    // at 0.1–0.15 instead of the real compatibility — denying every match.
+    retrieval_score: typeof m?.retrieval_score === 'number' ? m.retrieval_score : null,
   }
 }
 
@@ -1875,7 +1882,11 @@ export default function Dashboard() {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.5, delay: 0.4 + i * 0.12, ease }}
                 >
-                  <MatchCard match={m} onClick={() => navigate(`/match/${m.id}`)}/>
+                  <MatchCard match={m} onClick={() => {
+                    const rs = typeof m.retrieval_score === 'number' && Number.isFinite(m.retrieval_score)
+                      ? `?rs=${m.retrieval_score}` : ''
+                    navigate(`/match/${m.id}${rs}`)
+                  }}/>
                 </motion.div>
               ))}
               {!matchesLoading && !activePair && matches.length === 0 && matchingDisabled && (
