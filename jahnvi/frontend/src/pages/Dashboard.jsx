@@ -569,22 +569,23 @@ function CinematicVideoBackdrop() {
           style={{
             position: 'absolute', inset: '-8%',
             background: `url(${current}) center/cover no-repeat`,
-            // Hollywood colour grade — saturated blues/teals/greens, lifted
-            // contrast, slight brightness boost so the highlights bloom.
-            filter: 'saturate(1.85) contrast(1.18) brightness(1.06)',
+            // Restrained Hollywood grade — gentle saturation lift, slight
+            // contrast pop, tiny brightness bump. Over-saturated reads as
+            // cheap stock photography; the wow comes from restraint, not
+            // every channel cranked.
+            filter: 'saturate(1.20) contrast(1.10) brightness(1.03)',
           }}
         />
       </AnimatePresence>
 
-      {/* Bloom-pass overlay — same backdrop colour-graded harder + blurred,
-          mixed with screen blend so the highlights softly bleed into each
-          other. Imitates the anamorphic-lens highlight bloom of cinema
-          cameras without needing a real shader. */}
+      {/* Bloom-pass overlay — same backdrop, softer + blurred, screen-
+          blended at low opacity. Imitates anamorphic-lens highlight bloom
+          without making the photo look radioactive. */}
       <div style={{
         position: 'absolute', inset: '-8%',
         background: `url(${current}) center/cover no-repeat`,
-        filter: 'saturate(2.2) contrast(1.25) blur(36px) brightness(1.2)',
-        opacity: 0.32,
+        filter: 'saturate(1.35) contrast(1.12) blur(42px) brightness(1.10)',
+        opacity: 0.18,
         mixBlendMode: 'screen',
         pointerEvents: 'none',
       }}/>
