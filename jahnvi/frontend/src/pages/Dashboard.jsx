@@ -808,9 +808,16 @@ export default function Dashboard() {
     )
     if (!ok) return
     setDeletingId(itineraryId); setDeleteError(null)
-    // Optimistic: drop the card immediately, restore on error.
-    const snapshot = pastTrips
-    setPastTrips(prev => prev.filter(t => t.itinerary_id !== itineraryId))
+    // Optimistic: drop every dashboard surface that references this trip
+    // immediately, restore on error. Without the incoming + sharedTrips
+    // sweep, join-request rows and shared-trip cards for the deleted
+    // itinerary keep rendering until the user hard-reloads the page.
+    const pastSnapshot     = pastTrips
+    const incomingSnapshot = incoming
+    const sharedSnapshot   = sharedTrips
+    setPastTrips(prev    => prev.filter(t => t.itinerary_id !== itineraryId))
+    setIncoming(prev     => prev.filter(r => r.itinerary_id !== itineraryId))
+    setSharedTrips(prev  => prev.filter(t => t.itinerary_id !== itineraryId))
     try {
       await deleteItinerary(itineraryId)
       // Refresh so the current-trip pointer flips correctly if we just
@@ -818,7 +825,7 @@ export default function Dashboard() {
       await refresh()
       // If we deleted the active trip, the dashboard hero card reads
       // from storedItinerary — clear it so the empty state renders.
-      const wasCurrent = snapshot.find(t => t.itinerary_id === itineraryId)?.is_current
+      const wasCurrent = pastSnapshot.find(t => t.itinerary_id === itineraryId)?.is_current
       if (wasCurrent) {
         setStoredItinerary(null)
         try { localStorage.removeItem('sonder_last_itinerary') } catch { /* noop */ }
@@ -826,7 +833,9 @@ export default function Dashboard() {
     } catch (err) {
       console.error('delete itinerary failed:', err)
       setDeleteError(err?.message || 'Could not delete trip')
-      setPastTrips(snapshot)   // restore on error
+      setPastTrips(pastSnapshot)        // restore on error
+      setIncoming(incomingSnapshot)
+      setSharedTrips(sharedSnapshot)
       setTimeout(() => setDeleteError(null), 4000)
     } finally {
       setDeletingId(null)
