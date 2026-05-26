@@ -815,27 +815,43 @@ export default function Dashboard() {
     const pastSnapshot     = pastTrips
     const incomingSnapshot = incoming
     const sharedSnapshot   = sharedTrips
+    const storedSnapshot   = storedItinerary
+    const cachedItinerary  = (() => {
+      try { return localStorage.getItem('sonder_last_itinerary') } catch { return null }
+    })()
     setPastTrips(prev    => prev.filter(t => t.itinerary_id !== itineraryId))
     setIncoming(prev     => prev.filter(r => r.itinerary_id !== itineraryId))
     setSharedTrips(prev  => prev.filter(t => t.itinerary_id !== itineraryId))
+    // Clear the localStorage + state caches BEFORE refresh(). The vault
+    // builder falls back to `sonder_last_itinerary` when the API returns
+    // empty — without the pre-clear, refresh() re-synthesises the deleted
+    // trip from the cache and "resurrects" the card the user just deleted.
+    // Clear unconditionally for the deleted id (cheap; if it wasn't the
+    // current trip the cached itinerary has a different id and survives).
+    if (storedSnapshot?.itinerary_id === itineraryId) {
+      setStoredItinerary(null)
+      try { localStorage.removeItem('sonder_last_itinerary') } catch { /* noop */ }
+    } else {
+      try {
+        const raw = cachedItinerary ? JSON.parse(cachedItinerary) : null
+        if (raw?.itinerary_id === itineraryId) localStorage.removeItem('sonder_last_itinerary')
+      } catch { /* noop */ }
+    }
     try {
       await deleteItinerary(itineraryId)
-      // Refresh so the current-trip pointer flips correctly if we just
-      // deleted the active trip, and stored-itinerary state clears.
+      // Refresh so the current-trip pointer flips correctly and the vault
+      // re-renders from the now-clean backend state.
       await refresh()
-      // If we deleted the active trip, the dashboard hero card reads
-      // from storedItinerary — clear it so the empty state renders.
-      const wasCurrent = pastSnapshot.find(t => t.itinerary_id === itineraryId)?.is_current
-      if (wasCurrent) {
-        setStoredItinerary(null)
-        try { localStorage.removeItem('sonder_last_itinerary') } catch { /* noop */ }
-      }
     } catch (err) {
       console.error('delete itinerary failed:', err)
       setDeleteError(err?.message || 'Could not delete trip')
       setPastTrips(pastSnapshot)        // restore on error
       setIncoming(incomingSnapshot)
       setSharedTrips(sharedSnapshot)
+      setStoredItinerary(storedSnapshot)
+      if (cachedItinerary != null) {
+        try { localStorage.setItem('sonder_last_itinerary', cachedItinerary) } catch { /* noop */ }
+      }
       setTimeout(() => setDeleteError(null), 4000)
     } finally {
       setDeletingId(null)
@@ -903,6 +919,16 @@ export default function Dashboard() {
     let cancelled = false
     const itin = storedItinerary
     const itineraryId = itin?.itinerary_id || null
+    // No current trip → no matches to surface. Without this guard the
+    // backend returns persona-based matches anyway (no trip filter), so
+    // cards keep rendering after the user deletes their only trip.
+    if (!itineraryId) {
+      setActivePair(null)
+      setMatches([])
+      setMatchingDisabled(null)
+      setMatchesLoading(false)
+      return
+    }
     setMatchesLoading(true)
     getCotravellers(itineraryId)
       .then(res => {
