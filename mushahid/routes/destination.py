@@ -48,28 +48,29 @@ async def destination_photo(
 # engine handles the actual photo pick per query; "aerial" keyword
 # keeps the Ken-Burns simulation reading as flyover.
 _LUXURY_BACKDROP_QUERIES = [
-    # Tropical + jungle landscapes
-    "Bali rice terraces aerial",
-    "Maldives atoll aerial lagoon",
-    "Bora Bora lagoon aerial",
-    "Halong Bay Vietnam aerial",
-    "Palawan El Nido aerial",
-    "Costa Rica jungle waterfall",
-    "Iguazu Falls jungle aerial",
-    "Hawaii Na Pali coast aerial",
-    "Phi Phi Islands aerial nature",
-    "Seychelles granite islands aerial",
-    "Banaue rice terraces aerial",
-    # Mountain / fjord / alpine drama
-    "Patagonia Torres del Paine aerial",
+    # Tropical islands — turquoise water, lagoons, palm-fringed coast.
+    # NO jungles, NO rice terraces, NO waterfalls. Islands only.
+    "Maldives aerial atoll",
+    "Bora Bora aerial lagoon",
+    "Palawan El Nido aerial island",
+    "Hawaii Kauai aerial island",
+    "Phi Phi Islands aerial",
+    "Seychelles islands aerial",
+    "Halong Bay islands aerial",
+    "Tahiti island aerial",
+    "Whitsunday Islands aerial",
+    "Fiji islands aerial",
+    # Beautiful mountains — peaks, alpine lakes, snow, ridges.
+    # NO cities, NO architecture, NO valleys-with-towns. Peaks only.
+    "Patagonia Torres del Paine mountains",
     "Swiss Alps Matterhorn aerial",
-    "New Zealand Milford Sound aerial",
-    "Banff Moraine Lake aerial",
-    "Dolomites Italy aerial",
-    "Iceland glacier mountain aerial",
-    "Norway fjord aerial",
-    "Himalaya mountain valley aerial",
-    "Faroe Islands cliffs aerial",
+    "New Zealand Milford Sound mountains",
+    "Banff Moraine Lake mountains",
+    "Dolomites Italy mountains aerial",
+    "Iceland mountain glacier aerial",
+    "Lofoten Islands mountains aerial",
+    "Himalaya peaks aerial",
+    "Norway fjord mountains aerial",
 ]
 
 
