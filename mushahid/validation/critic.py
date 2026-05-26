@@ -78,20 +78,26 @@ def _get_large_client():
     return _large_client
 
 
-async def _call_llm(client, provider: str, model: str, prompt: str, system: str) -> str:
+async def _call_llm(client, provider: str, model: str, prompt: str, system: str, *, max_tokens: int = 2048) -> str:
+    """Single LLM call returning raw text. max_tokens defaults higher
+    than the original 1024 because reasoning-style validator models
+    (gpt-5-mini, nvidia-nemotron) burn part of the budget on internal
+    reasoning before emitting visible output — at 1024 the visible
+    JSON was getting truncated to "" and the caller failed JSON parse.
+    """
     if provider == "anthropic":
         response = await client.messages.create(
             model=model,
             system=system,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1024,
+            max_tokens=max_tokens,
         )
         return response.content[0].text
 
     # NVIDIA NIM's OpenAI-compatible endpoint rejects max_completion_tokens
     # as an unknown field — it only accepts max_tokens. OpenAI proper
     # supports both, but max_completion_tokens is the post-o1 spelling.
-    token_kwargs = {"max_tokens": 1024} if provider == "nvidia" else {"max_completion_tokens": 1024}
+    token_kwargs = {"max_tokens": max_tokens} if provider == "nvidia" else {"max_completion_tokens": max_tokens}
     response = await client.chat.completions.create(
         model=model,
         messages=[
@@ -190,52 +196,77 @@ async def _run_itinerary_validator(
     itinerary: Itinerary, user_profile: UserProfile,
     tier: str = "large",
 ) -> ValidationResult:
+    raw = ""
+    last_error: Exception | None = None
+    # Two attempts — first at the default budget, second at a much
+    # bigger token ceiling. Reasoning models occasionally burn the
+    # whole 2048 on internal scratch and emit nothing; doubling the
+    # ceiling almost always recovers the visible JSON.
+    for attempt, tokens in enumerate((2048, 4096), start=1):
+        try:
+            raw = await _call_llm(
+                client, provider, model,
+                _itinerary_user_prompt(itinerary, user_profile),
+                ENGINE_CONFIG.itinerary_critic_system,
+                max_tokens=tokens,
+            )
+            parsed = parse_json_object(raw)
+            decision = enforce_itinerary_decision(parsed, ENGINE_CONFIG)
+            result = _decision_to_validation_result(
+                itinerary.itinerary_id, decision, summary=parsed.get("summary"),
+            )
+            try:
+                from mushahid.monitoring import capture, EVENT_TRIP_VALIDATION
+                issue_categories = [str(i.get("category") or "") for i in decision.issues]
+                capture(user_profile.user_id, EVENT_TRIP_VALIDATION, {
+                    "itinerary_id":     itinerary.itinerary_id,
+                    "tier":             tier,
+                    "approved":         decision.approved,
+                    "score":            decision.score,
+                    "issue_count":      len(decision.issues),
+                    "issue_categories": issue_categories,
+                    "category_scores":  parsed.get("category_scores") or {},
+                    "attempt":          attempt,
+                })
+            except Exception:
+                pass
+            return result
+        except Exception as e:
+            last_error = e
+            logger.warning(
+                "itinerary validator attempt %d failed (%s): raw=%r",
+                attempt, e, (raw or "")[:200],
+            )
+            continue
+
+    # Both attempts failed. The validator is broken (empty response,
+    # unparseable JSON, provider down). Flagging for revision here puts
+    # the generator into a revision loop that costs LLM credits and
+    # delays the user without improving the itinerary. Fail OPEN — trust
+    # the generator's output, log loudly so we notice in Sentry. The
+    # itinerary the user lands on is whatever Claude/GPT produced; the
+    # validator just isn't blocking it.
+    logger.error(
+        "itinerary validator failed both attempts (last=%s) — failing open, "
+        "approving the itinerary without validator feedback",
+        last_error,
+    )
     try:
-        raw = await _call_llm(
-            client, provider, model,
-            _itinerary_user_prompt(itinerary, user_profile),
-            ENGINE_CONFIG.itinerary_critic_system,
-        )
-        parsed = parse_json_object(raw)
-        decision = enforce_itinerary_decision(parsed, ENGINE_CONFIG)
-        result = _decision_to_validation_result(
-            itinerary.itinerary_id, decision, summary=parsed.get("summary"),
-        )
-        # Analytics — powers the hallucination rate + itinerary quality
-        # dashboards. Issue categories let us see WHAT the LLM is flagging
-        # (budget_fit / pacing_realism / activity_specificity etc).
-        try:
-            from mushahid.monitoring import capture, EVENT_TRIP_VALIDATION
-            issue_categories = [str(i.get("category") or "") for i in decision.issues]
-            capture(user_profile.user_id, EVENT_TRIP_VALIDATION, {
-                "itinerary_id":     itinerary.itinerary_id,
-                "tier":             tier,
-                "approved":         decision.approved,
-                "score":            decision.score,
-                "issue_count":      len(decision.issues),
-                "issue_categories": issue_categories,
-                "category_scores":  parsed.get("category_scores") or {},
-            })
-        except Exception:
-            pass
-        return result
-    except Exception as e:
-        logger.warning("itinerary validator failed (%s) — flagging for revision", e)
-        try:
-            from mushahid.monitoring import capture, EVENT_TRIP_VALIDATION
-            capture(user_profile.user_id, EVENT_TRIP_VALIDATION, {
-                "itinerary_id": itinerary.itinerary_id,
-                "tier":         tier,
-                "approved":     False,
-                "error":        type(e).__name__,
-            })
-        except Exception:
-            pass
-        return ValidationResult(
+        from mushahid.monitoring import capture, EVENT_TRIP_VALIDATION
+        capture(user_profile.user_id, EVENT_TRIP_VALIDATION, {
+            "itinerary_id": itinerary.itinerary_id,
+            "tier":         tier,
+            "approved":     True,   # fail-open
+            "error":        type(last_error).__name__ if last_error else "unknown",
+            "fail_open":    True,
+        })
+    except Exception:
+        pass
+    return ValidationResult(
             itinerary_id=itinerary.itinerary_id,
-            status=ValidationStatus.revise,
-            score=0.0,
-            feedback="Validation parse / call error — flagging for revision.",
+            status=ValidationStatus.approve,
+            score=0.5,
+            feedback="Validator unavailable — itinerary approved without LLM review.",
             improvement_suggestions=[],
         )
 

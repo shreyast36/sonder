@@ -187,12 +187,77 @@ def strip_code_fences(raw: str) -> str:
     return raw.strip()
 
 
+def _extract_json_object(raw: str) -> str:
+    """Pull the first balanced {...} block out of a noisy LLM response.
+
+    Some models prefix with "Here is the assessment:" or apologise before
+    returning JSON; strip_code_fences only catches markdown-fenced blocks.
+    This walks the string with a brace counter so we can recover JSON
+    embedded in arbitrary text.
+    """
+    if not raw:
+        return ""
+    start = raw.find("{")
+    if start < 0:
+        return ""
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(raw)):
+        c = raw[i]
+        if escape:
+            escape = False
+            continue
+        if c == "\\" and in_string:
+            escape = True
+            continue
+        if c == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return raw[start:i + 1]
+    return ""
+
+
 def parse_json_object(raw: str) -> dict[str, Any]:
+    """Parse an LLM's validator response into a dict.
+
+    Resilience ladder:
+      1. Strip markdown code fences (```json ... ```) if present.
+      2. If that's not valid JSON, walk the string for the first
+         balanced {...} block — handles "Here's my assessment: {...}"
+         and other preamble.
+      3. Only raise after both passes fail.
+
+    Empty input is treated as the validator effectively dying — raises
+    with a clear message so the caller can fail-open instead of looping
+    on revision.
+    """
+    if not raw or not raw.strip():
+        raise ValueError("validator returned an empty response")
     cleaned = strip_code_fences(raw)
     try:
         data = json.loads(cleaned)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Failed to parse validator JSON: {e}") from e
+    except json.JSONDecodeError:
+        extracted = _extract_json_object(raw)
+        if not extracted:
+            raise ValueError(
+                f"Failed to parse validator JSON: no balanced object found in "
+                f"{len(raw)}-char response (preview: {raw[:120]!r})"
+            )
+        try:
+            data = json.loads(extracted)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Failed to parse validator JSON after brace-walk: {e} "
+                f"(preview: {raw[:120]!r})"
+            ) from e
     if not isinstance(data, dict):
         raise ValueError("validator response must be a JSON object")
     return data
