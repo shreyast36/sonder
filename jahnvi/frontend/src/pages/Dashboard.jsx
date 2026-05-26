@@ -1642,7 +1642,23 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* main grid */}
+      {/* Empty state — when the user has zero trips AND no current
+          itinerary, merge both grid columns into one wide concierge
+          frame: the rotating "Tonight maybe — Marrakech" inspiration
+          panel wrapped in the same PremiumFrame as the rest of the
+          dashboard. Replaces the old two-column "Awaiting your next
+          journey" / "Where would you go" duo, which read as two
+          competing surfaces instead of one luxurious answer. */}
+      {pastTrips.length === 0 && !trip ? (
+        <motion.div
+          variants={stagger} initial="hidden" animate="show"
+          style={{ flex: 1, maxWidth: 980, margin: '0 auto', width: '100%', padding: '52px 52px 24px', position: 'relative', zIndex: 1 }}
+        >
+          <PremiumFrame padding="64px 72px">
+            <EmptyStateInspiration/>
+          </PremiumFrame>
+        </motion.div>
+      ) : (
       <motion.div variants={stagger} initial="hidden" animate="show"
         style={{ flex: 1, display: 'grid', gridTemplateColumns: '1.4fr 1fr', maxWidth: 1240, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
 
@@ -2240,6 +2256,7 @@ export default function Dashboard() {
             on the user's trip. NavTabs in the top nav switches between
             the two surfaces. */}
       </motion.div>
+      )}
     </div>
   )
 }
