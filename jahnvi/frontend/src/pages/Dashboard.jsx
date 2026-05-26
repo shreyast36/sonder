@@ -710,11 +710,12 @@ function PageGoldDust() {
 }
 
 // Empty-state overlay sitting on top of the cinematic video backdrop.
-// No cards, no widgets, no CTA button — the nav already has a Plan a
-// trip button. This is just a centred title-card typographic moment
-// painted over the playing footage. Pointer-events off everywhere so
-// taps pass through to the video.
-function EmptyStateMovieOverlay() {
+// Replaced the "Pick a place. We'll build the rest." copy with the
+// time-of-day greeting moved out of the right-anchored chrome — the
+// dashboard's first beat is now "Good morning, Shreyas" painted huge
+// over a Hollywood landscape. Pointer-events off everywhere so taps
+// pass through to the video.
+function EmptyStateMovieOverlay({ greeting, firstName }) {
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -734,14 +735,14 @@ function EmptyStateMovieOverlay() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 1.4, delay: 0.6, ease }}
         style={{
-          fontFamily: '"Inter Tight",sans-serif', fontSize: 10.5,
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
           letterSpacing: '0.50em', textTransform: 'uppercase',
-          color: GOLD, marginBottom: 26,
+          color: GOLD, marginBottom: 22,
           textShadow: `0 0 22px ${GOLD}88, 0 2px 12px rgba(0,0,0,0.9)`,
           fontWeight: 500,
         }}
       >
-        ✦ The world is open
+        ✦ {greeting}
       </motion.span>
 
       <motion.h1
@@ -751,33 +752,19 @@ function EmptyStateMovieOverlay() {
         style={{
           fontFamily: '"Cormorant Garamond",serif',
           fontStyle: 'italic', fontWeight: 400,
-          fontSize: 'clamp(56px, 8vw, 108px)',
-          color: BONE, lineHeight: 0.92, margin: 0,
+          fontSize: 'clamp(72px, 10vw, 148px)',
+          color: BONE, lineHeight: 0.95, margin: 0,
           letterSpacing: '-0.025em',
-          textShadow: '0 6px 44px rgba(0,0,0,0.92)',
-          maxWidth: 1100,
+          textShadow: '0 6px 56px rgba(0,0,0,0.95), 0 0 80px rgba(212,182,134,0.18)',
+          background: `linear-gradient(180deg, #fdf7e8 0%, #d4b686 100%)`,
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          color: 'transparent',
+          WebkitTextFillColor: 'transparent',
         }}
       >
-        Pick a place. We'll build the rest.
+        {firstName || 'Welcome'}
       </motion.h1>
-
-      <motion.p
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1.4, delay: 1.4, ease }}
-        style={{
-          fontFamily: '"Cormorant Garamond",serif',
-          fontStyle: 'italic', fontWeight: 300,
-          fontSize: 'clamp(20px, 1.8vw, 28px)',
-          color: 'rgba(245,241,232,0.86)',
-          margin: '28px 0 0', maxWidth: 720,
-          lineHeight: 1.32,
-          textShadow: '0 2px 20px rgba(0,0,0,0.9)',
-        }}
-      >
-        Itinerary, companions, shared planning — all of it unlocks
-        the moment you tell us where.
-      </motion.p>
     </motion.div>
   )
 }
@@ -1897,20 +1884,9 @@ export default function Dashboard() {
           background reads as the hero. */}
       <div style={{ padding: '24px 48px 0', position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 14, width: 320 }}>
-          <motion.div
-            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, ease }}
-            style={{ textAlign: 'right' }}
-          >
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.32em', textTransform: 'uppercase', color: MUTE, margin: 0, marginBottom: 4 }}>{greeting}</p>
-            <motion.h1
-              animate={{ filter: ['drop-shadow(0 0 16px rgba(212,182,134,0.18))', 'drop-shadow(0 0 32px rgba(212,182,134,0.40))', 'drop-shadow(0 0 16px rgba(212,182,134,0.18))'] }}
-              transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-              style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 32, lineHeight: 0.95, letterSpacing: '-0.02em', background: GOLD_GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', display: 'inline-block', margin: 0 }}
-            >
-              {firstName}
-            </motion.h1>
-          </motion.div>
+          {/* Time-of-day greeting moved up into the centred movie
+              overlay — top-right column is just the members card +
+              stats pill now. */}
 
           {/* TravelCard shrunk via CSS transform — preserves its
               internal layout / aspect ratio while taking ~half the
@@ -2077,7 +2053,7 @@ export default function Dashboard() {
           Trip state below renders the regular dashboard grid on top of
           the same video. */}
       {pastTrips.length === 0 ? (
-        <EmptyStateMovieOverlay />
+        <EmptyStateMovieOverlay greeting={greeting} firstName={firstName} />
       ) : (
       <motion.div variants={stagger} initial="hidden" animate="show"
         style={{ flex: 1, display: 'grid', gridTemplateColumns: '1.4fr 1fr', maxWidth: 1240, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
