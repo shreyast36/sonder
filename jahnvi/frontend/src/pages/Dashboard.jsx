@@ -1845,39 +1845,48 @@ export default function Dashboard() {
         </div>
       </nav>
 
-      {/* Greeting + members card + stats strip. Hidden entirely on the
-          empty state so the cinematic backdrop owns the whole stage —
-          there's nothing meaningful these widgets can show when the
-          user hasn't planned a trip yet, and they were blocking the
-          background. They come back the moment pastTrips lands. */}
-      {pastTrips.length > 0 && (
-      <div style={{ borderBottom: `1px solid ${HAIRLINE}`, padding: '44px 48px 40px', position: 'relative', zIndex: 1, overflow: 'hidden', textAlign: 'center' }}>
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'radial-gradient(ellipse 60% 140% at 50% 60%, rgba(212,182,134,0.10) 0%, transparent 65%)', pointerEvents: 'none' }}/>
-        <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease }}>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, marginBottom: 8 }}>{greeting}</p>
-          <motion.h1
-            animate={{ filter: ['drop-shadow(0 0 24px rgba(212,182,134,0.20))', 'drop-shadow(0 0 56px rgba(212,182,134,0.50))', 'drop-shadow(0 0 24px rgba(212,182,134,0.20))'] }}
-            transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-            style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 68, lineHeight: 0.95, letterSpacing: '-0.02em', background: GOLD_GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', display: 'inline-block' }}
+      {/* Greeting + members card + stats strip. Relocated to a compact
+          right-anchored column so the cinematic backdrop owns the
+          centre stage instead of being walled off by full-width chrome.
+          Same content as before — italic first name, members card,
+          stats pill — just shrunk and tucked to the right edge so the
+          background reads as the hero. */}
+      <div style={{ padding: '24px 48px 0', position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 14, width: 320 }}>
+          <motion.div
+            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, ease }}
+            style={{ textAlign: 'right' }}
           >
-            {firstName}
-          </motion.h1>
-        </motion.div>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.32em', textTransform: 'uppercase', color: MUTE, margin: 0, marginBottom: 4 }}>{greeting}</p>
+            <motion.h1
+              animate={{ filter: ['drop-shadow(0 0 16px rgba(212,182,134,0.18))', 'drop-shadow(0 0 32px rgba(212,182,134,0.40))', 'drop-shadow(0 0 16px rgba(212,182,134,0.18))'] }}
+              transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+              style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 32, lineHeight: 0.95, letterSpacing: '-0.02em', background: GOLD_GRAD, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', display: 'inline-block', margin: 0 }}
+            >
+              {firstName}
+            </motion.h1>
+          </motion.div>
 
-        <TravelCard
-          firstName={firstName}
-          displayName={effectiveDisplayName || user?.displayName}
-          uid={user?.uid}
-        />
+          {/* TravelCard shrunk via CSS transform — preserves its
+              internal layout / aspect ratio while taking ~half the
+              original real estate so it doesn't dominate the page. */}
+          <div style={{ transform: 'scale(0.62)', transformOrigin: 'top right', marginBottom: -120, marginTop: -10 }}>
+            <TravelCard
+              firstName={firstName}
+              displayName={effectiveDisplayName || user?.displayName}
+              uid={user?.uid}
+            />
+          </div>
+        </div>
 
         {/* Live stats strip — small glass pill with key signals */}
         <motion.div
           initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease, delay: 0.4 }}
           style={{
-            marginTop: 32,
-            display: 'inline-flex', alignItems: 'center', gap: 28,
-            padding: '12px 26px', borderRadius: 999,
+            display: 'inline-flex', alignItems: 'center', gap: 22,
+            padding: '10px 22px', borderRadius: 999,
             background: 'rgba(8,8,7,0.55)', backdropFilter: 'blur(20px)',
             border: `1px solid ${HAIRLINE}`,
             boxShadow: `0 10px 30px rgba(0,0,0,0.4)`,
@@ -1921,7 +1930,6 @@ export default function Dashboard() {
           )}
         </motion.div>
       </div>
-      )}
 
       {/* Push-notification prompt — only shown when the browser supports
           push, permission is still 'default' (never asked), and the user
