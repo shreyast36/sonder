@@ -473,6 +473,9 @@ export default function SharedItinerary() {
   const [shared, setShared]       = useState(null)
   const [error, setError]         = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  // Celebration modal — surfaces on a successful lockIn so the moment
+  // gets a real visual beat instead of just an activity-log row.
+  const [showFinalizedModal, setShowFinalizedModal] = useState(false)
   const [proposeOpen, setProposeOpen] = useState(false)
   const [proposeDay, setProposeDay] = useState(1)
   const [counterTarget, setCounterTarget] = useState(null)    // ProposedChange we're countering
@@ -480,6 +483,10 @@ export default function SharedItinerary() {
   // editTarget = { activity_id, name, from_day, mode: 'replace'|'move' }
   const [editTarget, setEditTarget] = useState(null)
   const [otherDisplayName, setOtherDisplayName] = useState('them')
+  // Full match payload (profile + score + reasons) so the header pill
+  // can show the avatar and compatibility number, not just the name.
+  // Populated by the same lookup that resolves the display name.
+  const [otherMatch, setOtherMatch] = useState(null)
 
   const pollRef = useRef(null)
   // Timestamp the user opened the page. ActivityFeed uses this to
@@ -548,6 +555,7 @@ export default function SharedItinerary() {
         if (cancelled) return
         const name = match?.profile?.display_name?.split(/\s+/)?.[0]
         if (name) setOtherDisplayName(name)
+        if (match) setOtherMatch(match)
       } catch {
         if (!cancelled) setOtherDisplayName('your match')
       }
@@ -667,6 +675,7 @@ export default function SharedItinerary() {
     try {
       const res = await finalizeShared(id, { version: shared.version })
       setShared(res.shared)
+      setShowFinalizedModal(true)
     } catch (e) {
       setError(e?.message || 'Could not finalise')
     } finally {
@@ -737,7 +746,63 @@ export default function SharedItinerary() {
             <h1 style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 48, lineHeight: 1.1, color: BONE, margin: '8px 0 4px' }}>
               {itin?.destination?.city || 'Your trip'}
             </h1>
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE, margin: 0 }}>
+
+            {/* Match-detail pill — kept visible at all times (live + locked)
+                so the user can see who they're planning with, their compat
+                score, and click through to the full match profile. */}
+            {otherMatch?.profile && (
+              <button
+                onClick={() => navigate(`/match/${encodeURIComponent(otherMatch.profile.profile_id)}`)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 10,
+                  marginTop: 12, marginBottom: 4,
+                  padding: '6px 12px 6px 6px',
+                  background: 'rgba(139,92,246,0.06)',
+                  border: `1px solid ${VIOLET}33`,
+                  borderRadius: 999, cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.10)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.06)' }}
+              >
+                {otherMatch.profile.avatar_url ? (
+                  <img
+                    src={otherMatch.profile.avatar_url}
+                    alt={otherMatch.profile.display_name || ''}
+                    style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${VIOLET}55` }}
+                  />
+                ) : (
+                  <span style={{ width: 26, height: 26, borderRadius: '50%', background: `${VIOLET}22`, border: `1px solid ${VIOLET}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: VIOLET, fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 13 }}>
+                    {(otherMatch.profile.display_name || '?').slice(0, 1)}
+                  </span>
+                )}
+                <span style={{
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+                  color: BONE, fontWeight: 500,
+                }}>
+                  Planning with {otherMatch.profile.display_name?.split(/\s+/)?.[0] || otherName}
+                </span>
+                {typeof otherMatch.match_score === 'number' && (
+                  <span style={{
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                    color: VIOLET, fontWeight: 600,
+                    padding: '2px 8px', borderRadius: 999,
+                    background: `${VIOLET}18`,
+                  }}>
+                    {Math.round(otherMatch.match_score * 100)}% match
+                  </span>
+                )}
+                <span style={{
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                  letterSpacing: '0.18em', textTransform: 'uppercase',
+                  color: `${VIOLET}aa`, marginLeft: 4,
+                }}>
+                  View →
+                </span>
+              </button>
+            )}
+
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: MUTE, margin: '8px 0 0' }}>
               {finalized
                 ? 'Locked in. No more changes can be made.'
                 : 'Propose changes, agree or counter — both of you shape the trip.'}
@@ -847,14 +912,19 @@ export default function SharedItinerary() {
           ))}
         </div>
 
-        {/* RIGHT — activity feed */}
+        {/* RIGHT — activity feed.
+            For a live negotiation we filter to entries created after the
+            page opened (clean visual slate per session). For finalised
+            trips, the full edit history is the point — pass since=null
+            so the user can see every proposal, counter, and acceptance
+            the pair worked through on the way to locking in. */}
         <div style={{ position: 'sticky', top: 100, alignSelf: 'flex-start', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <ActivityFeed
             log={shared.activity_log}
             selfId={selfId}
             otherName={otherName}
             otherEvaluating={otherEvaluating}
-            since={pageOpenedAtRef.current}
+            since={finalized ? null : pageOpenedAtRef.current}
           />
         </div>
       </div>
@@ -913,6 +983,96 @@ export default function SharedItinerary() {
                   error={error}
                 />
               )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Lock-in confirmation. Surfaces on a successful finalize so the
+          moment lands as a deliberate beat rather than a silent state
+          change. The email receipt is fired server-side in parallel. */}
+      <AnimatePresence>
+        {showFinalizedModal && shared && (
+          <motion.div
+            key="finalized-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            onClick={() => setShowFinalizedModal(false)}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 200,
+              background: 'rgba(2,2,2,0.85)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 16, cursor: 'pointer',
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.92, y: 18 }}
+              animate={{ scale: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                cursor: 'default',
+                maxWidth: 480, width: '100%',
+                padding: '40px 36px',
+                borderRadius: 18,
+                background: 'linear-gradient(160deg, rgba(22,18,12,0.99) 0%, rgba(14,11,8,1) 100%)',
+                border: `1px solid ${GREEN}55`,
+                boxShadow: `0 30px 80px rgba(0,0,0,0.7), 0 0 60px ${GREEN}22`,
+                textAlign: 'center',
+              }}
+            >
+              <p style={{
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                letterSpacing: '0.32em', textTransform: 'uppercase',
+                color: GREEN, marginBottom: 18,
+              }}>
+                Locked in
+              </p>
+              <h2 style={{
+                fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+                fontWeight: 400, fontSize: 'clamp(28px, 4vw, 38px)',
+                color: BONE, lineHeight: 1.15, margin: '0 0 18px',
+              }}>
+                Your trip is final.
+              </h2>
+              <p style={{
+                fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
+                fontSize: 14, color: `${BONE}c8`, lineHeight: 1.6,
+                margin: '0 0 28px',
+              }}>
+                We've sent a confirmation to your inbox and added it to your shared trips on the dashboard. Time to pack.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
+                <motion.button
+                  whileHover={{ y: -2, boxShadow: `0 0 36px ${GREEN}55` }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => { setShowFinalizedModal(false); navigate('/dashboard') }}
+                  style={{
+                    minWidth: 260, padding: '15px 28px',
+                    background: `linear-gradient(135deg, ${GREEN} 0%, #059669 100%)`,
+                    border: 'none', borderRadius: 12, cursor: 'pointer',
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                    fontWeight: 600, color: '#0a0807',
+                  }}
+                >
+                  Back to dashboard
+                </motion.button>
+                <button
+                  onClick={() => setShowFinalizedModal(false)}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    padding: '10px 18px',
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                    letterSpacing: '0.20em', textTransform: 'uppercase',
+                    color: MUTE,
+                  }}
+                >
+                  Stay on this page
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, Plus } from 'lucide-react'
+import { ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, GOLD_GRAD, ease } from '../lib/tokens'
 import MatchCard from '../components/MatchCard'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
 import { useAuth } from '../hooks/useAuth'
-import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest } from '../lib/api'
+import { getCurrentItinerary, getCotravellers, listSavedItineraries, setCurrentItinerary, deleteItinerary, openMyTrip, closeMyTrip, listMyJoinRequests, respondJoinRequest, getUserProfile, patchProfileGender, listMyShared } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
+import { ensurePushSubscribed, pushSupported } from '../lib/push'
 import NavTabs from '../components/NavTabs'
 import { storage } from '../lib/firebase'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -250,7 +251,658 @@ function LiveTravellersStrip({ onJump }) {
   )
 }
 
-function PastTripsRow({ trips, onSelect, switching }) {
+// ── Empty-state inspiration ───────────────────────────────────────────────
+// Cinematic backdrop for the empty hero — Ken-Burns slow zoom on a
+// rotating destination photo, crossfaded every ~7s. Photo source is
+// the same Wikipedia hero we use on past-trip cards; falls back to a
+// pure-black backdrop if the network's slow.
+const CINEMATIC_REEL = [
+  { city: 'Lisbon',     country: 'Portugal' },
+  { city: 'Kyoto',      country: 'Japan'    },
+  { city: 'Marrakech',  country: 'Morocco'  },
+  { city: 'Reykjavík',  country: 'Iceland'  },
+]
+
+function CinematicBackdrop() {
+  const [idx, setIdx] = useState(0)
+  const current = CINEMATIC_REEL[idx]
+  const photo = useDestinationPhoto(current.city, current.country)
+  useEffect(() => {
+    const t = setInterval(() => {
+      setIdx(i => (i + 1) % CINEMATIC_REEL.length)
+    }, 7000)
+    return () => clearInterval(t)
+  }, [])
+  return (
+    <AnimatePresence mode="sync">
+      <motion.div
+        key={`${current.city}-${photo}`}
+        initial={{ opacity: 0, scale: 1.0 }}
+        animate={{ opacity: 0.85, scale: 1.08 }}
+        exit={{ opacity: 0 }}
+        transition={{ opacity: { duration: 1.6, ease }, scale: { duration: 8, ease: 'linear' } }}
+        style={{
+          position: 'absolute', inset: 0,
+          background: photo
+            ? `url(${photo}) center/cover no-repeat`
+            : `radial-gradient(ellipse at 30% 40%, rgba(245,158,11,0.10), transparent 60%), #050403`,
+          filter: 'grayscale(0.15) contrast(1.05)',
+          pointerEvents: 'none',
+        }}
+      />
+    </AnimatePresence>
+  )
+}
+
+// Cool, dramatic, no-CTA empty hero. The right-column city cards +
+// dice roll own the actual action — this card just establishes mood.
+// Rotating cinematic backdrop + slow Ken-Burns + atmospheric headline
+// that animates in like a film title card.
+function CinematicEmptyHero() {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 1.2, ease }}
+      style={{
+        position: 'relative', overflow: 'hidden',
+        borderRadius: 26, minHeight: 340,
+        background: '#040302',
+        border: `1px solid rgba(212,182,134,0.18)`,
+        display: 'flex', flexDirection: 'column',
+        justifyContent: 'center', alignItems: 'center',
+        textAlign: 'center', padding: '64px 40px',
+        boxShadow: `0 24px 80px rgba(0,0,0,0.55)`,
+      }}
+    >
+      <CinematicBackdrop />
+      {/* Dark vignette over the photo so the headline stays legible. */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.78) 60%, rgba(4,3,2,0.96) 100%)',
+        pointerEvents: 'none',
+      }}/>
+      {/* Subtle gold scanline / film-grain feel via overlapping gradients. */}
+      <motion.div
+        animate={{ opacity: [0.04, 0.08, 0.04] }}
+        transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', inset: 0,
+          background: `linear-gradient(180deg, transparent 0%, ${GOLD}11 50%, transparent 100%)`,
+          pointerEvents: 'none', mixBlendMode: 'screen',
+        }}
+      />
+
+      <motion.span
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1, delay: 0.4, ease }}
+        style={{
+          position: 'relative', zIndex: 1,
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+          letterSpacing: '0.40em', textTransform: 'uppercase',
+          color: GOLD, marginBottom: 22,
+          textShadow: `0 0 18px ${GOLD}55`,
+        }}
+      >
+        Somewhere out there
+      </motion.span>
+
+      <motion.h1
+        initial={{ opacity: 0, y: 18, filter: 'blur(8px)' }}
+        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+        transition={{ duration: 1.6, delay: 0.65, ease: [0.16, 1, 0.3, 1] }}
+        style={{
+          position: 'relative', zIndex: 1,
+          fontFamily: '"Cormorant Garamond",serif',
+          fontStyle: 'italic', fontWeight: 300,
+          fontSize: 'clamp(36px, 4.2vw, 54px)',
+          color: BONE, lineHeight: 1.04, letterSpacing: '-0.02em',
+          margin: 0, textShadow: `0 0 36px rgba(212,182,134,0.35)`,
+        }}
+      >
+        The world is waiting.
+      </motion.h1>
+
+      <motion.p
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 1.2, delay: 1.3, ease }}
+        style={{
+          position: 'relative', zIndex: 1,
+          fontFamily: '"Cormorant Garamond",serif',
+          fontStyle: 'italic', fontWeight: 300,
+          fontSize: 17, color: MUTE,
+          margin: '20px 0 0', letterSpacing: '0.02em',
+        }}
+      >
+        Pick a corner.
+      </motion.p>
+
+      {/* Slow ambient gold pulse in the corner — subliminal "alive" cue. */}
+      <motion.div
+        animate={{ opacity: [0.25, 0.7, 0.25] }}
+        transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', bottom: 22, right: 22, zIndex: 1,
+          width: 6, height: 6, borderRadius: '50%',
+          background: GOLD, boxShadow: `0 0 16px ${GOLD}, 0 0 28px ${GOLD}66`,
+        }}
+      />
+    </motion.div>
+  )
+}
+
+// Hand-curated mood pool for the full-width gallery on the empty
+// dashboard. Skews toward visually distinctive places that look
+// great as photo tiles — these don't have to match the inspiration
+// list or the dice-roll pool, and intentional overlap is fine.
+const GALLERY_DESTINATIONS = [
+  { city: 'Santorini',     country: 'Greece'        },
+  { city: 'Marrakech',     country: 'Morocco'       },
+  { city: 'Hoi An',        country: 'Vietnam'       },
+  { city: 'Petra',         country: 'Jordan'        },
+  { city: 'Patagonia',     country: 'Argentina'     },
+  { city: 'Hokkaido',      country: 'Japan'         },
+  { city: 'Cinque Terre',  country: 'Italy'         },
+  { city: 'Jaipur',        country: 'India'         },
+  { city: 'Cape Town',     country: 'South Africa'  },
+  { city: 'Banff',         country: 'Canada'        },
+  { city: 'Tórshavn',      country: 'Faroe Islands' },
+  { city: 'Cartagena',     country: 'Colombia'      },
+]
+
+function GalleryTile({ city, country, index }) {
+  const navigate = useNavigate()
+  const photo = useDestinationPhoto(city, country)
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.55, delay: 0.05 + index * 0.05, ease }}
+      whileHover={{ y: -6, boxShadow: `0 28px 48px rgba(0,0,0,0.55), 0 0 32px ${GOLD}22` }}
+      whileTap={{ scale: 0.98 }}
+      onClick={() => {
+        try {
+          sessionStorage.setItem('sonder_seed_destination', `${city}, ${country}`)
+        } catch { /* noop */ }
+        navigate('/preferences')
+      }}
+      style={{
+        position: 'relative', overflow: 'hidden',
+        flex: '0 0 auto', width: 260, height: 340,
+        background: photo
+          ? `url(${photo}) center/cover no-repeat`
+          : `linear-gradient(135deg, #1a140d 0%, #0a0807 100%)`,
+        border: `1px solid ${HAIRLINE}`,
+        borderRadius: 18, cursor: 'pointer',
+        textAlign: 'left',
+        transition: 'all 0.35s',
+        scrollSnapAlign: 'start',
+      }}
+    >
+      {/* Dark gradient overlay so the typography stays legible. */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(180deg, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0.20) 45%, rgba(0,0,0,0.88) 100%)',
+        pointerEvents: 'none',
+      }}/>
+
+      {/* Subtle gold sweep on hover — handled via CSS-in-JS would be
+          cleaner with a stylesheet, but a static gradient + the parent
+          hover scale carries the drama enough. */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: `radial-gradient(ellipse at top right, ${GOLD}10, transparent 60%)`,
+        pointerEvents: 'none', mixBlendMode: 'screen',
+      }}/>
+
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        padding: '20px 22px 22px', zIndex: 1,
+      }}>
+        <span style={{
+          display: 'block',
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 8.5,
+          letterSpacing: '0.32em', textTransform: 'uppercase',
+          color: GOLD, marginBottom: 6,
+          textShadow: `0 0 14px ${GOLD}66`,
+        }}>
+          {country}
+        </span>
+        <span style={{
+          display: 'block',
+          fontFamily: '"Cormorant Garamond",serif',
+          fontStyle: 'italic', fontWeight: 400,
+          fontSize: 28, color: BONE, lineHeight: 1.05,
+          letterSpacing: '-0.01em',
+          textShadow: `0 2px 14px rgba(0,0,0,0.7)`,
+        }}>
+          {city}
+        </span>
+      </div>
+
+      {/* Small "→ start" affordance in the top-right that fades in on
+          hover. Pure CSS would need a wrapper rule; using motion's
+          whileHover on the parent doesn't propagate. Keep static here
+          and let the hover scale + glow do the affordance work. */}
+      <div style={{
+        position: 'absolute', top: 14, right: 14,
+        width: 28, height: 28, borderRadius: '50%',
+        background: 'rgba(10,8,7,0.6)', border: `1px solid ${GOLD}44`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        backdropFilter: 'blur(8px)',
+      }}>
+        <ChevronRight size={12} style={{ color: GOLD }}/>
+      </div>
+    </motion.button>
+  )
+}
+
+function GalleryStrip() {
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, ease, delay: 0.3 }}
+      style={{
+        gridColumn: '1 / -1',
+        padding: '52px 52px 40px',
+        borderTop: `1px solid ${HAIRLINE}`,
+        position: 'relative',
+      }}
+    >
+      {/* gold gradient hairline ornament — matches "Your trips" header */}
+      <div style={{
+        position: 'absolute', top: -1, left: '52px', width: '120px', height: '1px',
+        background: `linear-gradient(90deg, ${GOLD} 0%, transparent 100%)`,
+      }}/>
+
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <motion.span
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+            style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: GOLD, boxShadow: `0 0 10px ${GOLD}`,
+            }}
+          />
+          <p style={{
+            fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+            letterSpacing: '0.34em', textTransform: 'uppercase',
+            color: MUTE, margin: 0,
+          }}>
+            A gallery of dreams
+          </p>
+        </div>
+        <h2 style={{
+          fontFamily: '"Cormorant Garamond",serif', fontWeight: 400,
+          fontStyle: 'italic', fontSize: 38, color: BONE,
+          lineHeight: 1.02, margin: 0, letterSpacing: '-0.02em',
+        }}>
+          What if…
+        </h2>
+        <p style={{
+          fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
+          fontSize: 13, color: MUTE, lineHeight: 1.6,
+          margin: '12px 0 0', maxWidth: 520,
+        }}>
+          Twelve places that earn their photographs. Pick one and we'll
+          build the trip around it.
+        </p>
+      </div>
+
+      <div style={{
+        display: 'flex', gap: 18, overflowX: 'auto', overflowY: 'visible',
+        paddingBottom: 18, paddingTop: 4,
+        scrollSnapType: 'x mandatory', scrollbarWidth: 'thin',
+      }}>
+        {GALLERY_DESTINATIONS.map((d, i) => (
+          <GalleryTile key={d.city} city={d.city} country={d.country} index={i}/>
+        ))}
+      </div>
+    </motion.section>
+  )
+}
+
+// Rendered in the right column when the user has zero trips. Matches
+// would be lying with no trip to scope to, so we replace the "Curated
+// for you" block with a soft inspiration card that nudges toward
+// planning. Four destination shortcuts pre-fill /preferences so a user
+// who's curious can land on the form already partway through.
+
+const INSPIRATION_DESTINATIONS = [
+  { city: 'Lisbon',    country: 'Portugal',     query: 'Lisbon, Portugal'   },
+  { city: 'Kyoto',     country: 'Japan',        query: 'Kyoto, Japan'       },
+  { city: 'Reykjavík', country: 'Iceland',      query: 'Reykjavík, Iceland' },
+  { city: 'Mexico City', country: 'Mexico',     query: 'Mexico City, Mexico' },
+]
+
+function EmptyStateInspiration({ onPlan }) {
+  const navigate = useNavigate()
+  return (
+    <div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <motion.span
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+            style={{ width: 6, height: 6, borderRadius: '50%', background: GOLD, boxShadow: `0 0 10px ${GOLD}` }}
+          />
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+            A place to begin
+          </p>
+        </div>
+        <motion.h2
+          animate={{ filter: [`drop-shadow(0 0 12px rgba(212,182,134,0.18))`, `drop-shadow(0 0 28px rgba(212,182,134,0.45))`, `drop-shadow(0 0 12px rgba(212,182,134,0.18))`] }}
+          transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+          style={{
+            fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
+            fontSize: 34, color: BONE, lineHeight: 1.02, margin: 0,
+            letterSpacing: '-0.015em',
+          }}
+        >
+          Where would you go if you could?
+        </motion.h2>
+      </div>
+
+      <p style={{
+        fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
+        fontSize: 13, color: MUTE, lineHeight: 1.6, marginTop: 0, marginBottom: 22,
+      }}>
+        Plan one trip and the rest of the room — matches, journal, shared itineraries — opens up. Start with somewhere that's been on your mind, or borrow one of these.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
+        {INSPIRATION_DESTINATIONS.map((d, i) => (
+          <motion.button
+            key={d.city}
+            initial={{ opacity: 0, x: 18 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.45, delay: 0.15 + i * 0.08, ease }}
+            whileHover={{ x: 3, borderColor: `${GOLD}66` }}
+            whileTap={{ scale: 0.985 }}
+            onClick={() => {
+              // Hand the destination off to /preferences via sessionStorage.
+              // TripPreferences picks it up in its destination field if the
+              // user hasn't already started typing.
+              try { sessionStorage.setItem('sonder_seed_destination', d.query) } catch { /* noop */ }
+              navigate('/preferences')
+            }}
+            style={{
+              textAlign: 'left', padding: '14px 16px', borderRadius: 12,
+              background: 'rgba(232,212,168,0.03)',
+              border: `1px solid ${HAIRLINE}`,
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 12, transition: 'all 0.2s',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+              <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 19, color: BONE, lineHeight: 1.1 }}>
+                {d.city}
+              </span>
+              <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: MUTE }}>
+                {d.country}
+              </span>
+            </div>
+            <span style={{
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              color: GOLD, flexShrink: 0,
+            }}>
+              Start →
+            </span>
+          </motion.button>
+        ))}
+      </div>
+
+      <DiceRollButton />
+    </div>
+  )
+}
+
+// Curated "dare me" pool — evocative, off-the-beaten-path destinations
+// that aren't already on the inspiration list above. Used by the
+// dice-roll CTA on the empty state to bias toward dramatic picks
+// instead of generic capitals.
+const DICE_DESTINATIONS = [
+  'Marrakech, Morocco',
+  'Hoi An, Vietnam',
+  'Cartagena, Colombia',
+  'Tbilisi, Georgia',
+  'Salta, Argentina',
+  'Tórshavn, Faroe Islands',
+  'Sapporo, Japan',
+  'Oaxaca, Mexico',
+  'Tallinn, Estonia',
+  'Luang Prabang, Laos',
+  'Cape Town, South Africa',
+  'Santorini, Greece',
+  'Rishikesh, India',
+  'Hobart, Tasmania',
+  'Petra, Jordan',
+  'Bukhara, Uzbekistan',
+]
+
+// Right-panel CTA on the empty dashboard. Instead of yet another "plan
+// something" button (the four city cards already cover that), this
+// rolls the dice across a curated dramatic-destination pool. Shuffles
+// city names for ~700ms before resolving so the click feels like a
+// moment, not a form-fill.
+function DiceRollButton() {
+  const navigate = useNavigate()
+  const [rolling, setRolling] = useState(false)
+  const [shown, setShown]     = useState(DICE_DESTINATIONS[0])
+
+  function roll() {
+    if (rolling) return
+    setRolling(true)
+    let ticks = 0
+    const TOTAL_TICKS = 14
+    const interval = setInterval(() => {
+      ticks += 1
+      // Pick a random city each tick — drift visible to the user.
+      const next = DICE_DESTINATIONS[Math.floor(Math.random() * DICE_DESTINATIONS.length)]
+      setShown(next)
+      if (ticks >= TOTAL_TICKS) {
+        clearInterval(interval)
+        const final = DICE_DESTINATIONS[Math.floor(Math.random() * DICE_DESTINATIONS.length)]
+        setShown(final)
+        // Hand off to /preferences via the same sessionStorage seam the
+        // city cards use, then navigate after a tiny beat so the final
+        // city flash registers.
+        try { sessionStorage.setItem('sonder_seed_destination', final) } catch { /* noop */ }
+        setTimeout(() => navigate('/preferences'), 350)
+      }
+    }, 50)
+  }
+
+  return (
+    <motion.button
+      whileHover={!rolling ? { y: -2, boxShadow: `0 0 36px ${GOLD}44` } : {}}
+      whileTap={!rolling ? { scale: 0.98 } : {}}
+      onClick={roll}
+      disabled={rolling}
+      style={{
+        position: 'relative', overflow: 'hidden',
+        width: '100%', padding: '18px 20px',
+        background: rolling
+          ? `linear-gradient(135deg, #2a1f10 0%, #1a1308 100%)`
+          : `linear-gradient(135deg, ${GOLD} 0%, #B89668 100%)`,
+        border: rolling ? `1px solid ${GOLD}66` : 'none',
+        borderRadius: 12, cursor: rolling ? 'wait' : 'pointer',
+        fontFamily: '"Inter Tight",sans-serif',
+        transition: 'all 0.25s',
+      }}
+    >
+      {rolling ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <span style={{
+            fontSize: 9, letterSpacing: '0.35em', textTransform: 'uppercase',
+            fontWeight: 500, color: GOLD,
+          }}>
+            Rolling
+          </span>
+          <motion.span
+            key={shown}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.12 }}
+            style={{
+              fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+              fontSize: 17, color: BONE,
+            }}
+          >
+            {shown}
+          </motion.span>
+        </div>
+      ) : (
+        <span style={{
+          fontSize: 11, letterSpacing: '0.28em', textTransform: 'uppercase',
+          fontWeight: 600, color: '#0a0807',
+        }}>
+          ✦ Roll the dice
+        </span>
+      )}
+    </motion.button>
+  )
+}
+
+// One past-trip card. Extracted so each card's useDestinationPhoto hook
+// can fetch its own photo — hooks can't run inside a .map().
+function PastTripCard({ trip, index, isCurrent, deleting, switching, onSelect, onDelete }) {
+  const photo = useDestinationPhoto(trip.city, trip.country)
+  const accent = isCurrent ? '#F59E0B' : 'rgba(245,158,11,0.30)'
+  return (
+    <motion.div
+      whileHover={!switching && !deleting && !isCurrent ? { y: -3, borderColor: accent } : {}}
+      whileTap={!switching && !deleting && !isCurrent ? { scale: 0.98 } : {}}
+      initial={{ opacity: 0, x: 18 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.4, delay: 0.05 + index * 0.06, ease }}
+      style={{
+        position: 'relative',
+        flex: '0 0 auto', width: 200, padding: '18px 18px 16px',
+        background: isCurrent ? 'rgba(245,158,11,0.06)' : 'rgba(232,212,168,0.04)',
+        border: `1px solid ${isCurrent ? 'rgba(245,158,11,0.40)' : HAIRLINE}`,
+        borderRadius: 14,
+        cursor: isCurrent || switching || deleting ? 'default' : 'pointer',
+        transition: 'all 0.25s', textAlign: 'left',
+        opacity: (switching && !isCurrent) || deleting ? 0.5 : 1,
+        overflow: 'hidden',
+      }}
+      onClick={() => {
+        if (isCurrent || switching || deleting) return
+        onSelect?.(trip.itinerary_id)
+      }}
+      role={!isCurrent ? 'button' : undefined}
+      aria-disabled={switching || deleting}
+    >
+      {/* Destination photo backdrop — faded behind the content so type
+          stays legible without sacrificing the visual identity of the
+          place. */}
+      {photo && (
+        <>
+          <img
+            src={photo}
+            alt={trip.city}
+            referrerPolicy="no-referrer"
+            style={{
+              position: 'absolute', inset: 0, width: '100%', height: '100%',
+              objectFit: 'cover',
+              opacity: isCurrent ? 0.55 : 0.40,
+              filter: 'saturate(0.9) brightness(0.65)',
+              pointerEvents: 'none',
+            }}
+          />
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            background: isCurrent
+              ? 'linear-gradient(180deg, rgba(20,16,11,0.55) 0%, rgba(20,16,11,0.92) 100%)'
+              : 'linear-gradient(180deg, rgba(8,8,7,0.65) 0%, rgba(8,8,7,0.94) 100%)',
+          }}/>
+        </>
+      )}
+
+      {isCurrent && (
+        <span style={{
+          position: 'absolute', top: 10, right: 10, zIndex: 2,
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 7.5,
+          letterSpacing: '0.24em', textTransform: 'uppercase',
+          color: '#F59E0B', padding: '3px 7px', borderRadius: 8,
+          background: 'rgba(245,158,11,0.18)', border: '1px solid rgba(245,158,11,0.55)',
+          backdropFilter: 'blur(6px)',
+        }}>
+          Current
+        </span>
+      )}
+
+      {onDelete && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(trip.itinerary_id, trip.city) }}
+          disabled={deleting}
+          title={deleting ? 'Deleting…' : 'Delete this trip and its data'}
+          aria-label="Delete trip"
+          style={{
+            position: 'absolute', bottom: 10, right: 10, zIndex: 2,
+            width: 26, height: 26, padding: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(248,113,113,0.10)',
+            border: '1px solid rgba(248,113,113,0.30)',
+            borderRadius: 8,
+            cursor: deleting ? 'wait' : 'pointer',
+            color: 'rgba(248,113,113,0.75)',
+            transition: 'all 0.2s',
+            opacity: deleting ? 0.5 : 0.85,
+            backdropFilter: 'blur(6px)',
+          }}
+          onMouseEnter={(e) => {
+            if (deleting) return
+            e.currentTarget.style.background = 'rgba(248,113,113,0.22)'
+            e.currentTarget.style.borderColor = 'rgba(248,113,113,0.65)'
+            e.currentTarget.style.color = '#F87171'
+            e.currentTarget.style.opacity = '1'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(248,113,113,0.10)'
+            e.currentTarget.style.borderColor = 'rgba(248,113,113,0.30)'
+            e.currentTarget.style.color = 'rgba(248,113,113,0.75)'
+            e.currentTarget.style.opacity = '0.85'
+          }}
+        >
+          <Trash2 size={12}/>
+        </button>
+      )}
+
+      <div style={{ position: 'relative', zIndex: 1 }}>
+        <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: 'rgba(244,237,224,0.65)', margin: '0 0 6px' }}>
+          Destination
+        </p>
+        <h3 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 24, color: BONE, lineHeight: 1, margin: 0, letterSpacing: '-0.01em', textShadow: photo ? '0 2px 12px rgba(0,0,0,0.55)' : 'none' }}>
+          {trip.city}
+        </h3>
+        {trip.country && (
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(244,237,224,0.65)', margin: '4px 0 12px' }}>
+            {trip.country}
+          </p>
+        )}
+        <div style={{ height: 1, background: photo ? 'rgba(244,237,224,0.18)' : HAIRLINE, margin: '10px 0' }}/>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingRight: onDelete ? 32 : 0 }}>
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: 'rgba(244,237,224,0.65)' }}>
+            {trip.day_count ? `${trip.day_count} day${trip.day_count === 1 ? '' : 's'}` : '—'}
+          </span>
+          <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: 'rgba(244,237,224,0.45)' }}>
+            {_fmtTripDate(trip.trip_start) || ''}
+          </span>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+function PastTripsRow({ trips, onSelect, switching, onDelete, deletingId }) {
   if (!trips || trips.length === 0) return null
   return (
     <div style={{ marginTop: 36 }}>
@@ -263,63 +915,18 @@ function PastTripsRow({ trips, onSelect, switching }) {
         </p>
       </div>
       <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'thin' }}>
-        {trips.map((t, i) => {
-          const isCurrent = !!t.is_current
-          const accent = isCurrent ? '#F59E0B' : 'rgba(245,158,11,0.30)'
-          return (
-            <motion.button
-              key={t.itinerary_id}
-              whileHover={!switching && !isCurrent ? { y: -3, borderColor: accent } : {}}
-              whileTap={!switching && !isCurrent ? { scale: 0.98 } : {}}
-              onClick={() => !isCurrent && onSelect(t.itinerary_id)}
-              disabled={switching || isCurrent}
-              initial={{ opacity: 0, x: 18 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.4, delay: 0.05 + i * 0.06, ease }}
-              style={{
-                position: 'relative',
-                flex: '0 0 auto', width: 200, padding: '18px 18px 16px',
-                background: isCurrent ? 'rgba(245,158,11,0.06)' : 'rgba(232,212,168,0.04)',
-                border: `1px solid ${isCurrent ? 'rgba(245,158,11,0.40)' : HAIRLINE}`,
-                borderRadius: 14, cursor: isCurrent ? 'default' : (switching ? 'wait' : 'pointer'),
-                transition: 'all 0.25s', textAlign: 'left',
-                opacity: switching && !isCurrent ? 0.5 : 1,
-              }}
-            >
-              {isCurrent && (
-                <span style={{
-                  position: 'absolute', top: 10, right: 10,
-                  fontFamily: '"Inter Tight",sans-serif', fontSize: 7.5,
-                  letterSpacing: '0.24em', textTransform: 'uppercase',
-                  color: '#F59E0B', padding: '3px 7px', borderRadius: 8,
-                  background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.40)',
-                }}>
-                  Current
-                </span>
-              )}
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: '0 0 6px' }}>
-                Destination
-              </p>
-              <h3 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 24, color: BONE, lineHeight: 1, margin: 0, letterSpacing: '-0.01em' }}>
-                {t.city}
-              </h3>
-              {t.country && (
-                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, margin: '4px 0 12px' }}>
-                  {t.country}
-                </p>
-              )}
-              <div style={{ height: 1, background: HAIRLINE, margin: '10px 0' }}/>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE }}>
-                  {t.day_count ? `${t.day_count} day${t.day_count === 1 ? '' : 's'}` : '—'}
-                </span>
-                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: DIM }}>
-                  {_fmtTripDate(t.trip_start) || ''}
-                </span>
-              </div>
-            </motion.button>
-          )
-        })}
+        {trips.map((t, i) => (
+          <PastTripCard
+            key={t.itinerary_id}
+            trip={t}
+            index={i}
+            isCurrent={!!t.is_current}
+            deleting={deletingId === t.itinerary_id}
+            switching={switching}
+            onSelect={onSelect}
+            onDelete={onDelete}
+          />
+        ))}
       </div>
     </div>
   )
@@ -466,7 +1073,8 @@ function TravelCard({ firstName, displayName, uid }) {
 function matchToCard(m) {
   // Backend returns CoTravellerMatch: { profile: {profile_id, display_name,
   // location, interests, pace, budget_style, ...}, match_score: 0..1,
-  // match_reasons: [...] }. Flatten + humanise for MatchCard.
+  // retrieval_score: 0..1, match_reasons: [...] }. Flatten + humanise
+  // for MatchCard.
   const p = m?.profile || {}
   const dimTags = (p.interests || []).slice(0, 2).map(d => DIM_TAG[d]).filter(Boolean)
   const paceTag = _PACE_TAG[p.pace]
@@ -479,6 +1087,12 @@ function matchToCard(m) {
     tags:         [...dimTags, paceTag, budgetTag].filter(Boolean).slice(0, 3),
     avatar_url:   p.avatar_url || null,
     is_seed:      Boolean(p.is_seed),
+    // Forward Pinecone cosine so the dashboard's MatchCard → MatchDetail
+    // navigation can carry it via ?rs=. Without this, MatchDetail recomputes
+    // with retrieval_score=0, deflates the score by ~1/6, persists the
+    // deflated value on the ChatSession, and the persona's p_approve lands
+    // at 0.1–0.15 instead of the real compatibility — denying every match.
+    retrieval_score: typeof m?.retrieval_score === 'number' ? m.retrieval_score : null,
   }
 }
 
@@ -496,6 +1110,11 @@ export default function Dashboard() {
   // while the network round-trip catches up.
   const [storedItinerary, setStoredItinerary] = useState(() => loadStoredItinerary())
   const [matches, setMatches] = useState([])
+  // Gender backfill — for profiles that predate the gender field.
+  // When solo + no gender, the cotraveller route falls through to
+  // mixed matches; we replace the matches strip with a picker so
+  // the user can backfill in one click without leaving the dashboard.
+  const [genderState, setGenderState] = useState({ checked: false, needs: false, saving: false })
   const [matchingDisabled, setMatchingDisabled] = useState(null)
   const [activePair, setActivePair] = useState(null)
   const [matchesLoading, setMatchesLoading] = useState(false)
@@ -509,6 +1128,20 @@ export default function Dashboard() {
   const [incomingBusy, setIncomingBusy] = useState({})   // request_id → bool
   const [pastTrips, setPastTrips] = useState([])
   const [switchingTrip, setSwitchingTrip] = useState(false)
+  const [deletingId, setDeletingId] = useState(null)
+  const [deleteError, setDeleteError] = useState(null)
+  // Shared trips — every itinerary the user is co-planning or has
+  // co-planned with another traveller. Populated independently of the
+  // solo past-trips fetch so a /api/shared failure doesn't block the
+  // rest of the dashboard.
+  const [sharedTrips, setSharedTrips] = useState([])
+  // Push-notification prompt state. We show the banner only when:
+  //   - the browser supports push,
+  //   - the user has never been asked (permission === 'default'),
+  //   - they haven't dismissed the banner this device-session.
+  // Granted-on-load is handled silently by NotificationProvider, which
+  // attaches the SW subscription with no UI.
+  const [pushPromptState, setPushPromptState] = useState('hidden')
 
   const refresh = async () => {
     // Track the current itinerary in a local so the past-trips fallback
@@ -575,12 +1208,140 @@ export default function Dashboard() {
     }
   }
 
+  async function handleDeleteTrip(itineraryId, city) {
+    if (deletingId) return
+    // Browser-native confirm is fine here — destructive, infrequent
+    // action; not worth a custom modal for v1.
+    const ok = window.confirm(
+      `Delete your trip to ${city || 'this destination'}?\n\n` +
+      `This removes the itinerary, journal entries, companion preferences, ` +
+      `shared-itinerary state, AND every co-traveller match + chat tied to ` +
+      `this trip. Cotraveller matches are unique per trip — deleting the ` +
+      `trip deletes the match. This cannot be undone.`
+    )
+    if (!ok) return
+    setDeletingId(itineraryId); setDeleteError(null)
+    // Optimistic: drop every dashboard surface that references this trip
+    // immediately, restore on error. Without the incoming + sharedTrips
+    // sweep, join-request rows and shared-trip cards for the deleted
+    // itinerary keep rendering until the user hard-reloads the page.
+    const pastSnapshot     = pastTrips
+    const incomingSnapshot = incoming
+    const sharedSnapshot   = sharedTrips
+    const storedSnapshot   = storedItinerary
+    const cachedItinerary  = (() => {
+      try { return localStorage.getItem('sonder_last_itinerary') } catch { return null }
+    })()
+    setPastTrips(prev    => prev.filter(t => t.itinerary_id !== itineraryId))
+    setIncoming(prev     => prev.filter(r => r.itinerary_id !== itineraryId))
+    setSharedTrips(prev  => prev.filter(t => t.itinerary_id !== itineraryId))
+    // Clear the localStorage + state caches BEFORE refresh(). The vault
+    // builder falls back to `sonder_last_itinerary` when the API returns
+    // empty — without the pre-clear, refresh() re-synthesises the deleted
+    // trip from the cache and "resurrects" the card the user just deleted.
+    // Clear unconditionally for the deleted id (cheap; if it wasn't the
+    // current trip the cached itinerary has a different id and survives).
+    if (storedSnapshot?.itinerary_id === itineraryId) {
+      setStoredItinerary(null)
+      try { localStorage.removeItem('sonder_last_itinerary') } catch { /* noop */ }
+    } else {
+      try {
+        const raw = cachedItinerary ? JSON.parse(cachedItinerary) : null
+        if (raw?.itinerary_id === itineraryId) localStorage.removeItem('sonder_last_itinerary')
+      } catch { /* noop */ }
+    }
+    try {
+      await deleteItinerary(itineraryId)
+      // Refresh so the current-trip pointer flips correctly and the vault
+      // re-renders from the now-clean backend state.
+      await refresh()
+    } catch (err) {
+      console.error('delete itinerary failed:', err)
+      setDeleteError(err?.message || 'Could not delete trip')
+      setPastTrips(pastSnapshot)        // restore on error
+      setIncoming(incomingSnapshot)
+      setSharedTrips(sharedSnapshot)
+      setStoredItinerary(storedSnapshot)
+      if (cachedItinerary != null) {
+        try { localStorage.setItem('sonder_last_itinerary', cachedItinerary) } catch { /* noop */ }
+      }
+      setTimeout(() => setDeleteError(null), 4000)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  // One-shot profile read to decide if the user needs to backfill
+  // gender. Independent of the matches fetch so we don't block matches
+  // on a profile error.
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const prof = await getUserProfile()
+        if (cancelled) return
+        const style = prof?.constraints?.who_travelling_with
+        const g = (prof?.constraints?.gender || '').toLowerCase()
+        const needs = style === 'solo' && g !== 'male' && g !== 'female'
+        setGenderState(s => ({ ...s, checked: true, needs }))
+      } catch (err) {
+        if (cancelled) return
+        // 404 (no profile) / 503 — treat as no-prompt rather than dead-end
+        // the matches strip. User can still navigate to /companions to fix.
+        console.warn('getUserProfile (gender check) failed:', err?.message || err)
+        setGenderState(s => ({ ...s, checked: true, needs: false }))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [user?.uid])
+
+  async function handleSetGender(g) {
+    if (genderState.saving) return
+    setGenderState(s => ({ ...s, saving: true }))
+    try {
+      await patchProfileGender(g)
+      setGenderState({ checked: true, needs: false, saving: false })
+      // Re-fetch matches now that the filter will fire.
+      const itineraryId = storedItinerary?.itinerary_id || null
+      if (itineraryId) {
+        setMatchesLoading(true)
+        try {
+          const res = await getCotravellers(itineraryId)
+          if (!Array.isArray(res) && res?.matching_disabled) {
+            setMatches([]); setMatchingDisabled(res?.matching_disabled_reason || true)
+          } else {
+            setMatchingDisabled(null)
+            const ap = !Array.isArray(res) ? res?.active_pair : null
+            if (ap) { setActivePair(ap); setMatches([]) }
+            else    { setActivePair(null); setMatches(((Array.isArray(res) ? res : res?.matches) || []).map(matchToCard)) }
+          }
+        } finally {
+          setMatchesLoading(false)
+        }
+      }
+    } catch (err) {
+      console.warn('patchProfileGender failed:', err?.message || err)
+      setGenderState(s => ({ ...s, saving: false }))
+    }
+  }
+
   // Pull real co-traveller matches once we know who the user is.
   useEffect(() => {
     if (!user) return
     let cancelled = false
     const itin = storedItinerary
     const itineraryId = itin?.itinerary_id || null
+    // No current trip → no matches to surface. Without this guard the
+    // backend returns persona-based matches anyway (no trip filter), so
+    // cards keep rendering after the user deletes their only trip.
+    if (!itineraryId) {
+      setActivePair(null)
+      setMatches([])
+      setMatchingDisabled(null)
+      setMatchesLoading(false)
+      return
+    }
     setMatchesLoading(true)
     getCotravellers(itineraryId)
       .then(res => {
@@ -688,6 +1449,49 @@ export default function Dashboard() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid])
+
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    listMyShared()
+      .then(res => { if (!cancelled) setSharedTrips(res?.shared || []) })
+      .catch(err => { console.warn('listMyShared failed:', err?.message || err) })
+    return () => { cancelled = true }
+  }, [user?.uid])
+
+  useEffect(() => {
+    if (!user) return
+    if (!pushSupported()) return
+    if (typeof Notification === 'undefined') return
+    if (Notification.permission !== 'default') return
+    // Respect a previous in-session dismissal — don't nag.
+    try {
+      if (localStorage.getItem('sonder:push:prompt:dismissed') === '1') return
+    } catch { /* noop */ }
+    setPushPromptState('visible')
+  }, [user?.uid])
+
+  async function handleEnablePush() {
+    setPushPromptState('working')
+    try {
+      const p = await Notification.requestPermission()
+      if (p === 'granted') {
+        const sub = await ensurePushSubscribed()
+        setPushPromptState(sub ? 'success' : 'failed')
+        if (sub) setTimeout(() => setPushPromptState('hidden'), 2400)
+      } else {
+        setPushPromptState('hidden')
+      }
+    } catch (err) {
+      console.warn('enable push failed:', err?.message || err)
+      setPushPromptState('failed')
+    }
+  }
+
+  function dismissPushPrompt() {
+    try { localStorage.setItem('sonder:push:prompt:dismissed', '1') } catch { /* noop */ }
+    setPushPromptState('hidden')
+  }
 
   const trip = deriveTripCard(storedItinerary)
   const tripPhoto = useDestinationPhoto(trip?.city, trip?.country)
@@ -961,6 +1765,102 @@ export default function Dashboard() {
         </motion.div>
       </div>
 
+      {/* Push-notification prompt — only shown when the browser supports
+          push, permission is still 'default' (never asked), and the user
+          hasn't dismissed it. Lives above the main grid so it lands in
+          the first thing the user sees on the dashboard. */}
+      <AnimatePresence>
+        {pushPromptState === 'visible' && (
+          <motion.div
+            key="push-prompt"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3, ease }}
+            style={{
+              maxWidth: 1240, margin: '0 auto 0',
+              width: 'calc(100% - 48px)',
+              marginTop: 16, marginLeft: 24, marginRight: 24,
+              padding: '14px 18px',
+              borderRadius: 14,
+              background: 'rgba(139,92,246,0.08)',
+              border: '1px solid rgba(139,92,246,0.30)',
+              display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+              position: 'relative', zIndex: 1,
+            }}
+          >
+            <span style={{
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+              letterSpacing: '0.30em', textTransform: 'uppercase',
+              color: '#8B5CF6', fontWeight: 500,
+            }}>
+              Stay in the loop
+            </span>
+            <span style={{
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 12,
+              color: BONE, fontWeight: 300, flex: 1, minWidth: 240,
+            }}>
+              Turn on notifications so chat messages, match invites, and shared-itinerary updates reach you even when the tab is closed.
+            </span>
+            <motion.button
+              whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }}
+              onClick={handleEnablePush}
+              style={{
+                padding: '8px 14px', borderRadius: 999,
+                background: 'linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%)',
+                border: 'none', cursor: 'pointer', color: '#fff',
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                letterSpacing: '0.20em', textTransform: 'uppercase', fontWeight: 600,
+              }}
+            >
+              Enable notifications
+            </motion.button>
+            <button
+              onClick={dismissPushPrompt}
+              aria-label="Dismiss"
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                padding: '4px 8px', color: MUTE,
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                letterSpacing: '0.18em', textTransform: 'uppercase',
+              }}
+            >
+              Not now
+            </button>
+          </motion.div>
+        )}
+        {pushPromptState === 'working' && (
+          <motion.div
+            key="push-working"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{
+              maxWidth: 1240, margin: '16px 24px 0', padding: '14px 18px',
+              borderRadius: 14, background: 'rgba(139,92,246,0.08)',
+              border: '1px solid rgba(139,92,246,0.30)',
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: BONE,
+              position: 'relative', zIndex: 1,
+            }}
+          >
+            Setting up notifications…
+          </motion.div>
+        )}
+        {pushPromptState === 'success' && (
+          <motion.div
+            key="push-success"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{
+              maxWidth: 1240, margin: '16px 24px 0', padding: '14px 18px',
+              borderRadius: 14, background: 'rgba(16,185,129,0.08)',
+              border: '1px solid rgba(16,185,129,0.30)',
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 12, color: BONE,
+              position: 'relative', zIndex: 1,
+            }}
+          >
+            Notifications on — you'll get pinged when something happens.
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* main grid */}
       <motion.div variants={stagger} initial="hidden" animate="show"
         style={{ flex: 1, display: 'grid', gridTemplateColumns: '1.4fr 1fr', maxWidth: 1240, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
@@ -1075,23 +1975,7 @@ export default function Dashboard() {
               </div>
             </motion.div>
           ) : (
-            <motion.div
-              onClick={() => navigate('/preferences')}
-              whileHover={{ y: -4, borderColor: 'rgba(245,158,11,0.35)', transition: spring }}
-              whileTap={{ scale: 0.99 }}
-              style={{ cursor: 'pointer', padding: '48px 40px', borderRadius: 26, background: 'rgba(245,158,11,0.04)', border: `1px solid rgba(245,158,11,0.18)`, textAlign: 'center', transition: 'all 0.25s' }}
-            >
-              <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 32, color: BONE, lineHeight: 1.15, marginBottom: 12 }}>
-                Your next trip is one decision away.
-              </p>
-              <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, marginBottom: 28, lineHeight: 1.6, maxWidth: 360, margin: '0 auto 28px' }}>
-                Plan a trip and your itinerary will live here.
-              </p>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: `1px solid rgba(245,158,11,0.30)` }}>
-                <Plus size={12} style={{ color: AMBER }}/>
-                <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: AMBER }}>Plan your first trip</span>
-              </div>
-            </motion.div>
+            <CinematicEmptyHero />
           )}
 
           {/* Trip actions row — outside the clickable card so taps never
@@ -1265,9 +2149,19 @@ export default function Dashboard() {
         </motion.div>
 
         {/* RIGHT — companions. Inbox moved to its own /inbox tab so
-            chat messages have room to breathe. */}
+            chat messages have room to breathe.
+
+            Cotraveller matches are scoped to a specific trip. With zero
+            saved trips there's no trip to scope to, so the "Curated for
+            you" block would be lying ("matches" against nothing). We
+            swap it for an inspiration card that nudges the user toward
+            planning their first trip — same column real estate, honest
+            content. */}
         <motion.div variants={reveal} style={{ padding: '52px 44px', display: 'flex', flexDirection: 'column', gap: 36 }}>
 
+          {pastTrips.length === 0 ? (
+            <EmptyStateInspiration onPlan={() => navigate('/preferences')}/>
+          ) : (
           <div>
             <div style={{ marginBottom: 24 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -1293,6 +2187,63 @@ export default function Dashboard() {
               </motion.h2>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Gender backfill prompt — replaces the matches list when
+                  the user is solo and their profile has no gender set.
+                  Mixed matches would be a safety regression for cold-
+                  strangers matching, so we gate the strip until they
+                  pick one. */}
+              {genderState.checked && genderState.needs && !activePair && (
+                <div style={{
+                  padding: '20px 22px', borderRadius: 14,
+                  background: 'rgba(245,158,11,0.05)',
+                  border: '1px solid rgba(245,158,11,0.35)',
+                }}>
+                  <p style={{
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+                    letterSpacing: '0.26em', textTransform: 'uppercase',
+                    color: AMBER, margin: '0 0 10px',
+                  }}>
+                    One quick thing
+                  </p>
+                  <h3 style={{
+                    fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+                    fontWeight: 400, fontSize: 22, color: BONE, lineHeight: 1.2,
+                    margin: '0 0 10px',
+                  }}>
+                    Your gender
+                  </h3>
+                  <p style={{
+                    fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
+                    fontSize: 12, color: MUTE, lineHeight: 1.55, margin: '0 0 16px',
+                  }}>
+                    We only match solo travellers with the same gender for safety.
+                    Set it once and your matches will filter accordingly.
+                  </p>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    {[{ key: 'female', label: 'Female' }, { key: 'male', label: 'Male' }].map(opt => (
+                      <motion.button
+                        key={opt.key}
+                        whileTap={{ scale: 0.95 }}
+                        whileHover={{ borderColor: `${AMBER}66` }}
+                        onClick={() => handleSetGender(opt.key)}
+                        disabled={genderState.saving}
+                        style={{
+                          flex: 1, padding: '14px 0', borderRadius: 12,
+                          cursor: genderState.saving ? 'wait' : 'pointer',
+                          background: 'transparent',
+                          border: `1px solid ${HAIRLINE}`,
+                          fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+                          letterSpacing: '0.18em', textTransform: 'uppercase',
+                          color: BONE, transition: 'all 0.2s',
+                          opacity: genderState.saving ? 0.5 : 1,
+                        }}
+                      >
+                        {opt.label}
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {activePair && (
                 <motion.button
                   initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease }}
@@ -1314,14 +2265,18 @@ export default function Dashboard() {
                   </span>
                 </motion.button>
               )}
-              {!activePair && matches.slice(0, 4).map((m, i) => (
+              {!activePair && !(genderState.checked && genderState.needs) && matches.slice(0, 4).map((m, i) => (
                 <motion.div
                   key={m.id}
                   initial={{ opacity: 0, x: 24 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.5, delay: 0.4 + i * 0.12, ease }}
                 >
-                  <MatchCard match={m} onClick={() => navigate(`/match/${m.id}`)}/>
+                  <MatchCard match={m} onClick={() => {
+                    const rs = typeof m.retrieval_score === 'number' && Number.isFinite(m.retrieval_score)
+                      ? `?rs=${m.retrieval_score}` : ''
+                    navigate(`/match/${m.id}${rs}`)
+                  }}/>
                 </motion.div>
               ))}
               {!matchesLoading && !activePair && matches.length === 0 && matchingDisabled && (
@@ -1348,11 +2303,24 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+          )}
 
         </motion.div>
 
-        {/* Your trips — always rendered so the Live Travellers strip
-            and the section context never disappear with state changes. */}
+        {/* Picture gallery — full-width "what if" mood strip below the
+            two empty-state columns. Only renders when the user has zero
+            trips; once they plan one, the past-trips section takes over
+            this row. Clicking a tile seeds /preferences via the same
+            sessionStorage seam the inspiration cards use. */}
+        {pastTrips.length === 0 && (
+          <GalleryStrip />
+        )}
+
+        {/* Your trips — only rendered when the user actually has saved
+            trips. Empty vault is uninteresting noise; deleting the last
+            trip should collapse the section entirely (not leave a
+            decorated empty card). */}
+        {pastTrips.length > 0 && (
         <motion.section
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1402,8 +2370,125 @@ export default function Dashboard() {
               trips={pastTrips}
               onSelect={handleSwitchTrip}
               switching={switchingTrip}
+              onDelete={handleDeleteTrip}
+              deletingId={deletingId}
             />
+            {deleteError && (
+              <p style={{
+                marginTop: 10, fontFamily: '"Inter Tight",sans-serif',
+                fontSize: 11, color: '#F87171',
+              }}>
+                {deleteError}
+              </p>
+            )}
           </motion.section>
+        )}
+
+        {/* Shared trips — every itinerary the user is co-planning or
+            has co-planned with another traveller. Rendered as a
+            standalone section between the solo vault and Pulse so
+            collaborative trips have visual prominence rather than
+            living inside the matches column. Hidden when empty. */}
+        {sharedTrips.length > 0 && (
+        <motion.section
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease, delay: 0.25 }}
+          style={{
+            gridColumn: '1 / -1',
+            padding: '40px 52px 24px',
+            borderTop: `1px solid ${HAIRLINE}`,
+            position: 'relative',
+          }}
+        >
+          <div style={{
+            position: 'absolute', top: -1, left: '50%', transform: 'translateX(-50%)',
+            width: 120, height: 1,
+            background: `linear-gradient(to right, transparent, #10B981, transparent)`,
+          }}/>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 22 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <motion.span
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                  style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 10px #10B981' }}
+                />
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
+                  Planned together
+                </p>
+              </div>
+              <h2 style={{
+                fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic',
+                fontSize: 30, color: BONE, lineHeight: 1.05, margin: 0,
+                letterSpacing: '-0.015em',
+              }}>
+                Your shared trips.
+              </h2>
+            </div>
+            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: DIM, margin: 0 }}>
+              {sharedTrips.length}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'thin' }}>
+            {sharedTrips.map((t, i) => {
+              const accent = t.finalized ? '#10B981' : '#F59E0B'
+              const status = t.finalized
+                ? 'Final'
+                : t.pending_changes > 0 ? `${t.pending_changes} pending` : 'In negotiation'
+              return (
+                <motion.button
+                  key={t.itinerary_id}
+                  whileHover={{ y: -3, borderColor: accent }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => navigate(`/shared/${encodeURIComponent(t.itinerary_id)}`)}
+                  initial={{ opacity: 0, x: 18 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.4, delay: 0.05 + i * 0.06, ease }}
+                  style={{
+                    position: 'relative',
+                    flex: '0 0 auto', width: 220, padding: '18px 18px 16px',
+                    background: t.finalized ? 'rgba(16,185,129,0.05)' : 'rgba(245,158,11,0.04)',
+                    border: `1px solid ${accent}55`,
+                    borderRadius: 14, cursor: 'pointer',
+                    transition: 'all 0.25s', textAlign: 'left',
+                  }}
+                >
+                  <span style={{
+                    position: 'absolute', top: 10, right: 10,
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 7.5,
+                    letterSpacing: '0.24em', textTransform: 'uppercase',
+                    color: accent, padding: '3px 7px', borderRadius: 8,
+                    background: `${accent}10`, border: `1px solid ${accent}55`,
+                  }}>
+                    {status}
+                  </span>
+                  <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 8, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: '0 0 6px' }}>
+                    Together
+                  </p>
+                  <h3 style={{ fontFamily: '"Cormorant Garamond",serif', fontWeight: 400, fontStyle: 'italic', fontSize: 24, color: BONE, lineHeight: 1, margin: 0, letterSpacing: '-0.01em' }}>
+                    {t.city || '—'}
+                  </h3>
+                  {t.country && (
+                    <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: MUTE, margin: '4px 0 12px' }}>
+                      {t.country}
+                    </p>
+                  )}
+                  <div style={{ height: 1, background: HAIRLINE, margin: '10px 0' }}/>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE }}>
+                      {t.day_count ? `${t.day_count} day${t.day_count === 1 ? '' : 's'}` : '—'}
+                    </span>
+                    <span style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, color: DIM }}>
+                      v{t.version}
+                    </span>
+                  </div>
+                </motion.button>
+              )
+            })}
+          </div>
+        </motion.section>
+        )}
 
         {/* Sonder Pulse lives at /pulse now — keeps this view focused
             on the user's trip. NavTabs in the top nav switches between

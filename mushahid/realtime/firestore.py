@@ -153,6 +153,215 @@ async def write_itinerary(itinerary: Itinerary) -> None:
         logger.warning("write_itinerary failed (Firestore unavailable?): %s", e)
 
 
+async def delete_itinerary_and_related(itinerary_id: str) -> dict:
+    """Hard-delete an itinerary and every doc bound to it.
+
+    Cleans up: the itinerary doc, its shared-itinerary twin (if any),
+    its companion_prefs doc, every journal entry tagged to it, every
+    chat_session anchored to it (along with each session's messages
+    subcollection), every join_request scoped to it, and every
+    social_post with linked_trip_id pointing here (along with each
+    post's comments subcollection). Cotraveller matches are unique
+    per trip — when the trip is deleted, the conversation context is
+    gone too, so the match goes with it.
+
+    Returns a count breakdown so the caller can log / surface what
+    was removed. Caller is responsible for purging the user_profile
+    pointer (saved_itinerary_ids / current_itinerary_id) since that
+    requires the uid, which this helper doesn't take.
+    """
+    removed = {
+        "itinerary": 0, "shared_itinerary": 0, "companion_prefs": 0,
+        "journal_entries": 0, "chat_sessions": 0, "chat_messages": 0,
+        "join_requests": 0, "social_posts": 0, "social_comments": 0,
+    }
+    if LOCAL_MODE:
+        if _store.pop(f"itinerary:{itinerary_id}", None) is not None:
+            removed["itinerary"] = 1
+        if _store.pop(f"shared:{itinerary_id}", None) is not None:
+            removed["shared_itinerary"] = 1
+        if _store.pop(f"companion_prefs:{itinerary_id}", None) is not None:
+            removed["companion_prefs"] = 1
+        j_keys = [k for k, v in _store.items()
+                  if k.startswith("journal:") and v.get("itinerary_id") == itinerary_id]
+        for k in j_keys:
+            _store.pop(k, None)
+        removed["journal_entries"] = len(j_keys)
+        # Chat sessions in LOCAL_MODE are stored under "chat:{session_id}"
+        # with the session data at the top level (see write_chat_session).
+        c_keys = []
+        for k, v in list(_store.items()):
+            if not k.startswith("chat:"):
+                continue
+            if isinstance(v, dict) and v.get("itinerary_id") == itinerary_id:
+                c_keys.append(k)
+        for k in c_keys:
+            v = _store.pop(k, {}) or {}
+            removed["chat_messages"] += len(v.get("messages") or [])
+        removed["chat_sessions"] = len(c_keys)
+        # Join requests scoped to this trip — both incoming (owner-side)
+        # and outgoing (requester-side that referenced this itinerary).
+        jr_keys = [k for k, v in _store.items()
+                   if k.startswith("join_request:")
+                   and isinstance(v, dict)
+                   and v.get("itinerary_id") == itinerary_id]
+        for k in jr_keys:
+            _store.pop(k, None)
+        removed["join_requests"] = len(jr_keys)
+        # Social posts with linked_trip_id == this trip + their comments.
+        sp_keys = [k for k, v in _store.items()
+                   if k.startswith("post:")
+                   and isinstance(v, dict)
+                   and v.get("linked_trip_id") == itinerary_id]
+        for k in sp_keys:
+            post_id = k.split(":", 1)[1] if ":" in k else None
+            _store.pop(k, None)
+            if post_id:
+                c_keys = [ck for ck in list(_store.keys()) if ck.startswith(f"comment:{post_id}:")]
+                for ck in c_keys:
+                    _store.pop(ck, None)
+                removed["social_comments"] += len(c_keys)
+        removed["social_posts"] = len(sp_keys)
+        return removed
+
+    db = get_db()
+    # Itinerary doc.
+    try:
+        await asyncio.to_thread(lambda: db.collection("itineraries").document(itinerary_id).delete())
+        removed["itinerary"] = 1
+    except Exception as e:
+        logger.warning("delete itinerary doc failed: %s", e)
+    # Shared-itinerary twin (best-effort — most trips won't have one).
+    try:
+        await asyncio.to_thread(lambda: db.collection("shared_itineraries").document(itinerary_id).delete())
+        removed["shared_itinerary"] = 1
+    except Exception as e:
+        logger.debug("delete shared itinerary doc failed (likely none existed): %s", e)
+    # Companion prefs.
+    try:
+        await asyncio.to_thread(lambda: db.collection("companion_prefs").document(itinerary_id).delete())
+        removed["companion_prefs"] = 1
+    except Exception as e:
+        logger.debug("delete companion_prefs failed: %s", e)
+    # Journal entries — query then bulk delete.
+    try:
+        docs = await asyncio.to_thread(
+            lambda: list(db.collection("journal_entries")
+                           .where("itinerary_id", "==", itinerary_id)
+                           .stream())
+        )
+        for d in docs:
+            try:
+                await asyncio.to_thread(lambda r=d.reference: r.delete())
+                removed["journal_entries"] += 1
+            except Exception as e:
+                logger.warning("delete journal entry %s failed: %s", d.id, e)
+    except Exception as e:
+        logger.warning("query journal entries for delete failed: %s", e)
+
+    # Chat sessions tied to this trip — and their messages subcollection.
+    # Cotraveller matches are unique per trip; the session anchors the
+    # conversation to the trip's context (itinerary digest, persona-
+    # weights snapshot, match score), so deleting the trip removes the
+    # match too. We page through messages in 200-doc batches to bound
+    # the worst-case round-trip count on long threads.
+    try:
+        sess_docs = await asyncio.to_thread(
+            lambda: list(db.collection("chat_sessions")
+                           .where("itinerary_id", "==", itinerary_id)
+                           .stream())
+        )
+        for sd in sess_docs:
+            sid = sd.id
+            # Delete messages subcollection in batches.
+            try:
+                while True:
+                    msg_batch = await asyncio.to_thread(
+                        lambda: list(db.collection("chat_sessions")
+                                       .document(sid)
+                                       .collection("messages")
+                                       .limit(200)
+                                       .stream())
+                    )
+                    if not msg_batch:
+                        break
+                    for m in msg_batch:
+                        try:
+                            await asyncio.to_thread(lambda r=m.reference: r.delete())
+                            removed["chat_messages"] += 1
+                        except Exception as e:
+                            logger.warning("delete chat message %s/%s failed: %s", sid, m.id, e)
+                    if len(msg_batch) < 200:
+                        break
+            except Exception as e:
+                logger.warning("paged delete of messages for session %s failed: %s", sid, e)
+            # Then the session doc itself.
+            try:
+                await asyncio.to_thread(lambda r=sd.reference: r.delete())
+                removed["chat_sessions"] += 1
+            except Exception as e:
+                logger.warning("delete chat session %s failed: %s", sid, e)
+    except Exception as e:
+        logger.warning("query chat_sessions for delete failed: %s", e)
+
+    # Join requests anchored to this trip. discover.py writes one doc per
+    # (itinerary_id, requester_id) pair — without this sweep, the user's
+    # inbox keeps surfacing "X wants to join your trip" rows after the
+    # trip itself is gone.
+    try:
+        jr_docs = await asyncio.to_thread(
+            lambda: list(db.collection("join_requests")
+                           .where("itinerary_id", "==", itinerary_id)
+                           .stream())
+        )
+        for jd in jr_docs:
+            try:
+                await asyncio.to_thread(lambda r=jd.reference: r.delete())
+                removed["join_requests"] += 1
+            except Exception as e:
+                logger.warning("delete join_request %s failed: %s", jd.id, e)
+    except Exception as e:
+        logger.warning("query join_requests for delete failed: %s", e)
+
+    # Social posts linked to this trip + their comments subcollection.
+    # feed.py stores the link as `linked_trip_id` (not itinerary_id), so
+    # the previous cascade missed every persona post that referenced this
+    # itinerary, and the Pulse / Discover surfaces kept rendering them
+    # after deletion.
+    try:
+        sp_docs = await asyncio.to_thread(
+            lambda: list(db.collection("social_posts")
+                           .where("linked_trip_id", "==", itinerary_id)
+                           .stream())
+        )
+        for pd in sp_docs:
+            pid = pd.id
+            # Best-effort wipe of comments first, then the post doc.
+            try:
+                comment_refs = await asyncio.to_thread(
+                    lambda: [d.reference for d in
+                             db.collection("social_posts").document(pid)
+                                .collection("comments").stream()]
+                )
+                for cref in comment_refs:
+                    try:
+                        await asyncio.to_thread(lambda r=cref: r.delete())
+                        removed["social_comments"] += 1
+                    except Exception as e:
+                        logger.warning("delete comment under %s failed: %s", pid, e)
+            except Exception as e:
+                logger.warning("query comments for post %s failed: %s", pid, e)
+            try:
+                await asyncio.to_thread(lambda r=pd.reference: r.delete())
+                removed["social_posts"] += 1
+            except Exception as e:
+                logger.warning("delete social_post %s failed: %s", pid, e)
+    except Exception as e:
+        logger.warning("query social_posts for delete failed: %s", e)
+
+    return removed
+
+
 async def get_itinerary(itinerary_id: str) -> Itinerary | None:
     from pydantic import ValidationError as PydanticValidationError
     if LOCAL_MODE:
@@ -209,6 +418,42 @@ async def get_shared_itinerary(itinerary_id: str):
         logger.warning("get_shared_itinerary failed for %s: %s", itinerary_id, e)
         return None
 
+
+
+async def list_shared_itineraries_for_user(user_id: str) -> list:
+    """Every shared itinerary this user is a participant in. Returns a list
+    of SharedItinerary objects sorted by version descending so the most
+    recently active surfaces first."""
+    from shared.schemas import SharedItinerary
+    if LOCAL_MODE:
+        out = []
+        for key, val in _store.items():
+            if not key.startswith("shared:") or not isinstance(val, dict):
+                continue
+            if user_id in (val.get("user_ids") or []):
+                try:
+                    out.append(SharedItinerary.model_validate(val))
+                except Exception:
+                    pass
+        return sorted(out, key=lambda s: s.version, reverse=True)
+    try:
+        docs = await asyncio.to_thread(
+            lambda: list(
+                get_db().collection("shared_itineraries")
+                .where("user_ids", "array_contains", user_id)
+                .limit(50).stream()
+            )
+        )
+        out = []
+        for d in docs:
+            try:
+                out.append(SharedItinerary.model_validate(d.to_dict()))
+            except Exception as e:
+                logger.warning("list_shared rehydrate failed for %s: %s", d.id, e)
+        return sorted(out, key=lambda s: s.version, reverse=True)
+    except Exception as e:
+        logger.warning("list_shared_itineraries_for_user failed: %s", e)
+        return []
 
 
 async def create_user_profile(user_id: str, display_name: str) -> None:
@@ -268,6 +513,7 @@ async def list_outreach_eligible_users(limit: int = 50) -> list[dict]:
                 "current_itinerary_id": current,
                 "who":                  who,
                 "group_size":           constraints.get("group_size", 1),
+                "display_name":         val.get("display_name") or "",
             })
             if len(out) >= limit:
                 break
@@ -296,6 +542,7 @@ async def list_outreach_eligible_users(limit: int = 50) -> list[dict]:
                 "current_itinerary_id": current,
                 "who":                  constraints.get("who_travelling_with"),
                 "group_size":           constraints.get("group_size", 1),
+                "display_name":         data.get("display_name") or "",
             })
         return out
     except Exception as e:

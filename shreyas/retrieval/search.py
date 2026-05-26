@@ -171,6 +171,7 @@ async def get_cotraveller_by_id(profile_id: str) -> "CoTravellerProfile | None":
             pace         = PacePreference(md.get("pace", "moderate")),
             budget_style = BudgetStyle(md.get("budget_style", "mid_range")),
             travel_style = TravelStyle(md.get("travel_style", "solo")),
+            gender       = (md.get("gender") or "").strip().lower() or None,
             avatar_url   = md.get("avatar_url"),
             preferred_destination = md.get("preferred_destination"),
             persona_answers       = _json_decode(md.get("persona_answers_json")),
@@ -189,7 +190,7 @@ async def search_cotravellers(
     user_profile: UserProfile,
     top_k: int = 50,
     extra_text: str = "",
-) -> list[CoTravellerProfile]:
+) -> list[tuple[CoTravellerProfile, float]]:
     """
     Query the seeded 'cotravellers' Pinecone namespace with the user's persona
     embedding and return up to top_k candidate profiles ranked by cosine.
@@ -234,11 +235,11 @@ async def search_cotravellers(
         logger.warning("cotraveller Pinecone query failed: %s", e)
         return []
 
-    profiles: list[CoTravellerProfile] = []
+    scored: list[tuple[CoTravellerProfile, float]] = []
     for match in (getattr(result, "matches", []) or []):
         md = match.metadata or {}
         try:
-            profiles.append(CoTravellerProfile(
+            profile = CoTravellerProfile(
                 profile_id   = md.get("profile_id") or match.id,
                 display_name = md.get("display_name", "Anonymous"),
                 age          = int(md.get("age", 30) or 30),
@@ -256,11 +257,17 @@ async def search_cotravellers(
                 voice_id              = _extract_voice_id(md),
                 compatibility_signals = _json_decode(md.get("compatibility_signals_json")),
                 is_seed               = bool(md.get("is_seed", False)),
-            ))
+            )
+            # Pinecone cosine score — clipped to [0, 1] for the
+            # ranker's pinecone_passthrough feature. None when the
+            # match object has no .score (defensive default 0.0).
+            raw_score = getattr(match, "score", 0.0)
+            score = max(0.0, min(1.0, float(raw_score) if raw_score is not None else 0.0))
+            scored.append((profile, score))
         except Exception as e:
             logger.warning("skipping malformed cotraveller %s: %s", match.id, e)
-    logger.info("cotraveller search returned %d candidates", len(profiles))
-    return profiles
+    logger.info("cotraveller search returned %d candidates", len(scored))
+    return scored
 
 
 def upsert_destinations(destinations: list[Destination]) -> None:

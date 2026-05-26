@@ -193,9 +193,14 @@ async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verif
             except Exception as e:
                 logger.warning("companion_prefs load failed for %s: %s", body.itinerary_id, e)
         extra = _extra_text_from_prefs(prefs)
-        candidates = await search_cotravellers(profile, extra_text=extra)
+        # search_cotravellers now returns (profile, pinecone_cosine) tuples.
+        # We keep the score next to the profile through every filter step so
+        # the ranker's pinecone_passthrough feature reads a real signal
+        # instead of the previous-deployment regression where the cosine was
+        # silently discarded and every match_score lost 1/6 of its weight.
+        scored = await search_cotravellers(profile, extra_text=extra)
         if denied_ids:
-            candidates = [c for c in candidates if getattr(c, "profile_id", None) not in denied_ids]
+            scored = [(c, s) for (c, s) in scored if getattr(c, "profile_id", None) not in denied_ids]
 
         # Hard travel-style filter — a couple should never see solo
         # personas surfaced as matches, a friends-group should see
@@ -207,24 +212,64 @@ async def get_cotraveller_matches(body: MatchesRequest, uid: str = Depends(verif
         # can spot a seed-pool gap (e.g. zero couple personas left
         # after filter).
         if style_value in ("solo", "couple"):
-            before = len(candidates)
-            candidates = [
-                c for c in candidates
+            before = len(scored)
+            scored = [
+                (c, s) for (c, s) in scored
                 if (getattr(getattr(c, "travel_style", None), "value", None) or
                     getattr(c, "travel_style", None)) == style_value
             ]
-            dropped = before - len(candidates)
+            dropped = before - len(scored)
             if dropped:
                 logger.info(
                     "cotraveller: dropped %d candidates outside style=%s (kept %d)",
-                    dropped, style_value, len(candidates),
+                    dropped, style_value, len(scored),
                 )
+
+        # Same-gender hard filter for SOLO travellers — solo women
+        # match only women, solo men only men. Safety default for
+        # cold-strangers matching. Couples are already gender-locked
+        # at the seed level (male+female pairs only), so this only
+        # gates solo. If the user hasn't told us their gender, we
+        # fall back to mixed matching — no gender = no filter —
+        # rather than returning zero matches.
+        user_gender = (getattr(constraints, "gender", "") or "").strip().lower()
+        if style_value == "solo" and user_gender in ("male", "female"):
+            filtered = [
+                (c, s) for (c, s) in scored
+                if (getattr(c, "gender", "") or "").strip().lower() == user_gender
+            ]
+            # Fail-open: if the candidate pool has no gender metadata
+            # populated yet (e.g. Pinecone seeded before we started
+            # writing the gender field), the filter would empty the
+            # pool. Rather than dead-end the user with "no matches",
+            # we log and skip the filter so something surfaces. Once
+            # the pool is re-seeded with gender, this path stops
+            # firing on its own.
+            with_gender = sum(
+                1 for (c, _s) in scored
+                if (getattr(c, "gender", "") or "").strip()
+            )
+            if not filtered and with_gender == 0 and scored:
+                logger.warning(
+                    "cotraveller: gender filter would empty pool — "
+                    "no candidates have gender metadata (re-seed needed). "
+                    "Falling back to mixed matching for solo=%s.",
+                    user_gender,
+                )
+            else:
+                dropped = len(scored) - len(filtered)
+                if dropped:
+                    logger.info(
+                        "cotraveller: dropped %d candidates outside gender=%s (kept %d)",
+                        dropped, user_gender, len(filtered),
+                    )
+                scored = filtered
 
         # Cap the surfaced list at the top 3. When the user denies one,
         # _session_filters drops it from `denied_ids` on the next call
         # and the next-best candidate slides into the third slot — so
         # the user always sees three live options to consider.
-        matches = get_top_matches(profile, candidates, top_n=3)
+        matches = get_top_matches(profile, scored, top_n=3)
         capture(uid, "match_found", {
             "match_count":  len(matches),
             "itinerary_id": body.itinerary_id,
@@ -247,6 +292,11 @@ async def get_cotraveller_profile(
     itinerary_id: str | None = Query(None),
     top_push:      list[str] = Query(default_factory=list),
     top_interests: list[str] = Query(default_factory=list),
+    # The Pinecone cosine the frontend already saw on /matches. Forwarded so
+    # the detail page's recompute honours the same retrieval signal — without
+    # it pinecone_passthrough scores 0 and the detail-page match_score lands
+    # ~1/6 below what /matches showed for the exact same candidate.
+    retrieval_score: float | None = Query(None),
     uid: str = Depends(verify_token),
 ):
     """Fetch a single co-traveller by id and score it against the signed-in
@@ -268,7 +318,10 @@ async def get_cotraveller_profile(
             cs["top_push"] = top_push
         if cs != (profile.compatibility_signals or {}):
             profile = profile.model_copy(update={"compatibility_signals": cs})
-        match = score_compatibility(profile, candidate)
+        match = score_compatibility(
+            profile, candidate,
+            retrieval_score=float(retrieval_score) if retrieval_score is not None else 0.0,
+        )
         # Analytics: detail-page click-through. Combined with match_found
         # (impressions) this gives match CTR.
         try:
@@ -314,14 +367,44 @@ async def regenerate_cotraveller_matches(body: RegenerateMatchesRequest, uid: st
         constraints = getattr(profile, "constraints", None)
         style = getattr(constraints, "who_travelling_with", None)
         style_value = getattr(style, "value", None) if style else None
-        raw_top_n = 12 if style_value in ("solo", "couple") else 3
+        user_gender = (getattr(constraints, "gender", "") or "").strip().lower()
+        # Over-fetch when filters apply so the top-3 contract still
+        # holds after dropping cross-style and cross-gender candidates.
+        # Solo with gender filter has the thinnest pool — bump higher.
+        if style_value == "solo" and user_gender in ("male", "female"):
+            raw_top_n = 24
+        elif style_value in ("solo", "couple"):
+            raw_top_n = 12
+        else:
+            raw_top_n = 3
         matches = await regenerate_matches(profile, excluded, feedback=feedback, top_n=raw_top_n)
         if style_value in ("solo", "couple"):
             matches = [
                 m for m in matches
                 if (getattr(getattr(m.profile, "travel_style", None), "value", None) or
                     getattr(m.profile, "travel_style", None)) == style_value
-            ][:3]
+            ]
+        if style_value == "solo" and user_gender in ("male", "female"):
+            filtered = [
+                m for m in matches
+                if (getattr(m.profile, "gender", "") or "").strip().lower() == user_gender
+            ]
+            with_gender = sum(
+                1 for m in matches
+                if (getattr(m.profile, "gender", "") or "").strip()
+            )
+            # Fail-open identical to /cotraveller — don't dead-end on
+            # pre-gender seeded data.
+            if not filtered and with_gender == 0 and matches:
+                logger.warning(
+                    "cotraveller regenerate: gender filter would empty pool "
+                    "— no candidates have gender metadata (re-seed needed). "
+                    "Falling back to mixed matching for solo=%s.",
+                    user_gender,
+                )
+            else:
+                matches = filtered
+        matches = matches[:3]
         # Analytics: regenerate is the "show me different matches" signal —
         # high rate means current matches aren't resonating. Excluded count
         # tells us how deep the user has dug.

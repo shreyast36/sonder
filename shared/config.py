@@ -126,9 +126,6 @@ SYNTHETIC_AGENTS_MAX_INTERVAL  = int(os.getenv("SYNTHETIC_AGENTS_MAX_INTERVAL", 
 # the post-empty 'be the first voice' state.
 SYNTHETIC_AGENTS_SEED_COUNT    = int(os.getenv("SYNTHETIC_AGENTS_SEED_COUNT", "20"))
 
-# Currency conversion — optional; falls back to static rates in shared/currency.py if unset
-EXCHANGE_RATE_API_KEY = os.getenv("EXCHANGE_RATE_API_KEY")
-
 # Pixabay — free travel-photo API used to auto-illustrate social posts
 # and trip-recap cards. Get a key at https://pixabay.com/api/docs/
 # (free tier: 100 req/min, 5000 req/hour). When unset, posts render

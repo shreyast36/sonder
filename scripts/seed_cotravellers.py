@@ -126,6 +126,13 @@ AGE_BUCKETS: list[tuple[int, int]] = [
 # 50/50 split, hard-locked. User-defined.
 GENDERS: list[str] = ["male", "female"]
 
+# Personas per (city, age, gender) cell. Default 1 produces 96 personas;
+# bumped to 2 so the same-gender hard filter has more candidates to
+# pick from within each gender. Iteration index is the OUTERMOST loop
+# so existing profile_ids stay stable — only NEW slots get generated
+# on a --resume seed run.
+PERSONAS_PER_SLOT: int = 2
+
 
 # Allowed option keys per chip — must match jahnvi/data/persona_labels.py.
 PERSONA_OPTION_KEYS: dict[str, list[str]] = {
@@ -163,23 +170,29 @@ def _stable_id(*parts: str) -> str:
 
 
 def build_diversity_matrix() -> list[dict]:
-    """Full Cartesian product: every (city, age_bucket, gender) triple.
-    Slot index `i` becomes part of the profile_id so re-runs overwrite the
-    same Pinecone record."""
+    """Full Cartesian product: every (city, age_bucket, gender) triple,
+    repeated PERSONAS_PER_SLOT times. The PER_SLOT iteration is the
+    OUTERMOST loop so existing profile_ids stay stable when the count
+    is bumped — adding a second persona per cell only generates NEW ids
+    (i = 96..191), the original 96 (i = 0..95) keep their hashes.
+
+    Slot index `i` becomes part of the profile_id so re-runs overwrite
+    the same Pinecone record."""
     slots: list[dict] = []
     i = 0
-    for city in CITIES:
-        for age_lo, age_hi in AGE_BUCKETS:
-            for gender in GENDERS:
-                slots.append({
-                    "profile_id": _stable_id(city, f"{age_lo}-{age_hi}", gender, str(i)),
-                    "city":       city,
-                    "age_lo":     age_lo,
-                    "age_hi":     age_hi,
-                    "gender":     gender,
-                    "rng_seed":   int(hashlib.sha256(f"{city}|{i}".encode()).hexdigest()[:8], 16),
-                })
-                i += 1
+    for _iter in range(PERSONAS_PER_SLOT):
+        for city in CITIES:
+            for age_lo, age_hi in AGE_BUCKETS:
+                for gender in GENDERS:
+                    slots.append({
+                        "profile_id": _stable_id(city, f"{age_lo}-{age_hi}", gender, str(i)),
+                        "city":       city,
+                        "age_lo":     age_lo,
+                        "age_hi":     age_hi,
+                        "gender":     gender,
+                        "rng_seed":   int(hashlib.sha256(f"{city}|{i}".encode()).hexdigest()[:8], 16),
+                    })
+                    i += 1
     return slots
 
 
@@ -875,6 +888,7 @@ def build_metadata(
         "pace":                  persona["pace"],
         "budget_style":          persona["budget_style"],
         "travel_style":          persona["travel_style"],
+        "gender":                slot["gender"],
         "avatar_url":            avatar_url or "",
         "voice_anchor":          persona.get("voice_anchor", ""),
         "quirks":                persona.get("quirks", []),

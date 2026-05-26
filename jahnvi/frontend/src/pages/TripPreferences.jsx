@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Globe, Check, Users } from 'lucide-react'
+import { ArrowLeft, Globe, Check } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import AppBackground from '../components/AppBackground'
@@ -155,16 +155,34 @@ export default function TripPreferences() {
   const navigate = useNavigate()
 
   // ── Structured steps (logistics) ──
-  const [destination, setDest]        = useState('')
+  // Seed-from-dashboard: when the user clicks an inspiration destination
+  // on the empty-state dashboard, we stash it in sessionStorage and read
+  // it once here so the form lands with that city pre-filled.
+  const [destination, setDest]        = useState(() => {
+    try {
+      const seed = sessionStorage.getItem('sonder_seed_destination')
+      if (seed) {
+        sessionStorage.removeItem('sonder_seed_destination')
+        return seed
+      }
+    } catch { /* noop */ }
+    return ''
+  })
   const [departure, setDepart]        = useState('')
   const [returnDate, setReturn]       = useState('')
   const [styles, setStyles]           = useState([])
-  const [pace, setPace]               = useState('moderate')
+  // No default pace — make the user choose. A pre-selected pace
+  // colours every downstream recommendation, and almost everyone
+  // accepts the default without thinking; better to ask.
+  const [pace, setPace]               = useState('')
   const [budget, setBudget]           = useState('')
   const [currency, setCurrency]       = useState('USD')
-  const [nationality, setNationality] = useState('')
   const [groupSize, setGroupSize]     = useState(1)
   const [travelsWith, setTravelsWith] = useState('')
+  // Solo-only — drives the same-gender hard filter for cotraveller
+  // matching. We only ask solo travellers; couples are male+female by
+  // design, family/friends matching is disabled.
+  const [gender, setGender]           = useState('')
 
   // Group size follows from travel style:
   //   solo    → locked at 1
@@ -207,12 +225,11 @@ export default function TripPreferences() {
     : [
         destination.trim().length > 0,
         departure && returnDate,
-        styles.length > 0,
+        styles.length > 0 && pace.length > 0,
         budget.trim().length > 0,
         travelsWith.length > 0 &&
-          nationality.trim().length > 0 &&
           (
-            travelsWith === 'solo'   ? groupSize === 1 :
+            travelsWith === 'solo'   ? (groupSize === 1 && (gender === 'male' || gender === 'female')) :
             travelsWith === 'couple' ? groupSize === 2 :
             groupSize >= 2 && groupSize <= MAX_PARTY_SIZE
           ),
@@ -236,13 +253,13 @@ export default function TripPreferences() {
     const profile = {
       constraints: {
         destination_query:   destination,
-        nationality,
         start_date:          departure || null,
         end_date:            returnDate || null,
         budget_usd:          parseFloat(budget) || 0,
         budget_currency:     currency,
         group_size:          groupSize,
         who_travelling_with: travelsWith || null,
+        gender:              travelsWith === 'solo' ? (gender || null) : null,
         pace,
         must_haves:          styles,
         avoid_list:          [],
@@ -382,8 +399,50 @@ export default function TripPreferences() {
               </motion.div>
             )}
           </AnimatePresence>
-          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 14 }}>Your nationality</p>
-          <ElegantInput value={nationality} onChange={setNationality} placeholder="British, Indian, Brazilian…" icon={Users}/>
+          {/* Solo-only — drives the same-gender hard filter for
+              cotraveller matching. Couples / family / friends skip
+              this because their matching pool doesn't need gender
+              (couples are male+female by seed design; family/friends
+              matching is disabled). */}
+          <AnimatePresence>
+            {travelsWith === 'solo' && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.25 }}
+                style={{ overflow: 'hidden' }}
+              >
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.26em', textTransform: 'uppercase', color: MUTE, marginBottom: 10 }}>
+                  Your gender
+                </p>
+                <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 11, color: DIM, marginBottom: 18, lineHeight: 1.5 }}>
+                  We only match solo travellers with the same gender for safety. Skipped for couples / groups.
+                </p>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 44 }}>
+                  {[{ key: 'female', label: 'Female' }, { key: 'male', label: 'Male' }].map(g => {
+                    const active = gender === g.key
+                    return (
+                      <motion.button
+                        key={g.key} whileTap={{ scale: 0.95 }} onClick={() => setGender(g.key)}
+                        style={{
+                          flex: 1, padding: '16px 0', borderRadius: 14,
+                          cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 12,
+                          background: active ? `${ORANGE}12` : 'transparent',
+                          border: `1px solid ${active ? `${ORANGE}55` : HAIRLINE}`,
+                          color: active ? ORANGE : MUTE,
+                          transition: 'all 0.2s',
+                          boxShadow: active ? `0 0 20px ${ORANGE}22` : 'none',
+                        }}
+                      >
+                        {g.label}
+                      </motion.button>
+                    )
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       ),
     },
@@ -506,7 +565,7 @@ export default function TripPreferences() {
             onClick={advance}
             style={{ width: '100%', padding: '18px 0', background: `linear-gradient(135deg, ${ORANGE} 0%, #EA580C 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff', transition: 'all 0.25s', boxShadow: `0 0 40px ${ORANGE}28` }}
           >
-            {step < TOTAL_STEPS - 1 ? 'Continue' : submitting ? 'Planning your trip…' : 'Start planning'}
+            {step < TOTAL_STEPS - 1 ? 'Continue' : submitting ? 'Reading your persona…' : 'Determine your persona'}
           </motion.button>
         </div>
       </div>

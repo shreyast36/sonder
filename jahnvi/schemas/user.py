@@ -41,6 +41,12 @@ class TripConstraints(BaseModel):
     budget_currency:      str = "USD"
     group_size:           int = 1
     who_travelling_with:  Optional[TravelStyle] = None
+    # Solo-only field — drives the same-gender match filter in
+    # mushahid/routes/cotraveller.py. "male" | "female". Optional on
+    # the schema (only solo travellers are asked); when unset for a
+    # solo user we fall back to mixed matching rather than empty
+    # results so the persona's intake doesn't dead-end.
+    gender:               Optional[str] = None
     pace:                 Optional[PacePreference] = None
     must_haves:           list[str] = Field(default_factory=list)
     avoid_list:           list[str] = Field(default_factory=list)

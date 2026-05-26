@@ -273,6 +273,12 @@ Format:
 - occasional "!" or "..." is okay.
 - no emojis unless they used one first.
 
+Typography + grammar (casual ≠ sloppy):
+- No space before punctuation. Wrong: "versions ," / "noodles ." Right: "versions," / "noodles."
+- Match plural subjects to plural verbs. "there are a few stalls", NOT "there's a few stalls". "there are" / "there're" both fine, "there's" only with a singular subject.
+- No double commas / double periods / floating semicolons.
+- Texting register means short and casual, not broken. A real person texting still hits agreement and spacing.
+
 Never admit you are AI, a model, a bot, a feature, or generated.
 Never offer to help. You are chatting.
 Stay consistent with what you have already said in this thread.
@@ -741,6 +747,15 @@ def _clean_message(raw: str, max_chars: int = 800) -> str:
     cleaned = re.sub(r"^(message|reply|output)\s*:\s*", "", cleaned, flags=re.IGNORECASE).strip()
     cleaned = cleaned.replace("—", ",")
     cleaned = re.sub(r"\s+", " ", cleaned)
+    # Typography cleanup — the LLM occasionally emits a stray space
+    # before punctuation ("versions ," / "noodles ."), which reads as
+    # broken even in casual texting register. Collapse the space.
+    cleaned = re.sub(r"\s+([,.!?;:])", r"\1", cleaned)
+    # And collapse the inverse pattern where punctuation eats both
+    # sides ("noodles , way") → "noodles, way" — handled above — and
+    # double-punct artifacts like ",." that occasionally bleed through
+    # an em-dash replacement.
+    cleaned = re.sub(r"([,;:])([,.;:])+", r"\1", cleaned)
     return cleaned[:max_chars].strip()
 
 
@@ -1039,8 +1054,8 @@ async def generate_persona_opener(
 
     rules = (
         f"You are texting {first_name} FIRST — they haven't said anything yet. "
-        f"Your message MUST start exactly with: \"Hey! {first_name}, \" (capital H, "
-        "exclamation mark, comma after the name, then a single space).\n\n"
+        f"Your message MUST start exactly with: \"Hey {first_name}! \" (capital H, "
+        "no comma, exclamation mark AFTER the name, then a single space).\n\n"
         "After that opener, ask ONE short question grounded in:\n"
     )
     if dest != _EMPTY and digest != _EMPTY:
@@ -1069,13 +1084,19 @@ async def generate_persona_opener(
     if pname and cleaned.lower().startswith(pname.lower() + ":"):
         cleaned = cleaned[len(pname) + 1:].lstrip()
 
-    # Enforce the "Hey! {first_name}, " prefix even if the model drifted.
-    expected_prefix = f"Hey! {first_name},"
+    # Enforce the "Hey {first_name}! " prefix even if the model drifted.
+    expected_prefix = f"Hey {first_name}!"
     if not cleaned.lower().startswith(expected_prefix.lower()):
-        # Strip any drifted greeting and re-prefix.
+        # Strip any drifted greeting (including the old "Hey! {name}," shape
+        # that older personas may still output mid-deploy) and re-prefix.
         tail = cleaned
-        for bad_start in (f"Hey {first_name},", f"Hi {first_name},", f"Hello {first_name},",
-                          "Hey,", "Hi,", "Hello,", "Hey!"):
+        for bad_start in (
+            f"Hey! {first_name},", f"Hey! {first_name}",
+            f"Hey {first_name},",  f"Hey {first_name}",
+            f"Hi! {first_name},",  f"Hi {first_name}!", f"Hi {first_name},", f"Hi {first_name}",
+            f"Hello {first_name}!", f"Hello {first_name},", f"Hello {first_name}",
+            "Hey!", "Hey,", "Hi!", "Hi,", "Hello,", "Hello!",
+        ):
             if tail.lower().startswith(bad_start.lower()):
                 tail = tail[len(bad_start):].lstrip(" ,!")
                 break

@@ -54,6 +54,10 @@ class CoTravellerProfile(BaseModel):
     pace:         PacePreference
     budget_style: BudgetStyle
     travel_style: TravelStyle
+    # "male" | "female" — used by the same-gender hard filter for solo
+    # travellers in mushahid/routes/cotraveller.py. Sidecar field on
+    # Pinecone metadata for seeded personas; optional on the schema.
+    gender:       Optional[str] = None
     avatar_url:   Optional[str] = None
     embedding:    Optional[list[float]] = None
 
@@ -117,3 +121,9 @@ class CoTravellerMatch(BaseModel):
     match_score:             float = Field(ge=0.0, le=1.0)
     match_reasons:           list[str]
     compatibility_breakdown: dict
+    # Raw Pinecone cosine for this candidate, surfaced so /chat/start can
+    # persist it on ChatSession and the in-chat live re-rank can honour the
+    # same retrieval signal that produced the original match_score. Without
+    # this, score_compatibility re-runs with retrieval_score=0 and silently
+    # deflates the persona's reciprocal-approval probability.
+    retrieval_score:         float = 0.0

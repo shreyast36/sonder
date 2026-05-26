@@ -265,6 +265,19 @@ export default function InboxLayout({ selfUid }) {
     navigate(`/chat/${encodeURIComponent(row.session_id)}`)
   }
 
+  function markAllRead() {
+    // Stamp every visible session as read at "now". Drops the unread
+    // count to zero for the current category; the All view's unread
+    // sub-count drops too because isUnread() reads from the same map.
+    const now = new Date().toISOString()
+    const next = { ...readMap }
+    for (const r of filtered) {
+      if (r.session_id) next[r.session_id] = now
+    }
+    setReadMap(next)
+    saveReadMap(selfUid, next)
+  }
+
   return (
     <div style={{
       display: 'grid',
@@ -351,6 +364,25 @@ export default function InboxLayout({ selfUid }) {
                 {cat.label}
               </p>
               <span style={{ flex: 1 }}/>
+              {filtered.some(r => isUnread(r, readMap)) && (
+                <button
+                  onClick={markAllRead}
+                  style={{
+                    background: `${ROSE}10`,
+                    border: `1px solid ${ROSE}55`,
+                    borderRadius: 999,
+                    padding: '6px 12px', cursor: 'pointer',
+                    color: ROSE, fontFamily: '"Inter Tight",sans-serif',
+                    fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase',
+                    fontWeight: 500, marginRight: 12,
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = `${ROSE}1f` }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = `${ROSE}10` }}
+                >
+                  Mark all read
+                </button>
+              )}
               <span style={{
                 fontFamily: '"Inter Tight",sans-serif', fontSize: 10, color: MUTE,
                 letterSpacing: '0.22em', textTransform: 'uppercase',

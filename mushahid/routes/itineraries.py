@@ -17,6 +17,7 @@ from mushahid.auth import verify_token
 from mushahid.realtime.firestore import (
     get_itinerary, get_user_profile, update_user_profile, write_itinerary,
     get_companion_prefs, write_companion_prefs,
+    delete_itinerary_and_related,
 )
 from mushahid.utils.sanitize import sanitize_user_input
 from shared.config import LOCAL_MODE
@@ -194,6 +195,63 @@ async def set_current_itinerary(body: SetCurrentBody, uid: str = Depends(verify_
     return {"current_itinerary_id": body.itinerary_id}
 
 
+@router.delete("/itineraries/{itinerary_id}")
+async def delete_itinerary(itinerary_id: str, uid: str = Depends(verify_token)):
+    """Hard-delete a saved trip and its attached docs.
+
+    Removes:
+      - the itinerary doc
+      - the shared-itinerary twin (if collaboration was started)
+      - the companion_prefs intake answers for this trip
+      - all journal_entries tagged to this trip
+      - every chat_session anchored to this trip + its messages
+        subcollection (cotraveller matches are unique per trip)
+      - every join_request scoped to this trip (inbox cleanup)
+      - every social_post with linked_trip_id == this trip + its
+        comments subcollection (Pulse / Discover cleanup)
+      - the itinerary_id from the user's saved_itinerary_ids
+      - the current_itinerary_id pointer if it pointed here
+
+    Returns a count breakdown so the dashboard can surface what was
+    removed if it wants to."""
+    itinerary = await get_itinerary(itinerary_id)
+    if itinerary is None:
+        # Idempotent — if the doc is already gone (race / double-click),
+        # still scrub the user profile pointers and return success.
+        pass
+    elif itinerary.user_id != uid:
+        raise HTTPException(status_code=403, detail="Not authorised to delete this itinerary")
+
+    removed = await delete_itinerary_and_related(itinerary_id)
+
+    # Purge user-profile pointers.
+    try:
+        profile = await get_user_profile(uid) or {}
+        saved_ids = [i for i in (profile.get("saved_itinerary_ids") or []) if i != itinerary_id]
+        updates: dict = {"saved_itinerary_ids": saved_ids}
+        # Clear current pointer if it was this trip — dashboard will fall
+        # back to the empty state until the user picks a new current.
+        if profile.get("current_itinerary_id") == itinerary_id:
+            updates["current_itinerary_id"] = None
+        await update_user_profile(uid, updates)
+    except Exception as e:
+        logger.warning("delete_itinerary profile cleanup failed: %s", e)
+        # We've already deleted the docs at this point; the pointer
+        # cleanup is best-effort. The next /itineraries/list call will
+        # naturally skip the dangling id (get_itinerary returns None).
+
+    try:
+        from mushahid.monitoring import capture
+        capture(uid, "itinerary_deleted", {
+            "itinerary_id":    itinerary_id,
+            "removed":         removed,
+        })
+    except Exception:
+        pass
+
+    return {"deleted": True, "itinerary_id": itinerary_id, "removed": removed}
+
+
 # ── Approval lifecycle (draft → finalized) ────────────────────────────────────
 #
 # Every generated itinerary lands as a draft. The user reviews it on
@@ -307,9 +365,10 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
     gate before returning to the user.
 
     409 if the itinerary is already finalized."""
-    import asyncio
+    import json as _json
     from mushahid.refinement.classifier import classify_revision_feedback
-    from mushahid.refinement.loop import run_single_revision
+    from mushahid.refinement.loop import stream_single_revision
+    from mushahid.realtime.sse import format_event, stream_pipeline_events
     from shared.schemas import (
         ActivityFeedback, UserProfile, ValidationResult, ValidationStatus,
     )
@@ -382,124 +441,123 @@ async def revise_itinerary(itinerary_id: str, body: ReviseBody, uid: str = Depen
         structured_targets = [ActivityFeedback(**t) for t in body.targets
                               if isinstance(t, dict) and t.get("activity_id")]
 
-    # SINGLE-pass revision. The original refinement loop iterates up to
-    # MAX_REFINEMENT_ATTEMPTS (3) — fine for first-time generation, but
-    # for a user-initiated revise it amplifies wall time 3× while the
-    # user stares at a frozen button. We do one regen + one validate and
-    # return whatever the validator says; the user can revise again if
-    # they want.
-    revised = itinerary
-    final_validation: ValidationResult | None = None
-    try:
-        # Hard ceiling so a stuck LLM call can't hold the request open
-        # past Cloudflare's proxy timeout. 55s fires well before the real
-        # gateway limit so the backend always returns a structured JSON 504
-        # rather than letting Cloudflare serve an HTML error page.
-        revised, final_validation = await asyncio.wait_for(
-            run_single_revision(
+    # STREAMING single-pass revision. The route returns SSE events so the
+    # frontend can splice in revised days as soon as the LLM finishes
+    # each one — no more staring at a frozen button for 60s.
+    target_days = verdict.get("target_day_numbers") or []
+
+    async def _event_stream():
+        # Forward the inner stream and capture the final result so we can
+        # append revision_history + boost ranker weights after the user
+        # already has the visible diff.
+        final_payload: dict = {}
+        try:
+            async for sse in stream_single_revision(
                 itinerary, user_profile, feedback_for_loop,
                 seed_validation,
                 activity_feedback=structured_targets,
-            ),
-            timeout=55.0,
-        )
-    except asyncio.TimeoutError:
-        logger.warning("revise: single-pass revision exceeded 75s ceiling")
-        raise HTTPException(status_code=504, detail="Revision took too long — please try a smaller change.")
-    except Exception as e:
-        # Don't swallow — return a real error instead of an unchanged
-        # itinerary. The UI was showing the approve gate with no diff
-        # because we used to fall through silently when parse failed.
-        logger.warning("revise: single-pass revision failed: %s", e)
-        raise HTTPException(status_code=502, detail=f"Revision failed — please try again. ({type(e).__name__})")
+                target_day_numbers=target_days,
+                scope=verdict["scope"],
+                classifier_summary=verdict.get("summary") or "",
+            ):
+                # Sniff the final event so the outer route can do its
+                # bookkeeping without re-parsing every chunk.
+                if sse.startswith("event: revision_done\n"):
+                    try:
+                        data_line = next(
+                            line for line in sse.split("\n") if line.startswith("data: ")
+                        )
+                        final_payload = _json.loads(data_line[6:])
+                    except Exception:
+                        final_payload = {}
+                yield sse
+        except Exception as e:
+            logger.warning("revise: stream failed: %s", e)
+            yield format_event("revision_failed", {
+                "message": f"Revision failed — please try again. ({type(e).__name__})",
+            })
+            return
 
-    # ── 3b. Update per-user ranker weights from this feedback turn ──
-    # Decay the boost on every repeat turn so weights don't oscillate
-    # when the user keeps pushing back on similar things. Turn 1 gets
-    # full strength; turn 2 → half; turn 3 → quarter; capped at 1/8.
-    weight_delta_logged: dict = {"boosted": [], "multiplier": 0.0}
-    try:
-        from shreyas.ranking import feedback as ranker_feedback
-        from shreyas.ranking.policies import activity as activity_policy
-        multiplier = max(0.125, 0.5 ** (turn_number - 1))
-        signals = dict(profile.get("compatibility_signals") or {})
-        rw = dict(signals.get("ranker_weights") or {})
-        current_act = dict(rw.get("activity") or {})
-        new_act, boosted = ranker_feedback.apply_text_feedback(
-            current_act, feedback, activity_policy,
-            boost_multiplier=multiplier,
-        )
-        if boosted:
-            rw["activity"] = new_act
-            signals["ranker_weights"] = rw
-            await update_user_profile(uid, {"compatibility_signals": signals})
-            weight_delta_logged = {"boosted": boosted, "multiplier": multiplier}
-            logger.info("revise turn %d → boosted %s (mult %.3f)",
-                        turn_number, boosted, multiplier)
-    except Exception as e:
-        logger.warning("revise: weight update failed: %s", e)
+        # ── Post-stream bookkeeping (after the user has the diff) ──
+        if not final_payload:
+            return  # nothing to record — failure event already sent
 
-    # ── 4. Diff dropped activity titles (for next-turn dedupe) ──
-    before_titles = {ia.activity.name.strip() for day in (itinerary.days or [])
-                                                for ia in (day.activities or [])
-                                                if getattr(getattr(ia, "activity", None), "name", "")}
-    after_titles  = {ia.activity.name.strip() for day in (revised.days or [])
-                                               for ia in (day.activities or [])
-                                               if getattr(getattr(ia, "activity", None), "name", "")}
-    dropped = sorted(before_titles - after_titles)
-    added   = sorted(after_titles - before_titles)
+        dropped = final_payload.get("dropped_titles") or []
+        added   = final_payload.get("added_titles") or []
+        validation_payload = final_payload.get("validation") or {}
 
-    # ── 5. Append the turn to revision_history ──
-    history.append({
-        "turn":           turn_number,
-        "feedback":       feedback,
-        "targets":        body.targets or [],
-        "scope":          verdict["scope"],
-        "target_days":    verdict["target_day_numbers"],
-        "preserve":       verdict["preserve"],
-        "dropped_titles": dropped,
-        "added_titles":   added,
-        "boosted_features": weight_delta_logged["boosted"],
-        "boost_multiplier": weight_delta_logged["multiplier"],
-        "validation_score":   getattr(final_validation, "score", None),
-        "validation_status":  getattr(final_validation, "status", ValidationStatus.revise).value if final_validation else "revise",
-        "validation_feedback": getattr(final_validation, "feedback", "") if final_validation else "",
-        "created_at":     datetime.now(timezone.utc).isoformat(),
-        "status":         "applied",
-    })
-    final_itin = revised.model_copy(update={
-        "revision_history": history,
-        "approval_status":  "draft",
-    })
-    await write_itinerary(final_itin)
+        # Ranker weight delta with decay (same as the non-streaming version).
+        weight_delta_logged: dict = {"boosted": [], "multiplier": 0.0}
+        try:
+            from shreyas.ranking import feedback as ranker_feedback
+            from shreyas.ranking.policies import activity as activity_policy
+            multiplier = max(0.125, 0.5 ** (turn_number - 1))
+            signals = dict(profile.get("compatibility_signals") or {})
+            rw = dict(signals.get("ranker_weights") or {})
+            current_act = dict(rw.get("activity") or {})
+            new_act, boosted = ranker_feedback.apply_text_feedback(
+                current_act, feedback, activity_policy,
+                boost_multiplier=multiplier,
+            )
+            if boosted:
+                rw["activity"] = new_act
+                signals["ranker_weights"] = rw
+                await update_user_profile(uid, {"compatibility_signals": signals})
+                weight_delta_logged = {"boosted": boosted, "multiplier": multiplier}
+                logger.info("revise turn %d → boosted %s (mult %.3f)",
+                            turn_number, boosted, multiplier)
+        except Exception as e:
+            logger.warning("revise: weight update failed: %s", e)
 
-    try:
-        from mushahid.monitoring import capture
-        capture(uid, "itinerary_revision_applied", {
-            "itinerary_id": itinerary_id,
-            "turn":         turn_number,
-            "scope":        verdict["scope"],
-            "dropped":      len(dropped),
-            "added":        len(added),
+        # Append to revision_history + persist with approval_status=draft.
+        history.append({
+            "turn":           turn_number,
+            "feedback":       feedback,
+            "targets":        body.targets or [],
+            "scope":          verdict["scope"],
+            "target_days":    verdict["target_day_numbers"],
+            "preserve":       verdict["preserve"],
+            "dropped_titles": dropped,
+            "added_titles":   added,
+            "boosted_features": weight_delta_logged["boosted"],
+            "boost_multiplier": weight_delta_logged["multiplier"],
+            "validation_score":   validation_payload.get("score"),
+            "validation_status":  validation_payload.get("status", "revise"),
+            "validation_feedback": validation_payload.get("feedback", ""),
+            "created_at":     datetime.now(timezone.utc).isoformat(),
+            "status":         "applied",
         })
-    except Exception:
-        pass
 
-    return {
-        "itinerary_id":    itinerary_id,
-        "approval_status": "draft",
-        "revision_turn":   turn_number,
-        "scope":           verdict["scope"],
-        "dropped_titles":  dropped,
-        "added_titles":    added,
-        "validation": {
-            "status":   getattr(final_validation, "status", ValidationStatus.revise).value if final_validation else "revise",
-            "score":    getattr(final_validation, "score", None),
-            "feedback": getattr(final_validation, "feedback", "") if final_validation else "",
-            "suggestions": getattr(final_validation, "improvement_suggestions", []) if final_validation else [],
-        },
-        "itinerary":       final_itin.model_dump(mode="json"),
-    }
+        # Re-read the freshly-written revised itinerary, attach history,
+        # persist again. (stream_single_revision already wrote the days.)
+        try:
+            from shared.schemas import Itinerary as _Itin
+            revised = _Itin.model_validate(final_payload["itinerary"])
+            final_itin = revised.model_copy(update={
+                "revision_history": history,
+                "approval_status":  "draft",
+            })
+            await write_itinerary(final_itin)
+        except Exception as e:
+            logger.warning("revise: history persist failed: %s", e)
+
+        try:
+            from mushahid.monitoring import capture
+            capture(uid, "itinerary_revision_applied", {
+                "itinerary_id": itinerary_id,
+                "turn":         turn_number,
+                "scope":        verdict["scope"],
+                "dropped":      len(dropped),
+                "added":        len(added),
+            })
+        except Exception:
+            pass
+
+        # Final closing event so the frontend knows bookkeeping finished
+        # and can flip the modal closed even if the network is slow.
+        yield format_event("revision_persisted", {"turn": turn_number})
+
+    return stream_pipeline_events(_event_stream())
 
 
 # ── Companion preferences (per-trip) ──────────────────────────────────────────

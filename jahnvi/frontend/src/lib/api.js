@@ -65,6 +65,36 @@ async function get(path) {
   return res.json()
 }
 
+// Unauthenticated GET — for public endpoints (e.g. /api/shared/{id})
+// that must be reachable by visitors who are not signed in. Opportunistically
+// attaches a Bearer token when a Firebase user is already available so the
+// backend can return a richer/participant view, but never fails when the
+// user is anonymous.
+async function getPublic(path) {
+  const headers = { 'Content-Type': 'application/json' }
+  try {
+    if (auth.currentUser) {
+      const token = await auth.currentUser.getIdToken()
+      headers.Authorization = `Bearer ${token}`
+    }
+  } catch {
+    // Token fetch failed (revoked, offline, etc.) — fall through anonymous.
+  }
+  let res
+  try {
+    res = await fetch(`${BASE}${path}`, { headers })
+  } catch (networkErr) {
+    _reportIfServerError(networkErr, 'GET', path)
+    throw networkErr
+  }
+  if (!res.ok) {
+    const err = Object.assign(new Error(await _readError(res)), { status: res.status })
+    _reportIfServerError(err, 'GET', path)
+    throw err
+  }
+  return res.json()
+}
+
 async function post(path, body) {
   let res
   try {
@@ -122,6 +152,19 @@ export async function getUserProfile() {
   return get('/api/users/profile')
 }
 
+// Backfill the user's gender on existing profiles that predate the
+// field. Used by /companions when the same-gender filter has nothing
+// to act on. Server validates the value against ^(male|female)$.
+export async function patchProfileGender(gender) {
+  const res = await fetch(`${BASE}/api/users/profile/gender`, {
+    method: 'PATCH',
+    headers: await authHeaders(),
+    body: JSON.stringify({ gender }),
+  })
+  if (!res.ok) throw Object.assign(new Error(await _readError(res)), { status: res.status })
+  return res.json()
+}
+
 export async function inferPersona(profile) {
   return post('/api/persona-infer', profile)
 }
@@ -165,9 +208,12 @@ export async function regenerateCotravellers(excludedProfileIds, feedback) {
 // One-shot fetch of a co-traveller's full profile + match score against the
 // current user. Falls back to the cached persona signals so existing users
 // see real (non-28%) scores immediately.
-export async function getCotravellerProfile(profileId, itineraryId) {
+export async function getCotravellerProfile(profileId, itineraryId, retrievalScore = null) {
   const params = new URLSearchParams()
   if (itineraryId) params.set('itinerary_id', itineraryId)
+  if (typeof retrievalScore === 'number' && Number.isFinite(retrievalScore)) {
+    params.set('retrieval_score', String(retrievalScore))
+  }
   try {
     const cached = JSON.parse(localStorage.getItem('sonder_persona_v1') || 'null')
     ;(cached?.persona?.top_push      || []).forEach(v => params.append('top_push', v))
@@ -179,12 +225,17 @@ export async function getCotravellerProfile(profileId, itineraryId) {
 
 // `matchScore` is the 0..1 value from CoTravellerMatch — persisted on the
 // session so the persona's reciprocal approval can read the same ground
-// truth instead of guessing at decision time. Optional for back-compat.
-export async function startChat(profileId, itineraryId, matchScore = null) {
+// truth instead of guessing at decision time. `retrievalScore` is the raw
+// Pinecone cosine for the same candidate; persisted so the live chat-signal
+// re-rank threads the same retrieval signal back into pinecone_passthrough
+// and the recomputed match_score doesn't deflate turn after turn. Both
+// optional for back-compat.
+export async function startChat(profileId, itineraryId, matchScore = null, retrievalScore = null) {
   return post('/api/chat/start', {
-    profile_id:   profileId,
-    itinerary_id: itineraryId,
-    match_score:  matchScore,
+    profile_id:      profileId,
+    itinerary_id:    itineraryId,
+    match_score:     matchScore,
+    retrieval_score: retrievalScore,
   })
 }
 
@@ -203,14 +254,25 @@ export async function approveItinerary(itineraryId) {
   return post(`/api/itineraries/${encodeURIComponent(itineraryId)}/approve`, {})
 }
 
-// Request changes on a draft itinerary. Backend runs one LLM regen + one
-// validate (single-pass), then returns the updated draft and the
-// validator verdict. 65s client-side timeout matches the backend's 55s
-// ceiling + ~10s network margin so a hung proxy surfaces as an error instead
-// of an infinite spinner.
-export async function reviseItinerary(itineraryId, feedback, targets = null) {
+// Stream a revision via SSE so the frontend can splice in revised days
+// the moment the LLM finishes each one — no more 60s spinner.
+//
+// Pass `handlers` like:
+//   {
+//     revising:           ({ scope, target_days, hint }) => {},
+//     day_revised:        ({ day_number, day })          => {},
+//     validating:         ()                              => {},
+//     revision_done:      (payload)                       => {},  // final
+//     revision_failed:    ({ message })                   => {},
+//     revision_persisted: ({ turn })                      => {},  // history written
+//   }
+//
+// Returns when the stream completes (or aborts on timeout). 120s client
+// timeout — generous since most revisions finish well under 60s and the
+// stream surfaces progress along the way.
+export async function streamReviseItinerary(itineraryId, feedback, targets = null, handlers = {}) {
   const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), 65_000)
+  const t = setTimeout(() => ctrl.abort(), 120_000)
   try {
     const res = await fetch(`/api/itineraries/${encodeURIComponent(itineraryId)}/revise`, {
       method: 'POST',
@@ -223,11 +285,39 @@ export async function reviseItinerary(itineraryId, feedback, targets = null) {
       _reportIfServerError(err, 'POST', '/api/itineraries/revise')
       throw err
     }
-    return res.json()
+
+    const reader  = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer    = ''
+    let eventName = null
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop()
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          eventName = line.slice(6).trim()
+        } else if (line.startsWith('data:')) {
+          const raw = line.slice(5).trim()
+          const handler = handlers[eventName]
+          if (handler) {
+            try { handler(raw ? JSON.parse(raw) : undefined) } catch { /* malformed */ }
+          }
+          eventName = null
+        } else if (line === '') {
+          eventName = null
+        }
+      }
+    }
   } catch (e) {
     if (e?.name === 'AbortError') {
-      throw new Error('Revision took too long — try a smaller change.')
+      handlers.revision_failed?.({ message: 'Revision took too long — try a smaller change.' })
+      return
     }
+    handlers.revision_failed?.({ message: e?.message || 'Revision failed' })
     throw e
   } finally {
     clearTimeout(t)
@@ -248,6 +338,13 @@ export async function listSavedItineraries() {
 
 export async function setCurrentItinerary(itineraryId) {
   return post('/api/itineraries/set-current', { itinerary_id: itineraryId })
+}
+
+// Hard-delete an itinerary AND its attached docs (shared itinerary twin,
+// companion prefs, journal entries). Chats are preserved server-side
+// since they're records of conversations with people, not the trip.
+export async function deleteItinerary(itineraryId) {
+  return _del(`/api/itineraries/${encodeURIComponent(itineraryId)}`)
 }
 
 // ── Journal ────────────────────────────────────────────────────────────────
@@ -422,7 +519,8 @@ export async function addComment(postId, text) {
 // ── Shared itinerary (collaborative negotiation) ───────────────────────────
 
 export async function getSharedItinerary(itineraryId) {
-  return get(`/api/shared/${encodeURIComponent(itineraryId)}`)
+  // /shared/{id} is a public share link — must work for anonymous visitors.
+  return getPublic(`/api/shared/${encodeURIComponent(itineraryId)}`)
 }
 
 export async function proposeChange(itineraryId, {
@@ -452,6 +550,10 @@ export async function withdrawChange(itineraryId, { changeId, version }) {
 
 export async function askPersonaSuggest(itineraryId, { version }) {
   return post(`/api/shared/${encodeURIComponent(itineraryId)}/persona-suggest`, { version })
+}
+
+export async function listMyShared() {
+  return get('/api/shared')
 }
 
 export async function finalizeShared(itineraryId, { version }) {

@@ -109,7 +109,8 @@ async def _pick_personas(n: int = 8) -> list:
     from shared.schemas import UserProfile
     try:
         viewer = UserProfile(user_id="__synthetic_agent__", display_name="traveller")
-        profiles = await search_cotravellers(viewer, top_k=40)
+        scored = await search_cotravellers(viewer, top_k=40)
+        profiles = [p for (p, _s) in scored]
         seeded = [p for p in profiles if getattr(p, "is_seed", False)]
         pool = seeded or profiles
         if pool:
@@ -331,7 +332,11 @@ async def _emit_outreach_chat(persona) -> bool:
         if days and getattr(days[0], "trip_date", None) and getattr(days[-1], "trip_date", None):
             window = f"{days[0].trip_date} → {days[-1].trip_date}"
 
-        opener = await generate_outreach_opener(persona, city, country, window)
+        target_name = (target.get("display_name") or "").strip()
+        opener = await generate_outreach_opener(
+            persona, city, country, window,
+            target_display_name=target_name,
+        )
         if not opener:
             continue
 

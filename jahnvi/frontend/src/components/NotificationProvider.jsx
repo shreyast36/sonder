@@ -43,6 +43,13 @@ export default function NotificationProvider({ children }) {
   const dismiss = useCallback(() => setBanner(null), [])
 
   const handleEvent = useCallback((data) => {
+    // Defensive gate: if the user signed out between when the WS event
+    // was sent and when this handler runs (small but real race window
+    // during sign-out), drop the event on the floor. Without this, a
+    // banner or inbox-refresh can fire on the landing / sign-in page
+    // and the signed-out user sees a notification for their previous
+    // session.
+    if (!auth.currentUser) return
     // Real-time fan-out for the new social surfaces. Each event type
     // gets re-dispatched as a window CustomEvent so the relevant page
     // (Dashboard's incoming-requests panel, Discover's Open Trips
@@ -204,6 +211,10 @@ export default function NotificationProvider({ children }) {
         wsRef.current?.close()
         wsRef.current = null
         swPushActiveRef.current = false
+        // Clear any banner still on screen — without this, a chat /
+        // trip / post toast that landed seconds before sign-out
+        // remains visible on the landing page until its TTL expires.
+        setBanner(null)
         dropPushSubscription()
       }
     })

@@ -1,4 +1,4 @@
-# Sonder — AI Co-Traveller Trip Planner
+# Sonder — An Inclusive Travel Platform Driven by AI Intelligence
 
 > Plan smarter. Find your perfect co-traveller. Build the trip together in real time.
 
@@ -13,14 +13,15 @@ Sonder takes a user from zero to a personalised, day-by-day itinerary, matches t
 **Full user journey:**
 
 1. **Persona reveal** — Enter trip basics (destination, dates, budget in any currency, must-haves) + five oblique persona questions. Get a descriptor, paragraph, bullets, emotional-tone subtitle, and inferred push/pull dimensions.
-2. **Itinerary generation** — Live-streamed, day-by-day, with "Why this?" RAG explanations per activity. Auto-saved to your trip history.
-3. **Trip vault** — Every saved trip on the dashboard. Switch the active one, open Journal entries, jump to the destination feed.
-4. **Co-traveller matching** — Curated top-3 matches, scored on a transparent salience-weighted feature pipeline. Synthetic personas (LLM-designed) fill the pool until real-user density is there.
-5. **Chat → mutual approval** — Real-time WebSocket chat with presence, typing, seen receipts, in-app banners, OS push. The persona's reciprocal approval is a coin flip weighted by the live match score (no hardcoded thresholds).
-6. **Shared itinerary negotiation** — Once approved, a `/shared/{id}` page where both sides propose, counter, and accept activity changes. Persona evaluations run off the request path so the UI feels instant; verdicts arrive over WebSocket. Optimistic locking on `version` prevents silent overwrites.
-7. **Sonder Pulse (Dashboard)** — A live two-column section showing **Open invitations** (trips other people opened for companions) and **The room** (a social feed of posts + threaded comments). Synthetic personas autonomously post and open trips every 15-50 seconds; real users join the room organically.
-8. **Join-to-trip flow** — Click any open invitation → a detail modal with persona snapshot, match-preview percentage, and a colour-coded fit label. Synthetic trips auto-resolve instantly using the same compatibility signal that drives matching; approved requests add you to the trip's co-traveller list.
-9. **Finalise** — Pair locks the itinerary in. Email it or download a PDF.
+2. **Itinerary generation** — Live-streamed, day-by-day, with "Why this?" RAG explanations per activity. Auto-saved to your trip history. View it in **Both / Desktop / Mobile** tabs — the bi-view shows the editorial desktop layout alongside the phone mockup, cross-view scroll sync keeps the active activity in frame as you switch.
+3. **Approve or revise** — Trip lands in `draft` state. Approve locks it in; revise streams a regenerated trip back day-by-day via SSE with a live diff toast (`Swapped Freehand Chicago → St. Jane Chicago`). Per-revise per-user ranker weight delta with reinforcement decay so repeated similar feedback doesn't oscillate the weights.
+4. **Trip vault** — Every saved trip on the dashboard. Switch the active one, open Journal entries, jump to the destination feed.
+5. **Co-traveller matching** — Curated top-3 matches, scored on a transparent salience-weighted feature pipeline. Synthetic personas (LLM-designed) fill the pool until real-user density is there.
+6. **Chat → mutual approval** — Real-time WebSocket chat with presence, typing, seen receipts, in-app banners, OS push. The persona's reciprocal approval is a coin flip weighted by the live match score (no hardcoded thresholds).
+7. **Shared itinerary negotiation** — Once approved, a `/shared/{id}` page where both sides propose, counter, and accept activity changes. Persona evaluations run off the request path so the UI feels instant; verdicts arrive over WebSocket. Optimistic locking on `version` prevents silent overwrites.
+8. **Sonder Pulse (Dashboard)** — A live two-column section showing **Open invitations** (trips other people opened for companions) and **The room** (a social feed of posts + threaded comments). Synthetic personas autonomously post and open trips every 15-50 seconds; real users join the room organically.
+9. **Join-to-trip flow** — Click any open invitation → a detail modal with persona snapshot, match-preview percentage, and a colour-coded fit label. Synthetic trips auto-resolve instantly using the same compatibility signal that drives matching; approved requests add you to the trip's co-traveller list.
+10. **Finalise** — Pair locks the itinerary in. Email it or download a PDF.
 
 ---
 
@@ -66,7 +67,7 @@ Both work with Pinecone and AI, but do different things:
 | AI — Voice | **ElevenLabs TTS** via `ali/voice/elevenlabs.py` — persona voice_id assigned via deterministic `profile_id` hash. Output MP3s cached in Firebase Storage keyed by `sha256(text + voice_id)` so re-plays are free |
 | Email | Resend / SendGrid / SES — `EMAIL_PROVIDER` |
 | Web Push | Service worker (`public/sw.js`) + VAPID + `pywebpush` |
-| Frontend hosting | Vercel |
+| Frontend hosting | Cloudflare Pages |
 | Backend hosting | Render |
 | Monitoring | Sentry (errors) + PostHog (analytics) |
 
@@ -171,21 +172,25 @@ POST /plan-trip
 
 ### LLM Architecture
 
-| Slot | Owner | Purpose | Config |
-|---|---|---|---|
-| **Small** | Ali | Chat topics, opener, persona label, quick edits, emotional-signature inference, "Why this?", **synthetic post / open-trip notes**, **proposal evaluator**, **chat reply** | `*_SMALL_MODEL` |
-| **Large** | Ali | Itinerary generation, complex refinement | `*_LARGE_MODEL` |
-| **Small Validator** | Mushahid | Verifies Small outputs + **async chat-reply validator (edit-in-place)** | `SMALL_VALIDATOR_*` |
-| **Large Validator** | Mushahid | Verifies full itineraries | `LARGE_VALIDATOR_*` |
-| **Image** | seed-time only | gpt-image-1 portraits | `OPENAI_API_KEY` |
+Concrete model assignments per slot. Each row lists the primary model in use today plus the fallback the router falls back to on provider failure. Provider per tier is env-driven (`*_PROVIDER`), and each provider client reads its own model id (`ANTHROPIC_SMALL_MODEL`, `OPENAI_SMALL_MODEL`, …) so cross-provider fallback can't 404.
 
-The router engine reads provider per tier from env; each provider client reads its own model name so cross-provider fallback can't 404.
+| Slot | Primary model | Fallback | What it does | Owner |
+|---|---|---|---|---|
+| **Small generation** | Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) | GPT-4o-mini | Chat topics, opener, persona label, quick edits, emotional-signature inference, "Why this?" RAG explanations, synthetic post / open-trip notes, proposal evaluator, chat reply | Ali |
+| **Large generation** | Claude Sonnet 4.6 (`claude-sonnet-4-6`) | GPT-4o | Itinerary generation, complex refinement, conflict resolution | Ali |
+| **Small validator** | NVIDIA NIM (`nvidia/llama-3.1-nemotron-nano-8b-v1`) | swappable via `SMALL_VALIDATOR_PROVIDER` | Structural / rule-shaped checks on Small outputs + async chat-reply validator (edit-in-place). Cross-provider critique principle — validator must be a different provider family than the generator it grades | Mushahid |
+| **Large validator** | OpenAI `gpt-5-mini` | swappable via `LARGE_VALIDATOR_PROVIDER` | Semantic critic on full itineraries (persona-fit, plausibility). Five surface-specific critic prompts: itinerary, persona-reveal, cotraveller-match, chat-reply, chat-reply-repair | Mushahid |
+| **Embeddings** | OpenAI `text-embedding-3-small` (1536-dim) | — | Shared vector space across all three Pinecone namespaces (destinations, activities, cotravellers) | Ali |
+| **Image** | OpenAI `gpt-image-1` | — | Synthetic persona portraits, seed-time only — never called in the live request path | seed scripts |
+| **Voice** | ElevenLabs `eleven_multilingual_v2` | — | Persona TTS; voice_id assigned by deterministic `profile_id` hash; MP3s cached in Firebase Storage | Ali |
+| **Emotion classifier** | GoEmotions 27-label cosine over anchor vectors (in-process, no API) | — | Weak-evidence tone signal on persona answers + chat | Mushahid |
 
 ### Real-Time Layer
 
 | Feature | Transport | Direction | Owner |
 |---|---|---|---|
 | Itinerary generation progress | SSE (`/api/plan-trip`) | Server → user | Mushahid |
+| Itinerary revision progress | SSE (`/api/itineraries/{id}/revise`) | Server → user | Mushahid |
 | Chat messages + typing + seen | WebSocket (`/api/ws/chat/{session_id}`) | Bidirectional | Shreyas |
 | Co-traveller presence (TTL) | WS broadcast + Firestore `presence/{uid}` | Bidirectional | Shreyas |
 | Chat-reply edit-in-place (validator repair) | WS `message_edited` event | Server → user | Mushahid + Shreyas |
@@ -236,6 +241,149 @@ POST /shared/{id}/finalize     locks the itinerary (no more changes)
 Optimistic locking: every write checks `client_version == current_version`. Mismatch returns HTTP 409 — the client re-fetches and lets the user retry.
 
 The frontend `/shared/{id}` page renders a live activity feed (filtered to entries created after the page mounted, so reload gives a clean slate) and a per-day card grid with inline Accept / Counter / Replace / Move actions.
+
+### Itinerary approval lifecycle & user-initiated revision
+
+The initial generation pipeline (`run_refinement_loop` inside `/plan-trip`) is a quality gate — the validator can request up to `MAX_REFINEMENT_ATTEMPTS` rewrites before the trip lands on screen. After that, every itinerary lands in **draft** state. The user explicitly approves or asks for changes before the trip leaves draft and becomes the basis of any shared-itinerary or co-traveller activity.
+
+```
+generated itinerary (draft)
+   │
+   ├── POST /api/itineraries/{id}/approve       → status flips to 'finalized'
+   │                                              409 if already finalized
+   │
+   └── POST /api/itineraries/{id}/revise        → SSE stream (see below)
+                                                  409 if already finalized
+```
+
+The approval state lives on `Itinerary.approval_status` (`"draft"` | `"finalized"`) with `finalized_at` timestamp and a full `revision_history` array — one entry per revise turn carrying `feedback`, `scope`, `target_days`, `dropped_titles`, `added_titles`, `boosted_features`, `boost_multiplier`, `validation_*`, `created_at`.
+
+#### `/revise` — single-pass, streaming, day-targeted
+
+The /revise route does **not** reuse `run_refinement_loop`. The orchestrator loop iterates up to 3× trying to satisfy the LLM critic — fine on first-time generation, but on a user-initiated revise it amplifies wall time 3× while the user watches a frozen modal. Instead:
+
+1. **Classify the feedback** via `mushahid/refinement/classifier.py` — emits `{scope: "small"|"large", target_day_numbers: [int], target_categories: [str], preserve: [str], summary: str}`. Falls back to scope=large on parse failure.
+2. **Build dedupe blacklist** — every title the user has rejected on prior turns is appended to the prompt as `DO NOT RE-INTRODUCE`. Stops the LLM offering "Freehand Chicago" again on turn 3.
+3. **Single regen pass** via `stream_single_revision` in `mushahid/refinement/loop.py`:
+   - If `target_day_numbers` is set → uses the **targeted-day prompt** (`build_targeted_day_refinement_prompt` in `ali/generation/prompts.py`) that asks for a bare JSON array of just the affected days. Output tokens drop from ~10k (whole itinerary) to ~1-2k (one day).
+   - Otherwise → full-itinerary refinement prompt.
+   - Always uses the **LARGE tier** (`complex_refinement`). Routing SMALL-scope edits to the small tier caused silent truncation — the small client caps `max_tokens` at 512-1024, the regen output is 3-8k, so the stream got cut, parse failed, and the user saw the approve gate again with zero changes. Fast path = day-targeting, not model-downgrading.
+4. **Single validate pass** — same gates as the orchestrator loop (deterministic `run_all_checks` first, then `validate_large_output` if those pass). **No retry**. If the validator flags a constraint violation, the verdict comes back in the response — the user already asked for the change; we don't burn another minute trying to outsmart them. They can revise again.
+5. **Per-user ranker weight delta** with **decay** — `apply_text_feedback` boosts features the feedback text implies (`"cheaper"` → `budget_ordinal_fit`, `activity_cost_fit`; `"less packed"` → `pace_ordinal_fit`, `pace_duration_fit`). Turn 1 = full strength; turn 2 = ½; turn 3 = ¼; floor at ⅛. Stops weights oscillating when the user keeps pushing back on similar things.
+6. **`itinerary_id` is preserved** across revisions — `parse_itinerary` mints a fresh UUID on every call, so we explicitly overwrite it post-parse. Without this, history append + current-trip pointer + dedupe blacklist would fragment across new IDs every turn.
+
+#### SSE event sequence
+
+`/itineraries/{id}/revise` returns `text/event-stream` so the frontend sees changes as they land, not 60s later:
+
+```
+revising            { scope, target_days, hint: "Rewriting day 3…" }
+day_revised         { day_number, day }   ← one per day as its JSON closes
+validating          {}
+revision_done       { itinerary, validation, dropped_titles, added_titles, scope }
+revision_persisted  { turn }              ← history + weight delta written
+revision_failed     { message }           ← terminal error path
+```
+
+`stream_refined_itinerary_by_day` and `stream_refined_days_by_day` in `ali/generation/itinerary_generator.py` reuse the same forward-only brace-counter pattern as `generate_itinerary_by_day` — the full-itinerary stream waits for the `"days"` key, the targeted-day stream parses bare-array form from the first `{`. If the streaming detector misses everything (markdown fences, key-order quirks), a whole-buffer `parse_itinerary` fallback runs so we never silently no-op.
+
+The route returns immediately via `StreamingResponse`. Post-stream bookkeeping (history append, weight delta, monitoring `capture`, persist with `approval_status="draft"`) happens **after** the user already has the visible diff, then emits `revision_persisted`. If anything in bookkeeping fails the user still has the regenerated itinerary on screen — the failure is logged but doesn't break the visible flow.
+
+#### Frontend consumption
+
+`streamReviseItinerary` in `jahnvi/frontend/src/lib/api.js` takes a `handlers` object and consumes the SSE stream via `fetch` + `ReadableStream` (same pattern as `useSSE` for `/plan-trip`). 120s client-side timeout via `AbortController` — generous since the stream surfaces progress along the way, so a hung backend doesn't disguise itself as a working one.
+
+`handleRevise` in `Itinerary.jsx`:
+- Closes the modal immediately — progress shows as a top-of-screen toast so the user can watch the days update live.
+- On `day_revised`: splices the revised day into local `itinerary.days[]` by `day_number` so the currently-visible day re-renders the moment the LLM finishes it.
+- On `revision_done`: builds a friendly diff line — "Swapped Freehand Chicago → St. Jane Chicago" when exactly 1 in / 1 out, otherwise "Updated N activities" with truncated lists.
+- On `revision_failed`: red toast + records the message on `approveError`.
+
+Toast component supports `progress` / `done` / `error` styles; progress sticks until the next event lands, done auto-dismisses in 6.5s, error in 5s.
+
+### Bi-view itinerary surface
+
+The Itinerary page now has a three-way view toggle — **Both / Desktop / Mobile** — at the top of `<main>`. Defaults adapt to viewport: `≥1180px → both`, `≥900px → desktop`, `<900px → mobile`. Stored in `localStorage['sonder:itinerary:view']`.
+
+- **Both** — desktop editorial layout takes the main column, the phone mockup is sticky-pinned on the right at ~`(320..420)/PHONE_W` scale. Both surfaces visible at once.
+- **Desktop** — desktop layout full-width, no phone.
+- **Mobile** — phone mockup centred, no desktop layout.
+
+**Cross-view focus state**: a single `activeActivityIdx` is held in the parent and passed to both `PhoneItinerary` and `DesktopItinerary`. Each view runs an `IntersectionObserver` on its activity rows / cards and pushes the most-visible index up to the parent as you scroll. On view switch, the active view's `scrollIntoView({block: 'center'})` lands the same activity in its viewport — so flipping Mobile ↔ Desktop preserves not just the active day but which specific activity you were looking at.
+
+**Mouse-scrollable phone**: the wheel router (`onWheel` on `window`) gets a hit-test against `phoneSurfaceRef` — if the cursor is over the phone bounds, wheel always scrolls the phone's internal `phoneScrollRef`, even when the page itself can scroll. Needed for the bi-view, where the desktop column is tall (so `main.scrollHeight > clientHeight`) and the old "only hijack when page can't scroll" rule meant you could never mouse-wheel the phone preview alongside it.
+
+### Cinematic destination reveal — the "OH SHIT THIS IS HAPPENING" moment
+
+The approve button on `/itinerary` is labelled **"I'm happy with the proposed itinerary and approve!"** (sentence case, lower letter-spacing — the longer copy reads naturally instead of shouting). Tapping it flips `approval_status` to `finalized`, saves the trip as current, and routes to a dedicated reveal screen at `/trip-locked-in/:itineraryId` before the dashboard.
+
+The reveal is choreographed as a trailer cut, not a fade-in. From t=0 over ~7s:
+
+| Time | What lands |
+|---|---|
+| 0.00s | Gold radial flash (650ms stinger) + Ken-Burns photo montage starts cycling, gold-dust particles drift top→bottom |
+| 0.15s | **LOCKED IN** tracks out — letterSpacing animates 0.20em → 0.42em |
+| 0.60s | COUNTRY drops in (small-caps, tracked) |
+| 0.95s | **CITY slams in** at scale 1.55 + 16px blur, lands at scale 1 / blur 0. Cormorant Garamond italic at ~152px with a deep drop-shadow + gold halo |
+| 1.70s | Gold hairline ornament draws across underneath the city |
+| 1.90s | *"You're going."* affirmation in italic |
+| 2.40s | Date stamp clicks in with a brief x-shake — reads as a stamped credit |
+| 3.00s+ | Day pills cascade in left-to-right with gold borders + halo, 0.08s stagger per pill |
+| 4.20s | Continue button fades in |
+| 7.20s | Reveal exits with `scale: 1.08` zoom + opacity-out (camera pulling back); prompt screen slides in |
+
+**Ken-Burns montage** rotates through up to 5 destination photos every 1.2s during the reveal phase, crossfading with a 1.5s zoom-out (1.18 → 1.04). After the reveal exits, the background pins on the first photo so the prompt reads calmly. Photos come from the new `/api/destination-photos` (Pixabay) with a single-photo fallback through the existing Wikipedia lookup if Pixabay is empty. `useDestinationPhotos` caches the list per (city, country, count) in localStorage for 14 days so refreshes hit the cinematic state instantly.
+
+**Co-traveller prompt** after the reveal asks *"Want to find someone to travel with?"* — Yes → `/companions/:id` (existing intake), No → save and `/dashboard`. The whole `/trip-locked-in` page is a single component (`TripLockedIn.jsx`) with three phases: `reveal` → `prompt` → `going`.
+
+### Destination photos — map rejection + Pixabay fallback
+
+Wikipedia's REST API returns the infobox image for the destination, which is frequently a map / location diagram / coat of arms (especially for regions like "Patagonia" or country-level queries). `useDestinationPhoto` rejects map-shaped results before accepting them — any `.svg` (almost always maps, flags, or diagrams) plus URLs containing `map`, `karte`, `location`, `locator`, `satellite`, `topographic`, `orthographic`, `globe`, `flag_of`, `coat_of_arms`, `seal_of`. When Wikipedia yields nothing usable, falls back to `/api/destination-photo` which proxies Pixabay server-side (API key stays out of the bundle). Cache key bumped to `sonder_dest_photos_v2` so users with cached maps refetch fresh on first load.
+
+`/api/destination-photos` is the multi-photo variant used by the cinematic reveal — returns up to 12 URLs ranked by popularity, country-less retry on empty result so e.g. "Patagonia Argentina" → "Patagonia" still surfaces shots.
+
+### Persona-first CTA labels
+
+The button labels follow the actual next step instead of the eventual destination:
+- TripPreferences final step: **"Determine your persona"** (next stop is `/persona-reveal`, not the itinerary).
+- PersonaReveal CTA: **"Plan your trip"** (the button that actually fires generation).
+
+### Solo cotraveller matching — same-gender hard filter
+
+Solo travellers only match with personas of the same gender. Safety default for cold-strangers matching — the matching surface is showing you strangers you might travel with, not a dating app. Couples are already gender-locked at the seed level (male+female pairs by design); family / friends matching is disabled. So the filter only ever acts on solo.
+
+**Schema**:
+- `TripConstraints.gender: Optional[str]` — `"male"` | `"female"`, only populated for solo users.
+- `CoTravellerProfile.gender: Optional[str]` — sidecar metadata read from Pinecone.
+
+**Pipeline**:
+- `seed_cotravellers.build_metadata` writes `gender` into Pinecone metadata going forward. The seed matrix is doubled (`PERSONAS_PER_SLOT = 2`) for a total of **192 single-traveller personas** (~95 per gender) so the cosine retrieval has enough surface area within each gender cell — without doubling, top-3 within a gender averaged ~43% match scores and the `p_approve = match_score` formula was driving ~57% deny rates on the persona's reciprocal decision. With the bigger pool, top-3 scores land 10-20 points higher.
+- `search_cotravellers` reads `md.get("gender")` and populates the schema field.
+- `/cotraveller` hard-filters candidates to the same gender when `style=solo` AND the user has set a gender. Falls open to mixed matching if zero candidates carry gender metadata (pre-gender seeded data) so older index state doesn't dead-end users — once re-seeded the fail-open stops firing on its own.
+- `/cotraveller/regenerate` mirrors the filter and over-fetches `top_n=24` for solo+gender (was 12) so the top-3 contract still holds with both style AND gender applied.
+- `scripts/backfill_cotraveller_gender.py` is a one-shot Pinecone metadata patcher — rebuilds the deterministic diversity matrix and calls `index.update(set_metadata={"gender": ...})` per profile_id. Fast, free, no LLM regeneration. Already run against prod (96 / 96 patched).
+
+**Backfill for legacy profiles**: existing user profiles predate the gender field. Two entry points prompt the user to set it without forcing a full re-do of `/preferences`:
+- **Companions intake** — if `who_travelling_with === 'solo'` AND `constraints.gender` is missing, the page forces the intake step (even when prefs already exist) and renders a "Your gender" picker above the standard 3 questions. Submit calls `PATCH /api/users/profile/gender` before saving prefs so the cotraveller fetch right after sees gender on the profile.
+- **Dashboard right column** — one-shot `getUserProfile` decides if the matches strip should suppress; when needed, an amber-bordered "One quick thing / Your gender" picker renders in place of the matches. Picking either button PATCHes the profile and re-fetches matches inline.
+
+`PATCH /api/users/profile/gender` uses Firestore's dotted-path nested merge (`{"constraints.gender": "male"}`) so it doesn't clobber the rest of constraints. Pattern-validated server-side to `^(male|female)$`.
+
+### Trip vault — delete cascade + empty-state inspiration
+
+**Deleting a trip cascades to everything anchored to it.** `delete_itinerary_and_related` removes the itinerary doc, the shared-itinerary twin (if any), companion_prefs, every journal entry tagged to it, AND every chat_session anchored to it (paging through each session's messages subcollection in 200-doc batches before deleting the session doc). Cotraveller matches are unique per trip — the conversation context (itinerary digest, persona-weights snapshot, match score, persona voice anchored on this destination) goes with the trip. Caller also purges the user_profile's `saved_itinerary_ids` + `current_itinerary_id` pointer if it pointed at the deleted trip.
+
+Returns a breakdown counter — `{itinerary, shared_itinerary, companion_prefs, journal_entries, chat_sessions, chat_messages}` — so the route can log what was removed.
+
+**Empty-state**: the trip vault section on the dashboard now only renders when `pastTrips.length > 0`. Deleting your last trip cleanly removes the whole section instead of leaving a decorated empty card.
+
+**Right-column empty state**: cotraveller matches are scoped to a specific trip — surfacing them on the dashboard before any trip exists is dishonest. The right column branches on `pastTrips.length`: trips → "Curated for you" as before; zero trips → `EmptyStateInspiration` with four destination shortcuts (Lisbon, Kyoto, Reykjavík, Mexico City) that pre-fill `/preferences` via `sonder_seed_destination` in sessionStorage. Bottom CTA "Plan something different" for users who want to start blank.
+
+### TripPreferences — friction trimmed
+
+- Nationality input removed. Wasn't used downstream for anything substantive on the user side and was a friction step on the way to a trip.
+- Pace no longer defaults to `'moderate'`. A pre-selected pace colours every downstream recommendation, and almost everyone accepts the default without thinking. Step 3 (styles) now requires both a style chip and a pace pick before advancing.
+- Solo travellers see an inline "Your gender" picker at step 5 (couples + family + friends skip it). Required to advance.
 
 ### Chat latency engineering (<5s target)
 
@@ -315,12 +463,23 @@ This pattern lets DashboardPulse / SharedItinerary / Discover panels each attach
 
 ### Sonder Pulse (Dashboard discovery surface)
 
-The former standalone `/discover` page is folded into Dashboard as a full-width section under the trip grid. Two columns:
+The former standalone `/discover` page is folded into Dashboard as a full-width section under the trip grid. **The Pulse surface is now purely social** — Instagram-style stories at the top + a community feed below. Open trips still surface via the synthetic-agents loop and the dashboard's LiveTravellersStrip, but the Pulse component itself dropped the "Open invitations" strip in favour of a stories register that maps cleanly to user expectations (you tap an avatar → you see a moment, you don't tap an avatar → you negotiate a trip).
 
-- **Open invitations** — `listOpenTrips(24)` + `discover_trip_open` / `_close` WS push. Owner's own trips show with a "Your trip · live" badge.
-- **The room** — social feed with composer + threaded comments. `listFeed(20)` + `discover_post_new` WS push.
+**Stories (top strip)** — derived from posts that carry an `image_url`, deduped to one slide per author (newest wins, IG semantics). `StoryAvatar` renders a 70px circular avatar with a gold→violet→rose conic gradient ring; the ring flattens to a muted gradient after the viewer has opened that story (`viewedStories` Set tracked per session). Tap → `StoryViewer` fullscreen modal:
 
-Both lists are **hard-capped at `PULSE_MAX = 10`** at every entry point (poll, WS push, optimistic composer insert) so a long session can't grow the arrays unbounded.
+- 9:16 frame with the post's image full-bleed
+- Segmented progress bars at the top, one per story
+- Header: avatar + author name + `timeAgo`
+- Caption: serif italic body text on a bottom scrim
+- Auto-advances every 5.5s (`STORY_MS = 5500`)
+- Tap left third → previous; tap right two-thirds → next (or close if last)
+- `Escape` / `←` / `→` keyboard navigation
+- Pointer-down pauses the timer (long-press to read)
+- Backdrop click / `X` button closes
+
+**The room (feed)** — social posts with composer + threaded comments. `listFeed(20)` + `discover_post_new` WS push. 2-column post grid on desktop, collapses to 1 column on narrow.
+
+Both surfaces are **hard-capped at `PULSE_MAX = 10`** at every entry point (poll, WS push, optimistic composer insert) so a long session can't grow the arrays unbounded.
 
 A **LiveTravellersStrip** in the trip-vault header subscribes to the same events and pops an avatar bubble for each new action — violet for trips, gold for posts. Hover for `name · city · action`, click to smooth-scroll to Pulse.
 
@@ -365,6 +524,9 @@ POST /discover/trips/{id}/join-request
 | `Itinerary.is_open_to_join` + `Itinerary.join_capacity` + `Itinerary.co_traveller_ids` | `ali/schemas/trip.py` | Open-to-companions flag and confirmed-companion list; capacity independent of how many are confirmed |
 | `is_synthetic`, `synthetic_owner`, `open_join_note` on itinerary doc | raw Firestore merge | Not in Pydantic schema (they sidecar the model) — flags synthetic-agent-created trips and stores the persona snapshot for instant-resolve scoring |
 | `ChatSession.match_score`, `ChatSession.live_weights` | `jahnvi/schemas/chat.py` | Persisted match score (live-updated by chat signal scanner) + per-session weight overlay |
+| `TripConstraints.gender` | `jahnvi/schemas/user.py` | Optional `"male" \| "female"` — only populated for solo travellers. Drives the same-gender cotraveller hard filter. |
+| `CoTravellerProfile.gender` | `shreyas/schemas/cotraveller.py` | Optional sidecar field on Pinecone metadata for seeded personas. Read by `search_cotravellers` from `md.get("gender")`. |
+| `Itinerary.approval_status`, `finalized_at`, `revision_history` | `ali/schemas/trip.py` | `"draft" \| "finalized"` lifecycle + per-turn revision audit trail (scope / targets / dropped+added titles / validator verdict / ranker weight delta). |
 
 ### Frontend hooks + helpers
 
@@ -408,6 +570,19 @@ POST /discover/trips/{id}/join-request
 
 **Frontend `<InboxStrip>`** lives in the dashboard right column above matches. Polls every 25s and subscribes to a `sonder:inbox:refresh` window event that `NotificationProvider` dispatches on every `chat_notification`, so new sessions appear instantly without waiting for the poll.
 
+### Persona voice — opener format + typography hygiene
+
+**Every persona-initiated message starts with `Hey {first_name}!`** — capital H, no comma, exclamation after the name, single space, then the question. Two codepaths enforce this identically:
+
+- `generate_persona_opener` in `ali/generation/topics.py` — the opener when a user starts a chat with a curated match.
+- `generate_outreach_opener` in `ali/generation/synthetic_social.py` — synthetic personas cold-opening a chat with a real user via the background agents loop.
+
+Both system prompts have a mandatory "Greeting" block spelling out the exact shape with right/wrong examples; both have a post-hoc normaliser that catches drift across `Hey! Name,`, `Hey Name,`, `Hi Name!`, bare `hey,` / `hi,` / `hello,`, and re-prefixes if the LLM strayed. `list_outreach_eligible_users` ships `display_name` on each target dict so the outreach path can address the real user by name.
+
+**Typography hygiene** — `_clean_message` (shared by every persona-voiced message: chat reply, opener, outreach opener) collapses space-before-punctuation (`"versions , way"` → `"versions, way"`) and dedupes double-punct artifacts that occasionally bleed through em-dash replacement. Universal cleanup, no LLM compliance needed.
+
+The chat-reply system prompt also gains a **"Typography + grammar (casual ≠ sloppy)"** block forbidding space-before-punctuation, singular contractions with plural subjects (`"there's a few"` → `"there are a few"`), and double commas / periods. Framed as "casual doesn't mean broken — a real person texting still hits agreement and spacing".
+
 ### Synthetic outreach chats — solo / couple only
 
 Beyond posts + open trips, synthetic personas now spontaneously start chat sessions with real users. Cadence: 25% of synthetic-agent cycles. Filters:
@@ -435,8 +610,11 @@ Every record carries `is_seed: True` for "Sonder Curated" disclosure. Seed cost 
 
 | Script | Pool | Cohort | Matrix |
 |---|---|---|---|
-| `scripts/seed_cotravellers.py` | Singles (`travel_style="solo"` default) | 96 personas | 16 cities × 3 ages × 2 genders |
+| `scripts/seed_cotravellers.py` | Singles (`travel_style="solo"` default) | **192 personas** | 16 cities × 3 ages × 2 genders × **2 per cell** (`PERSONAS_PER_SLOT`) |
 | `scripts/seed_couple_cotravellers.py` | Couples (`travel_style="couple"` hard-locked) | 18 couples | 6 cities × 3 ages, primary-gender (chatter) alternates |
+| `scripts/backfill_cotraveller_gender.py` | Metadata-only patcher | All existing | Rebuilds the deterministic diversity matrix and calls `index.update(set_metadata={"gender": ...})` per profile_id. Use when bumping schema fields that don't require regenerating LLM content / portraits. |
+
+`PERSONAS_PER_SLOT` iteration is the OUTERMOST loop in `build_diversity_matrix` so existing 96 profile_ids (i = 0..95) stay stable when the count is bumped — a `--resume` run skips them and only generates the new slots. The pool was doubled because the same-gender hard filter halves the effective candidate pool; with the original 96 (~48 per gender) top-3 within each gender landed at ~43% match scores, driving up the reciprocal-deny rate via `p_approve = match_score`. With 192 personas (~95 per gender), top-3 scores land 10-20 points higher.
 
 Couples are male+female pairs by design. The couple LLM-A system prompt mirrors the singles prompt structure verbatim (Rules block, full `visual_cue` ban list including `golden hour` / `cherry blossoms` / `iconic landmark` / engagement framing, `NEVER` block) with couple-specific layering: `display_name` = "X & Y", `voice_anchor` in WE voice, `quirks` describe the COUPLE'S DYNAMIC ("she plans, he wings it"), `appearance_descriptor` in PROTAGONIST + PARTNER order. Portrait prompt prepends a couple-specific header (two people in the frame, candid not engagement-shoot). Profile IDs use `ctcp_` prefix so re-runs don't collide with singles. Avatars upload to a separate Firebase Storage folder (`couples/{pid}.png` vs `cotraveller_avatars/{pid}.png`).
 
@@ -472,8 +650,15 @@ python -m scripts.generate_vapid_keys
 # Seed Pinecone destinations + activities
 python -m scripts.seed_pinecone --namespace all
 
-# Seed synthetic co-travellers (LLM personas + gpt-image-1 portraits)
-python -m scripts.seed_cotravellers --count 50
+# Seed synthetic co-travellers (LLM personas + gpt-image-1 portraits).
+# Diversity matrix builds 192 personas (16 cities × 3 ages × 2 genders ×
+# 2 per cell). Use --resume on subsequent runs to only generate slots
+# that don't already have a Pinecone record.
+python -m scripts.seed_cotravellers --resume
+
+# Backfill schema-only metadata changes (e.g. after adding a new field
+# to build_metadata) without paying LLM/image cost again.
+python -m scripts.backfill_cotraveller_gender
 
 uvicorn mushahid.main:app --reload --port 8000
 ```
@@ -500,6 +685,7 @@ npm run dev
 |---|---|---|
 | `GET` | `/api/users/profile` | `UserProfile` — 404 if not yet created |
 | `POST` | `/api/users/profile` | Creates profile on first login |
+| `PATCH` | `/api/users/profile/gender` | Backfill the solo-only `constraints.gender` field for profiles that predate it. Body: `{"gender": "male"\|"female"}`. Dotted-path nested merge so the rest of constraints is untouched. Drives the same-gender cotraveller filter. |
 | `POST` | `/api/auth/password-reset` (public) | Silently succeeds (prevents account enumeration) |
 
 ### Trip planning
@@ -517,14 +703,17 @@ npm run dev
 | `GET`  | `/api/itineraries/list` | All saved trips, newest first |
 | `POST` | `/api/itineraries/{id}/save` | Append to history + mark current |
 | `POST` | `/api/itineraries/set-current` | Switch hero trip |
+| `DELETE` | `/api/itineraries/{id}` | Cascade-delete the itinerary AND every doc anchored to it: shared-itinerary twin, companion_prefs, journal entries, chat_sessions + their messages subcollection. Also purges the user_profile's saved_itinerary_ids + current_itinerary_id pointer. Returns `{removed: {...counts...}}`. |
+| `POST` | `/api/itineraries/{id}/approve` | Flip `approval_status` → `"finalized"`. 409 if already finalized. Triggers downstream lock — no more revises after this. |
+| `POST` | `/api/itineraries/{id}/revise` | **SSE stream** — `revising` → `day_revised`* → `validating` → `revision_done` → `revision_persisted`. Body: `{feedback: str, targets?: ActivityFeedback[]}`. 409 if already finalized. 502 on regen failure. |
 | `GET`  | `/api/itineraries/{id}/companion-prefs` | Per-trip companion intake answers |
 | `POST` | `/api/itineraries/{id}/companion-prefs` | Persist intake answers |
 
 ### Co-traveller matching + chat
 | Method | Route | Returns |
 |---|---|---|
-| `POST` | `/api/cotraveller` | `list[CoTravellerMatch]` (top 3) |
-| `POST` | `/api/cotraveller/regenerate` | Fresh matches, excludes prior profiles |
+| `POST` | `/api/cotraveller` | `list[CoTravellerMatch]` (top 3). Hard-filters by `who_travelling_with` (couple↔couple, solo↔solo) and by `gender` for solo travellers (same-gender safety default). Fail-open to mixed when no candidate carries gender metadata. |
+| `POST` | `/api/cotraveller/regenerate` | Fresh matches, excludes prior profiles. Same filters as `/cotraveller`; over-fetches `top_n=24` for solo+gender so the top-3 contract still holds after filtering. |
 | `GET`  | `/api/cotraveller/profile/{profile_id}` | Single `CoTravellerMatch` |
 | `POST` | `/api/chat/start` | `ChatStartResponse` (session + opener + 5 topics) |
 | `GET`  | `/api/chat/session/{session_id}` | Session metadata |
@@ -574,6 +763,12 @@ npm run dev
 | `POST` | `/api/push/subscribe` | Upserts the browser's `PushSubscription` |
 | `POST` | `/api/push/unsubscribe` | Drops a subscription by endpoint |
 | `POST` | `/api/push/test` | Diagnostic: fires a test push to the caller's own browser. Returns `{vapid_configured, subscription_count, send_attempted, send_error}` so you can pinpoint which layer is broken when desktop pushes aren't arriving |
+
+### Destination photos
+| Method | Route | Returns |
+|---|---|---|
+| `GET`  | `/api/destination-photo?city=&country=` (public) | Pixabay fallback when Wikipedia returns a map / coat-of-arms. Returns `{url, query}` or `{url: null}`. Used by the itinerary hero. |
+| `GET`  | `/api/destination-photos?city=&country=&count=N` (public) | Up to N distinct large image URLs ranked by Pixabay popularity. Used by the cinematic `/trip-locked-in` Ken-Burns montage. Country-less retry on empty result so e.g. "Patagonia Argentina" → "Patagonia" still surfaces shots. |
 
 ### Voice (TTS)
 | Method | Route | Returns |
@@ -846,7 +1041,248 @@ A sweep across every code file surfaced a long tail of load-bearing decisions wo
 
 **`mushahid/routes/itineraries.py`** — **stale pointer recovery**: if `profile.current_itinerary_id` points to a deleted itinerary, `/current` returns `{itinerary: null}` instead of 404 so the dashboard doesn't break. Save is dedup'd via a `first_save` flag — re-saving the same `id` doesn't duplicate the history.
 
-**`mushahid/routes/cotraveller.py`** — companion intake answers from `TravellerCompatibility` (rhythm / food_priority / recharge / social_energy / mood_handling / budget_style / novelty / documentation) are converted to a natural-language paragraph by `_extra_text_from_prefs()` and **appended to the user's persona text before embedding**, so retrieval skews toward compatible matches without changing the schema.
+**`mushahid/routes/cotraveller.py`** — companion intake answers from `TravellerCompatibility` (rhythm / food_priority / recharge / social_energy / mood_handling / budget_style / novelty / documentation) are converted to a natural-language paragraph by `_extra_text_from_prefs()` and **appended to the user's persona text before embedding**, so retrieval skews toward compatible matches without changing the schema. Two hard filters layered on top of the cosine retrieval: travel_style (couple↔couple, solo↔solo) and gender (solo same-gender only). Both fail open when zero candidates carry the field to avoid dead-ending users on stale Pinecone state.
+
+**`mushahid/routes/destination.py`** — public lookup proxying Pixabay so the API key stays out of the frontend bundle. Two routes: `/destination-photo` (single) for the itinerary hero fallback when Wikipedia returns a map, `/destination-photos` (multi) for the cinematic `/trip-locked-in` Ken-Burns montage. Country-less retry on empty result handles cases where the broader query (`"Patagonia"`) has hits but the specific one (`"Patagonia Argentina"`) doesn't.
+
+**`mushahid/routes/users.py :: patch_profile_gender`** — dotted-path Firestore update (`{"constraints.gender": "male"}`) so backfilling one nested field doesn't clobber the rest of constraints. Pattern-validated to `^(male|female)$` server-side. Lives here rather than under `/cotraveller` because gender is a profile attribute, not a per-trip preference.
+
+**`mushahid/realtime/firestore.py :: delete_itinerary_and_related`** — cascade delete with a count breakdown. Important detail: chat messages live in a Firestore subcollection (`chat_sessions/{sid}/messages`) which the parent's delete doesn't recursively remove. We page through messages in 200-doc batches (Firestore's max batch is 500 but smaller batches survive rate limits better), delete each, then delete the session doc. LOCAL_MODE walks `_store` for `chat:{sid}` entries with matching `itinerary_id`.
+
+**`shared/pixabay.py`** — `fetch_image_url` (single) and `fetch_image_urls(query, count)` (multi). In-process cache keyed by `(query, count)` so the destination route can ask for a montage without re-paying Pixabay quota on a refresh. `per_page` clamps to `[3, 20]` per the Pixabay API.
+
+**`scripts/seed_cotravellers.py`** — diversity matrix builder with `PERSONAS_PER_SLOT = 2`. Iteration count is the **outermost** loop in `build_diversity_matrix` so existing 96 profile_ids stay stable when the count is bumped — `--resume` skips them, only NEW slots get LLM-generated. `build_metadata` writes the persona's `gender` into Pinecone (was previously only on `log_preview`). Required for the same-gender filter to function on freshly seeded data.
+
+**`scripts/backfill_cotraveller_gender.py`** — one-shot metadata patcher. Rebuilds the deterministic diversity matrix and calls `index.update(set_metadata={"gender": slot["gender"]}, namespace="cotravellers")` per profile_id. Fast, free, no LLM regeneration. Pattern for any future schema-only field addition: bump the seed script's `build_metadata`, then write a sibling backfill script with the same matrix traversal.
+
+**`ali/generation/topics.py :: _clean_message`** — universal persona-message normalizer. Strips fences, removes quote wrappers, collapses whitespace, replaces em-dashes with commas, **collapses space-before-punctuation** (`"versions , way"` → `"versions, way"`), and dedupes double-punct artifacts. Called by every persona-voiced surface (chat reply, opener, outreach opener, icebreaker) so typography fixes are universal — no LLM compliance needed.
+
+**`ali/generation/topics.py :: generate_persona_opener`** and **`ali/generation/synthetic_social.py :: generate_outreach_opener`** — two opener codepaths that share the same `Hey {first_name}!` greeting contract. Both system prompts have a mandatory "Greeting" block; both post-hoc enforce the prefix against a wide bad_start list covering drifted shapes (`Hey! Name,`, `Hi Name!`, bare `hey,` / `hi,`). The outreach path receives `target_display_name` from `list_outreach_eligible_users` which now ships `display_name` on each target dict.
+
+**`jahnvi/frontend/src/pages/TripLockedIn.jsx`** — `/trip-locked-in/:itineraryId`. Three phases (`reveal` → `prompt` → `going`) gated on `getCurrentItinerary` and a 7.2s auto-advance. Reveal renders the Ken-Burns montage + gold stinger + cinematic vignette + GoldDust particle drift + typographic slam-in choreography. After exit (scale 1.08 + fade), prompt asks the co-traveller question; Yes routes to `/companions/:id`, No saves + `/dashboard`. The whole sequence runs on Framer Motion + a single `photoIdx` state cycling every 1.2s.
+
+**`jahnvi/frontend/src/lib/destinationPhoto.js`** — Wikipedia REST + Pixabay multi-photo. `useDestinationPhoto` rejects map-shaped Wikipedia results via URL substring + `.svg` check, falls through to `/api/destination-photo` when nothing usable comes back. `useDestinationPhotos` hits `/api/destination-photos` for the multi-photo reveal. Both cache in localStorage with `v2` keys so users with cached maps refetch fresh.
+
+**`jahnvi/frontend/src/components/InboxLayout.jsx`** — full /inbox page implementation. Left sidebar lists message categories (All, Matched, Pending, Quiet) with unread counts per category; right pane is the message list filtered to the selected category. Polls every 25s and listens for `sonder:inbox:refresh` window events from NotificationProvider so new sessions land instantly. Persists last-active category to localStorage so a refresh restores the same view.
+
+**`jahnvi/frontend/src/components/InboxStrip.jsx`** — compact dashboard-right-column variant of the inbox. Shows the top N recent sessions with avatar + last-message preview + approval-status pill. Used inside the matches column on the dashboard; the full /inbox page uses InboxLayout instead.
+
+**`jahnvi/frontend/src/components/NavTabs.jsx`** — top-of-page nav between **Your trip** (Dashboard), **Inbox**, and **Sonder Pulse**. Active tab pulses a small accent dot so the rhythm matches the rest of the page eyebrows.
+
+**`jahnvi/frontend/src/components/BottomNav.jsx`** — mobile bottom navigation bar. Two tab sets (`DASHBOARD_TABS` + `ITINERARY_TABS`) so the active surface determines the icons shown — Home / Trips / Matches / Profile on dashboard, Map / Activities / Budget / Notes on an itinerary page.
+
+**`jahnvi/frontend/src/components/MatchCard.jsx`** — co-traveller card with circular avatar, name + location, two-tag chip row (style + budget), and a `MatchRing` SVG percentage ring (gold gradient stroke around an SVG circle, dasharray drives the fill). Renders the `SynthBadge` next to seeded-persona names.
+
+**`jahnvi/frontend/src/components/SynthBadge.jsx`** — "Sonder Curated" disclosure pill. Renders nothing when `is_seed === false`; when true, it's a small violet chip with a sparkle icon. Honest disclosure that the profile is synthetic without being so loud it kills suspension of disbelief.
+
+**`jahnvi/frontend/src/components/ChatBubble.jsx` + `ChatRoom.jsx`** — chat UI primitives. Bubble handles its own seen indicator + timestamp; ChatRoom is the full /chat/:sessionId surface (header with persona name + voice-play button, ChatBubble list with bottom-scroll-pinning, composer with typing indicator, persistent presence dot). Voice-play hits `/api/voice/synthesize` and streams the cached MP3.
+
+**`jahnvi/frontend/src/components/WordLimitTextarea.jsx`** — controlled textarea that counts words against a configurable `LIMIT` and orange-tints the counter when over. Used by TravellerCompatibility's free-text fields where short, specific answers are higher signal than long ones.
+
+**`jahnvi/frontend/src/components/Toast.jsx`** — global toast provider mounted at App root. Exposes `useToast()` with `success / info / error` helpers. Toasts auto-dismiss; ToastProvider stacks them at the bottom-right.
+
+**`jahnvi/frontend/src/components/LuxCard.jsx`** — base card primitive with the gilt-rim gradient border + deep drop-shadow + faint inner highlight. Used as the wrapper for MatchCard and any other "object-on-velvet" surface so the print register stays consistent.
+
+**`jahnvi/frontend/src/components/AppBackground.jsx`** — accent-driven ambient backdrop. Takes an `accent` hex, parses RGB, paints a radial gradient + paper-grain overlay so every page has the same warm-velvet base with a per-page colour tint (gold for trip surfaces, orange for persona, sky for shared, etc).
+
+**`jahnvi/frontend/src/pages/Pulse.jsx`** — `/pulse` page. Renders the existing `DashboardPulse` component verbatim under its own URL + nav. Lifted out of the dashboard so the trip view stays focused on the trip.
+
+**`jahnvi/frontend/src/pages/Inbox.jsx`** — `/inbox` page. Thin wrapper around `<InboxLayout>` with the same NavTabs header.
+
+**`jahnvi/frontend/src/pages/Notes.jsx`** — per-trip private notes. Auto-saves as the user types (debounced); not the same surface as Journal (which is per-day + optionally public).
+
+**`jahnvi/frontend/src/pages/Journal.jsx`** — `/journal/:itineraryId`. Day-indexed journal entries. Each entry can be `is_public` (surfaces on `/destination/:city` for future planners) or private. Soft-delete via `DELETE /api/journal/{entry_id}` flips a flag rather than removing the row so anyone who'd already read it doesn't see "this post was deleted" mid-scroll.
+
+**`jahnvi/frontend/src/pages/Destination.jsx`** — `/destination/:city?country=X`. Aggregated view of public journal entries for a city. Pulls via `/api/destinations/{city}/journal` and groups them. Used by the dashboard trip vault as the "where can I learn more about this city" deep-link.
+
+**`jahnvi/frontend/src/pages/TravellerCompatibility.jsx`** — `/compatibility` standalone questionnaire. 10 free-text questions (trust behaviour, when plans fall apart, comfortable silence, late-night conversations, etc.) feed `CompatibilityAnswers` which embeds to `compatibility_embedding`. Separate from the persona embedding so the cotraveller matching surface can use both signals without conflating them.
+
+**`mushahid/routes/auth.py`** — public auth surface (no Bearer token required). `/api/auth/password-reset` always returns success regardless of whether the email exists, to prevent account enumeration. Rate-limited via slowapi; failures are silently swallowed.
+
+**`mushahid/routes/update_trip.py`** — legacy free-text + per-activity-feedback endpoint that pre-dates the streaming `/revise` flow. Still routes through `run_refinement_loop` (orchestrator quality loop), so it's slower than `/revise` but does the same job. Kept around for backward compatibility; new code should call `/revise` instead.
+
+**`mushahid/routes/journal.py`** — journal CRUD + public destination feed. Ownership is enforced against the itinerary's `user_id` (not the journal entry's own `user_id` field) so a leaked entry_id can't be edited by someone who happens to have it. Soft-delete (flips `deleted_at`) rather than hard so destination feeds don't show "this post was deleted" rows that a future planner has to scroll past.
+
+**`shreyas/cotraveller/approval.py :: approve_match`** — records a user's approval in `chat_sessions/{session_id}`. When BOTH `user_decision` and `profile_decision` are `approved`, kicks off `create_shared_itinerary()` and fires `notify_co_traveller_approved()`. Mutual-approval transition is idempotent — the second-side call moves the state cleanly without re-creating the shared itinerary if it already exists.
+
+**`shreyas/cotraveller/shared_itinerary.py :: create_shared_itinerary`** — clones the chosen itinerary doc into a new `shared_itineraries/{id}` record with `version=0`, `participants=[user_a, user_b]`, empty `proposals` log. The clone is intentional: subsequent edits on the shared surface mustn't mutate the original itinerary, because the user can revoke the pair (denial flow) and reuse their original draft.
+
+**`mushahid/refinement/classifier.py`** — small-LLM JSON classifier that scopes user revise feedback. Emits `{scope, summary, target_day_numbers, target_categories, preserve}` so the `/revise` route can pick the targeted-day prompt path, build a dedupe `DO NOT RE-INTRODUCE` blacklist from prior rejected titles, and feed FOCUS / PRESERVE hints into the regen prompt. Defaults to scope=large on parse failure — better to over-spend on one turn than ship a wrong small-edit. Balanced-brace fallback parser handles markdown-fenced output.
+
+### Operational scripts
+
+| Script | What |
+|---|---|
+| `scripts/seed_pinecone.py` | Seeds the `destinations` + `activities` Pinecone namespaces. Run first-time + after any embedding-model change. `--namespace all` does both; `--namespace destinations` or `--namespace activities` targets one. |
+| `scripts/seed_cotravellers.py` | LLM-designed singles seed (192 personas; see Synthetic Co-Travellers above). |
+| `scripts/seed_couple_cotravellers.py` | LLM-designed couples seed (18 couples). |
+| `scripts/backfill_cotraveller_gender.py` | One-shot Pinecone metadata patcher — adds the `gender` field to existing seeded records without re-paying LLM/image cost. Template for any future schema-only field addition. |
+| `scripts/preview_avatars.py` | Dry-run preview for the `gpt-image-1` portrait prompt. Renders 5 portraits across a diverse slice of the seed matrix and dumps PNGs into `seed_assets/preview/` so you can eyeball the new prompt before paying to re-render all 192. Skips persona-infer, emotional-signature, Pinecone, and Firebase entirely. |
+| `scripts/purge_firebase_avatars.py` | Wipes every blob under `cotraveller_avatars/` in Firebase Storage. Use before a `--purge` re-seed so stale avatars from older runs don't accumulate (Pinecone purge clears metadata pointers, but the actual PNGs in Storage are orphaned otherwise). |
+| `scripts/check_pinecone.py` | Quick CLI dump of `describe_index_stats()` — per-namespace vector counts + total. Use to verify a seed / backfill landed before doing live testing. |
+| `scripts/generate_vapid_keys.py` | One-time VAPID keypair generator for Web Push. Prints `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` to paste into `.env` (or Render's secret store). Public key is also exposed to the frontend so the service worker can subscribe — backend serves it via `/api/push/vapid-public-key`. |
+| `scripts/progress.py` | Auto-updates `TASKS.md` checkboxes based on actual implementation state. A Python file task is checked off when none of its public functions raise `NotImplementedError`. Non-Python tasks (Figma, deployment, JS) are left unchanged. Runs in CI on every push that touches a `.py`. |
+| `scripts/sync_trello.py` | Mirrors `TASKS.md` sections to a Trello board. Creates one card per section, moves cards to Done / Doing / per-person To Do based on checkbox state. Mostly used for stakeholder visibility. |
+
+### Frontend hooks
+
+| Hook | Purpose |
+|---|---|
+| `useAuth` | Firebase `onAuthStateChanged` wrapper. On sign-in, auto-creates the backend `user_profile` if it 404s (covers brand-new accounts). Exposes `{user, loading, signIn, signUp, signOut, requestPasswordReset}`. Mounted via context implicitly — every page calls it; first call boots the listener. |
+| `useSSE` | Manual SSE parser for `/plan-trip`. Uses `fetch` + `ReadableStream` instead of `EventSource` (which can't set Authorization headers). Tracks `eventName` across lines, buffers incomplete fragments, and dispatches to a `handlers` map keyed by event name (`persona_inferring`, `day_ready`, `done`, etc.). |
+| `useWebSocket` | Chat WS lifecycle: first-message auth (token in initial JSON, never query string), 30s ping keep-alive, auto-reconnect on close. Exposes typing / seen / presence / message / `message_edited` event hooks for the chat UI. |
+| `useFirestore` | Firestore listener wrapper for the shared-itinerary surface. Subscribes to `shared_itineraries/{id}` and re-fires on every update with the latest doc — drives the bidirectional sync without polling. |
+
+### Frontend lib helpers
+
+| File | Purpose |
+|---|---|
+| `lib/firebase.js` | Firebase app + Auth init. Reads `VITE_FIREBASE_*` env vars. Single shared `auth` export used by every API call (for ID tokens) and every page (for sign-in state). |
+| `lib/push.js` | Web Push subscription lifecycle. `ensurePushSubscribed()` registers the service worker (`public/sw.js`), requests permission, subscribes with the VAPID public key from `/api/push/vapid-public-key`, and POSTs the subscription to `/api/push/subscribe`. `dropPushSubscription()` reverses it. `pushSupported()` gates the prompt UI so unsupported browsers (Safari < 16, etc.) never see a broken button. |
+| `lib/sentry.js` | Sentry init with `Failed to fetch` and 4xx HTTP filtering — only 5xx + non-`TypeError` network errors get captured. Keeps the error feed clean of expected client-side noise. |
+| `lib/tokens.js` | Design tokens — colours (`BG`, `BONE`, `GOLD`, `MUTE`, `DIM`, `HAIRLINE`), `GRAIN` SVG, `GOLD_GRAD` linear, `ease` cubic bezier. Single source of truth for every page's style block. |
+| `lib/api.js` | Every backend call. Centralises auth-header attachment, error reporting, network-error classification, and SSE/AbortController plumbing for the streaming routes. |
+| `lib/destinationPhoto.js` | Wikipedia + Pixabay multi-photo lookup (covered above). |
+
+### Environment variables — complete list
+
+`.env.example` is the source of truth (135 lines, 62 vars). Groups:
+
+| Group | Vars |
+|---|---|
+| Firebase | `FIREBASE_PROJECT_ID`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_CLIENT_EMAIL`, `FIRESTORE_DATABASE_ID` (blank = default DB; named DB e.g. `sonder-db1`) |
+| LLM providers | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `NVIDIA_API_KEY` |
+| Voice | `ELEVENLABS_API_KEY`, `ELEVENLABS_MODEL_ID` (default `eleven_multilingual_v2`) |
+| Pinecone | `PINECONE_API_KEY`, `PINECONE_ENVIRONMENT`, `PINECONE_INDEX_NAME` |
+| Embeddings | `EMBED_MODEL_PROVIDER`, `EMBED_MODEL`, `EMBED_DIMENSIONS` (must match the model's output dim — 1536 for `text-embedding-3-small`) |
+| Model selection — tier provider | `SMALL_MODEL_PROVIDER`, `LARGE_MODEL_PROVIDER` (`anthropic` or `openai`) |
+| Model selection — per-provider IDs | `ANTHROPIC_SMALL_MODEL`, `ANTHROPIC_LARGE_MODEL`, `OPENAI_SMALL_MODEL`, `OPENAI_LARGE_MODEL`. Cross-provider fallback safety — the engine never sends a model id to the wrong provider. |
+| Model selection — legacy | `SMALL_MODEL_NAME`, `LARGE_MODEL_NAME` (kept for backward compatibility; new code reads per-provider vars). |
+| Validators | `SMALL_VALIDATOR_PROVIDER`, `LARGE_VALIDATOR_PROVIDER`, `*_VALIDATOR_MODEL` for each provider |
+| Refinement | `MAX_REFINEMENT_ATTEMPTS` (default 3; only affects the orchestrator quality loop, not user-initiated `/revise`) |
+| Email | `EMAIL_PROVIDER` (`resend` / `sendgrid` / `ses`), `EMAIL_API_KEY`, `EMAIL_FROM`, `FRONTEND_BASE_URL` (used in email link generation) |
+| Web Push | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (must be `mailto:...` or a URL — RFC 8292) |
+| Pixabay | `PIXABAY_API_KEY` — destination photos route silently no-ops when blank |
+| Real-time | `REDIS_URL` (required for multi-container production — single-container falls back to in-memory `ConnectionManager`); `PRESENCE_TTL_SECONDS` (default 90) |
+| Synthetic agents | `SYNTHETIC_AGENTS_ENABLED` (default true), `SYNTHETIC_AGENTS_MIN_INTERVAL` / `MAX_INTERVAL` (default 15-50s), `SYNTHETIC_AGENTS_SEED_COUNT` (cold-start burst, default 20) |
+| Rate limiting | `UPDATE_TRIP_RATE_LIMIT` (slowapi format, e.g. `5/minute`) |
+| Monitoring | `SENTRY_DSN`, `POSTHOG_API_KEY`, `POSTHOG_HOST` |
+| Frontend (Vite) | `VITE_FIREBASE_*` (mirror of Firebase config but client-safe values only), `VITE_API_BASE_URL` (blank in prod — proxied via Cloudflare Pages Function) |
+
+### GitHub Actions / CI
+
+Two workflows in `.github/workflows/`:
+
+| File | Trigger | What |
+|---|---|---|
+| `update-progress.yml` | Push that touches a `.py` file | Runs `scripts/progress.py` to auto-update `TASKS.md` checkboxes based on whether public functions still raise `NotImplementedError`. Commits the updated `TASKS.md` back so the README's "what's done" view stays in sync with code. |
+| `sync-trello.yml` | Push to `main` | Runs `scripts/sync_trello.py`. Pushes `TASKS.md` sections to a Trello board (one card per section, lane = Done/Doing/per-person To Do) for stakeholder visibility. |
+
+There is no test workflow — the repo relies on local `pytest` runs + the validator engine catching LLM regressions in prod telemetry rather than a CI test suite. (Most of the surface is LLM-dependent and hard to unit-test deterministically.)
+
+### Prompt injection sanitisation
+
+`mushahid/utils/sanitize.py :: sanitize_user_input()` runs on every free-text user field before it reaches an LLM (feedback strings, chat messages, journal notes, persona answers, proposal reasons, etc.). Pipeline:
+
+1. Hard cap at 2000 characters — attempts can't hide in massive pastes that exceed the pattern scanner's effective window.
+2. Lowercase the text for pattern matching only (the original casing is preserved in the returned string if nothing matches).
+3. Check against `_INJECTION_PATTERNS` — ~13 lightweight regexes covering common jailbreak / instruction-override / role-rebind shapes:
+   - `ignore previous instructions` / `ignore all prior instructions`
+   - `system prompt` / `you are now` / `act as`
+   - `disregard the above` / `forget what i said`
+   - `you must` + override imperatives
+   - `<system>`, `<|im_start|>`, `[INST]` and similar tokenizer-control sequences
+   - `assistant:` / `human:` chat role markers
+   - `pretend you are` / `roleplay as`
+4. If any pattern matches, replace the entire input with `"[input removed]"` and log a warning with the matched pattern + first 60 chars so we can spot evolving attack shapes in monitoring.
+
+Production note: this is a deliberately lightweight first line. A real defence-in-depth setup layers an LLM classifier (e.g. Prompt Shield) on top for the high-stakes free-text fields — proposals, chat replies, journal — where the heuristic regex won't catch obfuscated paraphrases. The hook is left as `sanitize_user_input` so swapping the implementation doesn't ripple through every caller.
+
+### City context lookup
+
+`shared/cities.py :: get_city_context(city, country)` returns a thin context dict (`{summary, weather_now, lat, lon, country_code}`) used by the destination feed + the cinematic reveal's date-window framing. Three-source fallback chain, all keyless / free:
+
+1. **Nominatim (OpenStreetMap)** — `geocode(city, country)` → `{lat, lon, country_code, display_name}`. Required for the weather lookup. Soft 1-req-per-sec etiquette enforced via a process-wide token bucket.
+2. **OpenWeather** (`/data/2.5/weather?lat=&lon=`) — current weather as a one-line summary ("light rain, 14°C"). Skipped if Nominatim failed.
+3. **Wikipedia** REST API `/page/summary/{title}` — the lede paragraph (~200 chars) for the destination card. Same map-rejection filter as `useDestinationPhoto` (don't show coats of arms as "what's the city like").
+
+Disk-cached to `.cache/cities.json`. Cache is keyed by `(city, country)` so repeats are instant. Stale entries are 30 days old; refresh is best-effort (Nominatim or OpenWeather flaking doesn't block the call — we return whatever we got).
+
+### Dependency choices — the deliberate ones
+
+Most pip / npm choices are obvious (FastAPI, React, Pydantic). A few are deliberate decisions worth recording so the next maintainer doesn't "simplify" them:
+
+- **`pydantic v2`** not v1 — the validator engine relies on `model_validate` semantics and the new model_copy + nested-merge behaviour. Don't downgrade.
+- **`pinecone-client` (the v3+ SDK)** — `index.update(set_metadata=...)` is what the backfill script depends on. The legacy `pinecone` package has a different API surface.
+- **`webpush`** Python lib (not pywebpush legacy) — supports the AES-GCM payload encryption the modern service-worker contract needs.
+- **`slowapi`** for rate-limiting — chosen over `fastapi-limiter` because it doesn't require Redis for the typical single-container deployment. Falls back to in-memory bucketing.
+- **`httpx`** over `requests` — async surface throughout the backend; one less event-loop block.
+- **`framer-motion`** is the heaviest non-React dep on the frontend; it's load-bearing for the reveal choreography and the bi-view scroll sync. Don't strip it.
+- **No client-side state library** (no Redux / Zustand / Jotai) — local state + window CustomEvent fan-out (via NotificationProvider) is sufficient because most realtime signals are per-page. Adding global state would be premature.
+- **No GraphQL** — every backend route returns a Pydantic-validated JSON shape; the contract lives in the schemas, not in a separate graph. Keeping it RESTful keeps the surface scannable.
+
+### Analytics + monitoring
+
+**`mushahid/monitoring.py`** is the single PostHog touchpoint. Two helpers, both no-op when `POSTHOG_API_KEY` is unset so dev envs without the key never break:
+
+- `capture(uid, event, props)` — user-attributed events. Every route that does something meaningful for a user funnel calls this.
+- `capture_system(event, props)` — system events with no user (cron jobs, seed scripts, system error counters).
+
+Event names live as module-level constants so dashboard queries don't depend on typo-free string literals scattered across the codebase. Five top-level metrics these power:
+
+| Metric | Events |
+|---|---|
+| User satisfaction | `match_found`, `match_approved`, `match_denied`, `match_regenerated`, `itinerary_revision_applied`, `refinement_attempts` |
+| Retrieval quality | `retrieval_done` (destination + activity counts), `cotraveller_search_returned` |
+| Response quality | `validator_stack_execution` per surface (chat reply, persona reveal, cotraveller match, itinerary) — carries `validator_passed_first_try`, `repair_count`, `total_latency_ms`, `semantic_genericity_score` |
+| Hallucination rate | `itinerary_validation`, `persona_validation` — approval rates + issue category breakdowns |
+| Itinerary completion funnel | `trip_plan_started` → `trip_done` → `trip_saved` → `trip_viewed` |
+
+PostHog identify is keyed by Firebase uid; properties are flat (no nested objects) so the dashboard's property breakdowns work without a flatten step.
+
+### Firebase Storage helper
+
+**`mushahid/realtime/storage.py`** is the storage counterpart to `firestore.py`. Separate module because `firebase_admin.storage` requires the bucket name at App init time and we don't want to retrofit `get_db()` to thread that through.
+
+- Bucket name from `FIREBASE_STORAGE_BUCKET` env var (defaults to `{project_id}.appspot.com` when unset and `FIREBASE_PROJECT_ID` is set).
+- All uploads are public-read — the frontend reads the resulting URLs directly without auth. These are synthetic-persona avatars + voice-synthesis MP3 caches, not user content. If user-uploaded content lands here later, switch to authenticated-read + signed URLs.
+- Used by `seed_cotravellers.py` (avatar upload), `ali/voice/elevenlabs.py` (TTS MP3 cache keyed by `sha256(text + voice_id)`), and `purge_firebase_avatars.py` (the wipe script).
+
+### Tests
+
+The repo has local pytest suites — no CI runs them (LLM-dependent surfaces are hard to make deterministic). Cover what they cover:
+
+| Suite | Files | What |
+|---|---|---|
+| Ali | `ali/tests/smoke_test.py`, `test_classifier.py`, `test_output_parser.py` | End-to-end smoke that the LLM clients init + route correctly; the task-type → tier classifier mapping; the JSON output parser (markdown-fence stripping, balanced-brace fallback, ID + activity patching). |
+| Mushahid | `mushahid/tests/test_routes.py`, `test_sanitize.py`, `test_validation.py` | Route shape + auth gates; the prompt-injection sanitiser pattern catalogue; the validator engine's local pre-check + repair loop oscillation detection. |
+| Shreyas | `shreyas/tests/test_feedback.py`, `test_ranking.py` | Text-feedback keyword → feature mapping; the ranking engine's stage pipeline + score-sheet integrity (retrieval / features / rerank kept separate). |
+| Jahnvi | `jahnvi/tests/test_pipeline.py` | Modules 1-3 — capture_constraints → parse_answers → infer_persona shape contracts. |
+
+Run all: `pytest`. Run async-only: `pytest --asyncio-mode=auto`.
+
+### Tiny utilities
+
+A few small modules worth recording so they don't get reinvented:
+
+- **`ali/demo.py`** — `python -m ali.demo` runs an end-to-end persona + itinerary + cotraveller demo against the configured LLM providers. Useful for verifying a fresh deployment's API keys + Pinecone state without touching the frontend.
+- **`jahnvi/data/convert_to_embeddings.py :: build_persona_text`** — the function the whole stack uses to render `(constraints, persona_answers)` into the canonical "persona text" string before embedding. Embed call delegates to `ali.vector.embeddings.embed_text`. Same string shape is used at seed time and at query time so the cosine retrieval works across both populations.
+- **`ali/clients/base.py`** — `BaseLLMClient` abstract class every provider implements. Defines `complete(prompt, system, max_tokens) -> str` and `stream(prompt, system, max_tokens) -> AsyncIterator[str]`. `cost_per_1k_tokens` is an abstract property reserved for V2 cost-aware routing — no caller reads it yet.
+- **`ali/vector/embeddings.py`** — `build_refined_query(profile, feedback)` builds the input string the refinement loop re-embeds before re-querying Pinecone. Keeps the "user said X, so embed Y" mapping in one place.
+
+### Recent reliability fixes
+
+A few merged PRs worth recording because the failure modes are subtle:
+
+- **`fix(itinerary): Optimize revision pipeline to prevent timeouts`** — `/revise` used to call `run_refinement_loop` which iterates `MAX_REFINEMENT_ATTEMPTS` (3) times. Each iteration is a full regen + validate, which compounded into wall times that broke the Cloudflare Pages Function proxy's ~30s ceiling and made the page hang. Fix: single-pass `run_single_revision` + the SSE stream so days arrive as they parse; the loop is reserved for the orchestrator quality gate during initial generation only.
+- **`fix(generation): Handle datetime.date serialization in itinerary prompts`** — pydantic models that include `date` fields can't be `json.dumps`'d directly when those fields make it into a prompt string. The fix routes the dump through `model_dump_json()` (which serialises dates as ISO strings) before embedding in the prompt, so the LLM never sees `<datetime.date object>` literals that would derail its JSON output.
+- **`fix/network-error-handling`** — frontend API helpers now distinguish "no internet" `TypeError: Failed to fetch` errors from HTTP errors and from genuine server bugs. The Sentry filter explicitly skips `Failed to fetch` so client-side network drops don't poison the error feed.
+
+**`jahnvi/frontend/src/components/DashboardPulse.jsx :: StoryAvatar` + `StoryViewer`** — Instagram-style stories surface that replaced the Pulse "Open invitations" strip. `StoryAvatar` renders the 70px circular gradient ring (gold→violet→rose, flattens on viewed). `StoryViewer` is the fullscreen 9:16 modal: segmented progress bars + Ken-Burns-style auto-advance every 5.5s + tap-left/right nav + ESC/arrow keys + pointer-down pause + backdrop close. Stories are derived from posts with images, deduped per author (newest wins, IG semantics). `viewedStories` Set tracked per session so the ring dims after viewing.
+
+**`jahnvi/frontend/src/pages/Dashboard.jsx :: EmptyStateInspiration`** — right-column branch when `pastTrips.length === 0`. Same pulsing-dot eyebrow + serif italic headline + breathing drop-shadow as the regular "Curated for you" section so the layout rhythm stays consistent. Four destination shortcuts (Lisbon / Kyoto / Reykjavík / Mexico City) write `sonder_seed_destination` to sessionStorage; `TripPreferences.destination`'s useState reads it once on mount and removes it. Bottom CTA "Plan something different" routes blank.
+
+**`jahnvi/frontend/src/pages/Companions.jsx`** + **`jahnvi/frontend/src/pages/Dashboard.jsx`** — both check `getUserProfile().constraints.gender` on mount. If solo + missing, they show an inline gender picker (Companions: above the standard intake questions; Dashboard: amber-bordered card in place of the matches strip). Picking either button PATCHes the profile, flips the local flag, and re-fetches matches inline.
 
 **`mushahid/auth.py`** — `LOCAL_MODE=true` bypasses Firebase entirely; any token is accepted and the token string itself becomes the uid. `verify_ws_token()` extracts from query params (WebSocket can't set Authorization headers); both paths share the same underlying `_verify()`.
 
@@ -864,7 +1300,7 @@ A sweep across every code file surfaced a long tail of load-bearing decisions wo
 
 **`shreyas/cotraveller/presence.py`** — heartbeat writes ONLY `last_seen`, never rewrites a boolean `online` flag (which would go stale on dropped connections). `is_online` is always derived from `last_seen < TTL`.
 
-**`shared/currency.py`** — live rates from `exchangerate-api.com` with a **3-second timeout**, hardcoded `FALLBACK_RATES` table for 30 currencies used in `LOCAL_MODE` or when the API is unreachable. Format is units-per-1-USD (inverted from the API's USD-per-1-unit) so all conversions are a single multiplication.
+**`shared/currency.py`** — static `FALLBACK_RATES` table for 30 currencies. Format is units-per-1-USD so all conversions are a single division. A live-rates integration was scoped initially but never shipped; the static table is accurate enough for budget-tier classification (where the user's intent is ranges like *"mid-range"* / *"luxury"* rather than a precise figure). Refresh quarterly.
 
 **`shared/email.py`** — provider abstraction over `resend | sendgrid | ses`. `LOCAL_MODE` silently logs instead of sending; test endpoints set `force=True` to bypass. Pre-flight raises a concrete `"set EMAIL_API_KEY"` error before reaching the provider rather than surfacing an opaque 401.
 
@@ -884,7 +1320,13 @@ A sweep across every code file surfaced a long tail of load-bearing decisions wo
 
 **`jahnvi/frontend/src/lib/destinationPhoto.js`** — Wikipedia REST API with `"City, Country"` → `"City"` fallback for disambiguation. 14-day localStorage TTL with **negative caching** (remembers when an article wasn't found so we don't re-query it). Free, CORS-permissive, no API key.
 
-**`jahnvi/frontend/src/pages/Itinerary.jsx`** — auto-saves generated trips via `autoSavedIdRef` double-persist guard. `PHASE_COPY` map intentionally returns `null` for transient internal events (`persona_inferred`, `retrieval_done`, `ranked`) so the UI label only updates on user-meaningful phases.
+**`jahnvi/frontend/src/pages/Itinerary.jsx`** — auto-saves generated trips via `autoSavedIdRef` double-persist guard. `PHASE_COPY` map intentionally returns `null` for transient internal events (`persona_inferred`, `retrieval_done`, `ranked`) so the UI label only updates on user-meaningful phases. **Three-way view mode** (`both` / `desktop` / `mobile`) — single `activeActivityIdx` parent state plus `IntersectionObserver` in each view keeps the focused activity synced across view switches. **Wheel router** routes mouse wheel to the phone's internal scroll whenever the cursor is over `phoneSurfaceRef` (not just when the page can't scroll) so the bi-view phone preview stays mouse-scrollable alongside a tall desktop column. **Revise handler** consumes the `/revise` SSE stream via `streamReviseItinerary`, splices revised days into local state on `day_revised`, and narrates progress in a top-of-screen toast (`Rewriting day 3…` → `Day 3 updated` → `Swapped X → Y`).
+
+**`mushahid/refinement/loop.py :: stream_single_revision`** — async generator powering `/revise`. One LLM regen + one validate, no `MAX_REFINEMENT_ATTEMPTS` loop. Routes to `stream_refined_days_by_day` when `target_day_numbers` is set (output 1-2k tokens) and `stream_refined_itinerary_by_day` otherwise (output 3-8k tokens). Always uses the large tier — small tier caps at 512-1024 tokens which silently truncates full-itinerary JSON. Emits SSE events as each day's JSON closes; falls back to a whole-buffer `parse_itinerary` if the brace counter detects nothing.
+
+**`mushahid/refinement/classifier.py`** — small-LLM JSON classifier that scopes user revise feedback. Emits `{scope, summary, target_day_numbers, target_categories, preserve}` so the route can pick the targeted-day prompt path, build a dedupe `DO NOT RE-INTRODUCE` blacklist from prior rejected titles, and feed FOCUS / PRESERVE hints into the regen prompt. Defaults to scope=large on parse failure — better to over-spend on one turn than ship a wrong small-edit. Balanced-brace fallback parser handles markdown-fenced output.
+
+**`mushahid/routes/itineraries.py :: /revise`** — wraps `stream_single_revision` in a `StreamingResponse`. Sniffs the final `revision_done` event off the stream and runs post-stream bookkeeping (revision_history append, per-user ranker weight delta with decay multiplier `max(0.125, 0.5 ** (turn-1))`, monitoring capture, persist with `approval_status="draft"`) **after** the user already has the diff on screen. Emits `revision_persisted` when bookkeeping completes. Failures in bookkeeping are logged but don't break the visible flow — the regenerated itinerary is already saved.
 
 **`jahnvi/frontend/src/pages/PersonaReveal.jsx`** — caches persona in localStorage keyed by a deterministic hash of the trip profile JSON. Changing answers automatically changes the hash and invalidates the cache; no explicit clear needed.
 

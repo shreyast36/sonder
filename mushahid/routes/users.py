@@ -1,8 +1,8 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from mushahid.auth import verify_token
-from mushahid.realtime.firestore import create_user_profile, get_db
+from mushahid.realtime.firestore import create_user_profile, get_db, update_user_profile
 from mushahid.utils.sanitize import sanitize_user_input
 from shared.config import LOCAL_MODE
 
@@ -36,6 +36,25 @@ async def create_profile(body: CreateProfileRequest, uid: str = Depends(verify_t
     except Exception as e:
         logger.warning("create_profile Firestore call failed: %s", e)
         raise HTTPException(status_code=503, detail=f"Firestore unavailable: {type(e).__name__}") from e
+
+
+class GenderPatch(BaseModel):
+    gender: str = Field(..., pattern="^(male|female)$")
+
+
+@router.patch("/users/profile/gender")
+async def patch_profile_gender(body: GenderPatch, uid: str = Depends(verify_token)):
+    """Backfill the user's gender on existing profiles that predate the
+    field. The cotraveller same-gender hard filter only fires when this
+    is set; without it, solo travellers get mixed-gender matches and
+    a re-do of /preferences would be the only other way to set it.
+    Dotted-path merge so we don't clobber the rest of constraints."""
+    try:
+        await update_user_profile(uid, {"constraints.gender": body.gender})
+    except Exception as e:
+        logger.warning("patch_profile_gender failed: %s", e)
+        raise HTTPException(status_code=503, detail=f"Firestore unavailable: {type(e).__name__}") from e
+    return {"updated": True, "gender": body.gender}
 
 
 @router.get("/users/profile")

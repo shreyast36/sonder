@@ -5,7 +5,7 @@ import { ArrowLeft, Check } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D } from '../components/SonderMark3D'
 import MatchCard from '../components/MatchCard'
-import { getCompanionPrefs, saveCompanionPrefs, getCotravellers } from '../lib/api'
+import { getCompanionPrefs, saveCompanionPrefs, getCotravellers, getUserProfile, patchProfileGender } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
 /* eslint-disable react-refresh/only-export-components */
 
@@ -34,6 +34,10 @@ function matchToCard(m) {
     avatar_url:   p.avatar_url || null,
     reasons:      Array.isArray(m?.match_reasons) ? m.match_reasons : [],
     is_seed:      Boolean(p.is_seed),
+    // Forward the raw Pinecone cosine so MatchDetail can pass it back to
+    // /cotraveller/profile/{id} and /chat/start — keeps pinecone_passthrough
+    // honest end-to-end instead of dropping to 0 on every recompute.
+    retrieval_score: typeof m?.retrieval_score === 'number' ? m.retrieval_score : null,
   }
 }
 
@@ -82,20 +86,43 @@ export default function Companions() {
   const [matchesLoading, setMl] = useState(false)
   const [answers, setAnswers]   = useState({ party_arrival: null, chat_lull: null, spontaneity: null, companion_text: '' })
   const [saving, setSaving]     = useState(false)
+  // Gender backfill — only kicks in when the user's profile lacks
+  // gender AND they're solo. Older profiles predate the field, so
+  // the cotraveller route would silently mix-match without this.
+  const [needsGender, setNeedsGender] = useState(false)
+  const [pickedGender, setPickedGender] = useState('')
 
   // Bootstrap: check whether prefs exist for this trip, jump straight to
-  // matches if so. Otherwise show the intake first.
+  // matches if so. Otherwise show the intake first. Also check whether
+  // the user's profile has a gender — if they're solo and don't, we
+  // force the intake step so they can backfill it before matches load.
   useEffect(() => {
     if (authLoading) return
     if (!user) { navigate('/signin'); return }
     if (!itineraryId) { navigate('/dashboard'); return }
     let cancelled = false
     ;(async () => {
+      // Profile lookup decides whether gender backfill is needed.
+      let missingGender = false
+      try {
+        const prof = await getUserProfile()
+        const style = prof?.constraints?.who_travelling_with
+        const g = (prof?.constraints?.gender || '').toLowerCase()
+        missingGender = style === 'solo' && g !== 'male' && g !== 'female'
+        if (!cancelled) setNeedsGender(missingGender)
+      } catch (err) {
+        if (cancelled) return
+        // 404 (no profile yet) or 503: best-effort, treat as no-gender-
+        // needed and let matching fall through.
+        console.warn('getUserProfile failed:', err?.message || err)
+      }
+
       try {
         const res = await getCompanionPrefs(itineraryId)
         if (cancelled) return
         const prefs = res?.prefs
-        if (prefs && (prefs.party_arrival || prefs.chat_lull || prefs.spontaneity || prefs.companion_text)) {
+        const hasPrefs = prefs && (prefs.party_arrival || prefs.chat_lull || prefs.spontaneity || prefs.companion_text)
+        if (hasPrefs && !missingGender) {
           setAnswers({
             party_arrival: prefs.party_arrival ?? null,
             chat_lull:     prefs.chat_lull     ?? null,
@@ -105,6 +132,16 @@ export default function Companions() {
           setPhase('matches')
           loadMatches()
         } else {
+          // Either no prefs yet, OR prefs exist but gender is missing
+          // → route through the intake so the picker shows.
+          if (hasPrefs) {
+            setAnswers({
+              party_arrival: prefs.party_arrival ?? null,
+              chat_lull:     prefs.chat_lull     ?? null,
+              spontaneity:   prefs.spontaneity   ?? null,
+              companion_text: prefs.companion_text ?? '',
+            })
+          }
           setPhase('intake')
         }
       } catch (err) {
@@ -143,6 +180,19 @@ export default function Companions() {
   async function handleIntakeSubmit() {
     setSaving(true)
     try {
+      // If the user needed to set their gender, persist it first so
+      // the next cotraveller fetch sees it on the profile and the
+      // hard filter starts working.
+      if (needsGender && (pickedGender === 'male' || pickedGender === 'female')) {
+        try {
+          await patchProfileGender(pickedGender)
+          setNeedsGender(false)
+        } catch (gErr) {
+          console.warn('patchProfileGender failed:', gErr?.message || gErr)
+          // Don't block the flow on a failed gender write — the user
+          // still gets matches (mixed), and they can re-try later.
+        }
+      }
       await saveCompanionPrefs(itineraryId, answers)
       setPhase('matches')
       loadMatches()
@@ -159,6 +209,7 @@ export default function Companions() {
   }
 
   const allAnswered = QUESTIONS.every(q => !!answers[q.key])
+    && (!needsGender || pickedGender === 'male' || pickedGender === 'female')
 
   return (
     <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column' }}>
@@ -195,6 +246,9 @@ export default function Companions() {
               allAnswered={allAnswered}
               saving={saving}
               onSubmit={handleIntakeSubmit}
+              needsGender={needsGender}
+              pickedGender={pickedGender}
+              setPickedGender={setPickedGender}
             />
           )}
 
@@ -205,7 +259,10 @@ export default function Companions() {
               loading={matchesLoading}
               onRefine={() => setPhase('intake')}
               onDone={() => navigate('/dashboard')}
-              onTap={(id) => navigate(`/match/${id}`)}
+              onTap={(id, rs) => {
+                const q = typeof rs === 'number' && Number.isFinite(rs) ? `?rs=${rs}` : ''
+                navigate(`/match/${id}${q}`)
+              }}
             />
           )}
 
@@ -224,7 +281,7 @@ export default function Companions() {
 
 // ── Intake view ─────────────────────────────────────────────────────────────
 
-function IntakeView({ answers, setAnswer, allAnswered, saving, onSubmit }) {
+function IntakeView({ answers, setAnswer, allAnswered, saving, onSubmit, needsGender, pickedGender, setPickedGender }) {
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.45, ease }}>
       <div style={{ textAlign: 'center', marginBottom: 56 }}>
@@ -238,6 +295,45 @@ function IntakeView({ answers, setAnswer, allAnswered, saving, onSubmit }) {
           Nothing about travel. Just how you move through the world.
         </p>
       </div>
+
+      {/* Gender backfill — only shown for solo users whose profile
+          predates the field. Same-gender hard filter only fires when
+          this is set; without it, solo travellers get mixed matches. */}
+      {needsGender && (
+        <div style={{ maxWidth: 640, margin: '0 auto 44px' }}>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.26em', textTransform: 'uppercase', color: GOLD, marginBottom: 10 }}>
+            One quick thing first
+          </p>
+          <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontWeight: 400, fontSize: 28, color: BONE, margin: '0 0 10px', lineHeight: 1.2 }}>
+            Your gender
+          </h2>
+          <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, lineHeight: 1.6, marginBottom: 22 }}>
+            We only match solo travellers with the same gender for safety. We didn't ask earlier — set it now and we'll filter your matches.
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            {[{ key: 'female', label: 'Female' }, { key: 'male', label: 'Male' }].map(g => {
+              const active = pickedGender === g.key
+              return (
+                <motion.button
+                  key={g.key} whileTap={{ scale: 0.95 }} onClick={() => setPickedGender(g.key)}
+                  style={{
+                    flex: 1, padding: '16px 0', borderRadius: 14,
+                    cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 12,
+                    background: active ? `${GOLD}1A` : 'transparent',
+                    border: `1px solid ${active ? `${GOLD}66` : HAIRLINE}`,
+                    color: active ? GOLD : MUTE,
+                    transition: 'all 0.2s',
+                    boxShadow: active ? `0 0 20px ${GOLD}22` : 'none',
+                    letterSpacing: '0.08em',
+                  }}
+                >
+                  {g.label}
+                </motion.button>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 44, maxWidth: 640, margin: '0 auto' }}>
         {QUESTIONS.map((q, qi) => (
@@ -367,7 +463,10 @@ function MatchesView({ matches, loading, onRefine, onDone, onTap }) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.05 + i * 0.08, ease }}
             >
-              <MatchCard match={m} onClick={() => onTap(m.id)}/>
+              <MatchCard
+                match={m}
+                onClick={() => onTap(m.id, typeof m.retrieval_score === 'number' ? m.retrieval_score : null)}
+              />
             </motion.div>
           ))}
         </div>

@@ -5,7 +5,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { ArrowLeft, Mail, Check, Bookmark } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, HAIRLINE, ease } from '../lib/tokens'
 import { SonderNav3D, SonderMark3D } from '../components/SonderMark3D'
-import { emailItinerary, saveItineraryAsCurrent, getCurrentItinerary, approveItinerary, reviseItinerary } from '../lib/api'
+import { emailItinerary, saveItineraryAsCurrent, getCurrentItinerary, approveItinerary, streamReviseItinerary } from '../lib/api'
 import { useDestinationPhoto } from '../lib/destinationPhoto'
 import { useAuth } from '../hooks/useAuth'
 import { useSSE } from '../hooks/useSSE'
@@ -73,6 +73,19 @@ export default function Itinerary() {
   const [reviseText, setReviseText] = useState('')
   const [reviseBusy, setReviseBusy] = useState(false)
   const [approveError, setApproveError] = useState(null)
+  // Revision progress toast — { kind: 'progress' | 'done' | 'error', text, sub? }
+  const [reviseToast, setReviseToast] = useState(null)
+  const reviseToastTimerRef = useRef(null)
+  function showToast(kind, text, sub = null, ttl = null) {
+    if (reviseToastTimerRef.current) {
+      clearTimeout(reviseToastTimerRef.current)
+      reviseToastTimerRef.current = null
+    }
+    setReviseToast({ kind, text, sub })
+    if (ttl != null) {
+      reviseToastTimerRef.current = setTimeout(() => setReviseToast(null), ttl)
+    }
+  }
   const [error, setError]         = useState(null)
   const startedRef                = useRef(false)
   // Tracks which itinerary id we've auto-persisted, so the SSE 'done' and
@@ -197,41 +210,48 @@ export default function Itinerary() {
       if (startedRef.current) return
       startedRef.current = true
 
-      if (!shouldGenerate) {
-        // View mode — pull the saved itinerary from Firestore.
-        try {
-          const res = await getCurrentItinerary()
-          if (res?.itinerary) {
-            setItinerary(res.itinerary)
-            setStreamingDone(true)
-            setSaved(true)        // already on the dashboard
-            try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(res.itinerary)) } catch {}
-            return
-          }
-        } catch (err) {
-          console.warn('Could not load saved itinerary:', err?.message || err)
-        }
-        // No saved trip yet. If the user generated something earlier this
-        // session but didn't click Save, the cache still has it — show that
-        // so they can save from here instead of starting over.
-        try {
-          const cached = JSON.parse(localStorage.getItem('sonder_last_itinerary') || 'null')
-          if (cached?.itinerary_id) {
-            setItinerary(cached)
-            setStreamingDone(true)
-            return
-          }
-        } catch { /* invalid JSON in cache */ }
-        navigate('/preferences')
+      // Generation only fires on explicit user intent (the PersonaReveal
+      // confirm step sets the flag). Every other path is view-only.
+      if (shouldGenerate) {
+        const raw = sessionStorage.getItem('sonder_trip_profile')
+        if (!raw) { navigate('/preferences'); return }
+        let profile
+        try { profile = JSON.parse(raw) } catch { navigate('/preferences'); return }
+        start(profile)
         return
       }
 
-      // Generation mode — need the trip profile from PersonaReveal.
-      const raw = sessionStorage.getItem('sonder_trip_profile')
-      if (!raw) { navigate('/preferences'); return }
-      let profile
-      try { profile = JSON.parse(raw) } catch { navigate('/preferences'); return }
-      start(profile)
+      // View mode — load the saved trip from Firestore. Works for both
+      // finalised trips (read-only; the approve/revise gate is hidden
+      // server-side via approval_status) AND drafts (user can resume the
+      // approve/revise decision they paused on).
+      try {
+        const res = await getCurrentItinerary()
+        if (res?.itinerary) {
+          setItinerary(res.itinerary)
+          setStreamingDone(true)
+          setSaved(true)
+          try { localStorage.setItem('sonder_last_itinerary', JSON.stringify(res.itinerary)) } catch {}
+          return
+        }
+      } catch (err) {
+        console.warn('Could not load saved itinerary:', err?.message || err)
+      }
+      // Backend returned nothing — try the session cache (covers the case
+      // where the SSE stream finished but auto-save was still pending when
+      // the user navigated away).
+      try {
+        const cached = JSON.parse(localStorage.getItem('sonder_last_itinerary') || 'null')
+        if (cached?.itinerary_id) {
+          setItinerary(cached)
+          setStreamingDone(true)
+          return
+        }
+      } catch { /* invalid JSON in cache */ }
+      // Genuine view-mode failure. Do NOT silently dump into /preferences —
+      // that turns a transient backend hiccup into a forced re-do of the
+      // whole creation flow. Surface an error and let the user choose.
+      setError("We couldn't load your trip. Head back to the dashboard and try again.")
     })
     return () => unsub()
   }, [navigate, start])
@@ -254,11 +274,13 @@ export default function Itinerary() {
     try {
       const res = await approveItinerary(itinerary.itinerary_id)
       setItinerary(prev => prev ? { ...prev, approval_status: 'finalized', finalized_at: res.finalized_at } : prev)
-      // Best-effort: also mark this as the user's current trip so it
-      // shows on the dashboard, then navigate them into the shared-
-      // itinerary surface where revisions now happen collaboratively.
+      // Best-effort: mark this as the user's current trip so the
+      // /trip-locked-in reveal can read it back via getCurrentItinerary.
       try { await saveItineraryAsCurrent(itinerary.itinerary_id) } catch { /* noop */ }
-      setTimeout(() => navigate(`/shared/${encodeURIComponent(itinerary.itinerary_id)}`), 900)
+      // Reveal screen handles the destination flourish + co-traveller
+      // prompt; from there it either routes into the cotraveller intake
+      // or back to dashboard depending on the user's answer.
+      setTimeout(() => navigate(`/trip-locked-in/${encodeURIComponent(itinerary.itinerary_id)}`), 600)
     } catch (e) {
       setApproveError(e?.message || 'Could not approve')
     } finally {
@@ -271,14 +293,66 @@ export default function Itinerary() {
     const feedback = (text || reviseText).trim()
     if (!feedback) return
     setReviseBusy(true); setApproveError(null)
+    // Close the modal immediately — progress shows as a top-of-screen
+    // toast so the user can watch the days update live.
+    setReviseText('')
+    setReviseOpen(false)
+    showToast('progress', 'Starting revision…')
+
     try {
-      const res = await reviseItinerary(itinerary.itinerary_id, feedback)
-      if (res?.itinerary) setItinerary(res.itinerary)
-      setReviseText('')
-      setReviseOpen(false)
+      await streamReviseItinerary(itinerary.itinerary_id, feedback, null, {
+        revising: ({ hint }) => {
+          showToast('progress', hint || 'Rewriting…')
+        },
+        day_revised: ({ day_number, day }) => {
+          // Splice the revised day into the in-flight itinerary so it
+          // re-renders immediately. Match by day_number; preserve every
+          // other day untouched.
+          setItinerary(prev => {
+            if (!prev) return prev
+            const next_days = (prev.days || []).map(d =>
+              d.day_number === day_number ? day : d
+            )
+            return { ...prev, days: next_days }
+          })
+          showToast('progress', `Day ${day_number} updated`)
+        },
+        validating: () => {
+          showToast('progress', 'Checking constraints…')
+        },
+        revision_done: ({ itinerary: finalItin, dropped_titles, added_titles, validation }) => {
+          if (finalItin) setItinerary(finalItin)
+          // Build a friendly diff line. Prefer swap-style copy when
+          // there's exactly one drop and one add.
+          let line = 'Revision applied'
+          let sub = null
+          const d = dropped_titles || []
+          const a = added_titles || []
+          if (d.length === 1 && a.length === 1) {
+            line = `Swapped ${d[0]} → ${a[0]}`
+          } else if (d.length || a.length) {
+            line = `Updated ${(d.length + a.length)} ${(d.length + a.length) === 1 ? 'activity' : 'activities'}`
+            sub = [
+              d.length ? `removed: ${d.slice(0, 2).join(', ')}${d.length > 2 ? '…' : ''}` : null,
+              a.length ? `added: ${a.slice(0, 2).join(', ')}${a.length > 2 ? '…' : ''}`   : null,
+            ].filter(Boolean).join(' · ')
+          }
+          if (validation && validation.status === 'revise') {
+            sub = (sub ? sub + ' · ' : '') + 'validator: needs another pass'
+          }
+          showToast('done', line, sub, 6500)
+        },
+        revision_failed: ({ message }) => {
+          showToast('error', message || 'Revision failed', null, 5000)
+          setApproveError(message || 'Revision failed')
+        },
+        revision_persisted: () => { /* history written — nothing visible to do */ },
+      })
     } catch (e) {
       const isOffline = e instanceof TypeError && e.message === 'Failed to fetch'
-      setApproveError(isOffline ? 'No internet connection — please try again' : (e?.message || 'Could not log revision'))
+      const msg = isOffline ? 'No internet connection — please try again' : (e?.message || 'Could not log revision')
+      showToast('error', msg, null, 5000)
+      setApproveError(msg)
     } finally {
       setReviseBusy(false)
     }
@@ -356,15 +430,22 @@ export default function Itinerary() {
   const isWide    = vw >= 1180
   const isCompact = vw < 720
 
-  // View mode — desktop-optimised layout vs. the phone-mockup view.
-  // Desktop is default on wider screens since the phone wastes the
-  // horizontal real estate; mobile mockup is still one toggle away.
+  // View mode — three options:
+  //   'both'    — desktop layout + phone mockup side-by-side (default on
+  //               wide screens; both surfaces visible at once)
+  //   'desktop' — desktop-only, full width
+  //   'mobile'  — phone mockup only, centred
+  // Wide screens (≥1180) default to 'both' so users see the editorial
+  // desktop layout AND the phone preview without toggling. Mid screens
+  // (900-1180) default to 'desktop'; small (<900) to 'mobile'.
   const [viewMode, setViewMode] = useState(() => {
     try {
       const saved = localStorage.getItem('sonder:itinerary:view')
-      if (saved === 'mobile' || saved === 'desktop') return saved
+      if (saved === 'mobile' || saved === 'desktop' || saved === 'both') return saved
     } catch { /* noop */ }
-    return vw >= 900 ? 'desktop' : 'mobile'
+    if (vw >= 1180) return 'both'
+    if (vw >= 900)  return 'desktop'
+    return 'mobile'
   })
   function switchView(mode) {
     setViewMode(mode)
@@ -437,24 +518,46 @@ export default function Itinerary() {
     return Math.min(1, availW / (PHONE_W + 12))
   })()
 
-  // Route wheel events into the phone's inner scroll when the page itself
-  // has nowhere to go vertically. If the viewport is too short to fit the
-  // phone (high zoom, short laptops), the page scrolls naturally — wheel
-  // hijack stays out of the way so the user can reach the whole device.
+  // Route wheel events into the phone's inner scroll under two cases:
+  //   1. Cursor is currently hovering the phone surface — scroll the phone
+  //      directly even if the page itself can scroll. Needed for the
+  //      "both" bi-view where the desktop layout is tall (so main can
+  //      scroll), and you'd otherwise never be able to mouse-wheel the
+  //      phone preview alongside it.
+  //   2. Page itself has nowhere to go vertically (mobile-only mode at
+  //      high zoom / short laptops) — forward window-level wheel into
+  //      the phone so the user can reach the whole device.
   const phoneScrollRef = useRef(null)
+  const phoneSurfaceRef = useRef(null)   // outer phone bounds (for hover hit-test)
   const mainRef = useRef(null)
   const bootedRef = useRef(false)
   useEffect(() => { bootedRef.current = booted }, [booted])
   useEffect(() => {
     const onWheel = (e) => {
       if (!bootedRef.current) return
+      const el = phoneScrollRef.current
+      if (!el) return
+
+      // Case 1: cursor over the phone surface → scroll phone directly.
+      // We do this *before* the page-can-scroll check so the bi-view
+      // routes wheel to whichever surface the user is pointing at.
+      const surface = phoneSurfaceRef.current
+      if (surface) {
+        const r = surface.getBoundingClientRect()
+        const inside = e.clientX >= r.left && e.clientX <= r.right
+                    && e.clientY >= r.top  && e.clientY <= r.bottom
+        if (inside) {
+          el.scrollTop += e.deltaY
+          e.preventDefault()
+          return
+        }
+      }
+
+      // Case 2: page can scroll? Let it.
       const main = mainRef.current
-      // Page can scroll? Let it.
       if (main && main.scrollHeight - main.clientHeight > 4) return
       // Don't hijack scroll over the top nav.
       if (e.clientY < 68) return
-      const el = phoneScrollRef.current
-      if (!el) return
       el.scrollTop += e.deltaY
       e.preventDefault()
     }
@@ -482,13 +585,22 @@ export default function Itinerary() {
       <div style={{ minHeight: '100vh', background: BG, color: BONE, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48, textAlign: 'center' }}>
         <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 32, color: BONE, marginBottom: 16, position: 'relative', zIndex: 1 }}>Something didn't load.</p>
         <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 13, color: MUTE, marginBottom: 32, maxWidth: 480, position: 'relative', zIndex: 1 }}>{error}</p>
-        <motion.button
-          whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
-          onClick={() => navigate('/persona-reveal')}
-          style={{ minWidth: 240, padding: '16px 32px', background: `linear-gradient(135deg, ${SKY} 0%, #0284C7 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff', position: 'relative', zIndex: 1 }}
-        >
-          Back to your persona
-        </motion.button>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'center', position: 'relative', zIndex: 1 }}>
+          <motion.button
+            whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
+            onClick={() => navigate('/dashboard')}
+            style={{ minWidth: 220, padding: '16px 32px', background: `linear-gradient(135deg, ${SKY} 0%, #0284C7 100%)`, border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: '#fff' }}
+          >
+            Back to dashboard
+          </motion.button>
+          <motion.button
+            whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}
+            onClick={() => { startedRef.current = false; setError(null); window.location.reload() }}
+            style={{ minWidth: 180, padding: '16px 28px', background: 'rgba(232,212,168,0.06)', border: `1px solid ${HAIRLINE}`, borderRadius: 12, cursor: 'pointer', fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 500, color: MUTE }}
+          >
+            Try again
+          </motion.button>
+        </div>
       </div>
     )
   }
@@ -579,12 +691,14 @@ export default function Itinerary() {
           natural page scroll automatically. */}
       <main ref={mainRef} style={{
         flex: 1, position: 'relative', zIndex: 1,
-        // Desktop view flows like a normal scrolling page; mobile view
-        // centres the phone mockup. Switch layout primitives per mode.
-        display: viewMode === 'desktop' && showingItinerary ? 'block' : 'flex',
-        alignItems: viewMode === 'desktop' && showingItinerary ? 'unset' : 'safe center',
-        justifyContent: viewMode === 'desktop' && showingItinerary ? 'unset' : 'safe center',
-        padding: isCompact ? '20px 0' : (viewMode === 'desktop' ? '0' : '32px 0'),
+        // Layout primitives per mode:
+        //   mobile / boot screen → flex centred so the phone sits mid-stage
+        //   desktop              → block flow so the editorial layout scrolls
+        //   both                 → block flow; the bi-view container handles its own grid
+        display: (viewMode === 'desktop' || viewMode === 'both') && showingItinerary ? 'block' : 'flex',
+        alignItems: (viewMode === 'desktop' || viewMode === 'both') && showingItinerary ? 'unset' : 'safe center',
+        justifyContent: (viewMode === 'desktop' || viewMode === 'both') && showingItinerary ? 'unset' : 'safe center',
+        padding: isCompact ? '20px 0' : (viewMode === 'mobile' ? '32px 0' : '0'),
         overflowX: 'hidden', overflowY: 'auto',
       }}>
         <DestinationBackdrop city={dest?.city} visible={booted && showingItinerary}/>
@@ -605,8 +719,9 @@ export default function Itinerary() {
             border: `1px solid ${HAIRLINE}`,
           }}>
             {[
-              { key: 'desktop', label: 'Desktop view' },
-              { key: 'mobile',  label: 'Mobile view'  },
+              { key: 'both',    label: 'Both'    },
+              { key: 'desktop', label: 'Desktop' },
+              { key: 'mobile',  label: 'Mobile'  },
             ].map(t => {
               const active = viewMode === t.key
               return (
@@ -633,13 +748,31 @@ export default function Itinerary() {
           </div>
         )}
 
-        {viewMode === 'mobile' || !showingItinerary ? (
-          <PhoneStage scale={phoneScale}>
-            <PhoneFrame onPowerButton={togglePower} powerButtonGlow={!booted && !booting}>
-              <PhoneStatusBar/>
-              {!showingItinerary ? (
-                <PhoneLoading phase={phase}/>
-              ) : (
+        {(() => {
+          // Boot screen always uses the phone stage centred — no itinerary
+          // surfaces to render yet.
+          if (!showingItinerary) {
+            return (
+              <PhoneStage scale={phoneScale} surfaceRef={phoneSurfaceRef}>
+                <PhoneFrame onPowerButton={togglePower} powerButtonGlow={!booted && !booting}>
+                  <PhoneStatusBar/>
+                  <PhoneLoading phase={phase}/>
+                  <PhoneHomeIndicator/>
+                  <AnimatePresence>
+                    {!booted && !booting && <PhoneSleepScreen key="sleep" onWake={powerOn}/>}
+                    {booting && <PhoneBootScreen key="boot"/>}
+                  </AnimatePresence>
+                </PhoneFrame>
+              </PhoneStage>
+            )
+          }
+
+          // Shared phone block — reused by 'mobile' and 'both' modes.
+          // Bi-view scales the phone down so it fits alongside desktop.
+          const phoneBlock = (extraScale = 1) => (
+            <PhoneStage scale={phoneScale * extraScale} surfaceRef={phoneSurfaceRef}>
+              <PhoneFrame onPowerButton={togglePower} powerButtonGlow={!booted && !booting}>
+                <PhoneStatusBar/>
                 <PhoneItinerary
                   dest={dest}
                   dateRange={dateRange}
@@ -652,29 +785,129 @@ export default function Itinerary() {
                   activeActivityIdx={activeActivityIdx}
                   setActiveActivityIdx={setActiveActivityIdx}
                 />
-              )}
-              <PhoneHomeIndicator/>
-              <AnimatePresence>
-                {!booted && !booting && <PhoneSleepScreen key="sleep" onWake={powerOn}/>}
-                {booting && <PhoneBootScreen key="boot"/>}
-              </AnimatePresence>
-            </PhoneFrame>
-          </PhoneStage>
-        ) : (
-          <DesktopItinerary
-            dest={dest}
-            dateRange={dateRange}
-            days={days}
-            safeActiveDay={safeActiveDay}
-            setDay={setDay}
-            isStreaming={isStreaming}
-            activeActivityIdx={activeActivityIdx}
-            setActiveActivityIdx={setActiveActivityIdx}
-            scrollContainerRef={mainRef}
-          />
-        )}
+                <PhoneHomeIndicator/>
+                <AnimatePresence>
+                  {!booted && !booting && <PhoneSleepScreen key="sleep" onWake={powerOn}/>}
+                  {booting && <PhoneBootScreen key="boot"/>}
+                </AnimatePresence>
+              </PhoneFrame>
+            </PhoneStage>
+          )
+
+          const desktopBlock = (
+            <DesktopItinerary
+              dest={dest}
+              dateRange={dateRange}
+              days={days}
+              safeActiveDay={safeActiveDay}
+              setDay={setDay}
+              isStreaming={isStreaming}
+              activeActivityIdx={activeActivityIdx}
+              setActiveActivityIdx={setActiveActivityIdx}
+              scrollContainerRef={mainRef}
+            />
+          )
+
+          if (viewMode === 'mobile')  return phoneBlock(1)
+          if (viewMode === 'desktop') return desktopBlock
+
+          // 'both' — desktop layout takes the main column, phone preview
+          // anchors to the right at a smaller scale. On narrow viewports
+          // we collapse the phone column to keep it readable; the toggle
+          // still lets the user pick either surface alone.
+          const phoneColWidth = Math.min(420, Math.max(320, vw * 0.30))
+          const phoneFitScale = phoneColWidth / (PHONE_W + 20)
+          return (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `minmax(0, 1fr) ${phoneColWidth}px`,
+              gap: 24,
+              alignItems: 'start',
+              padding: '0 24px',
+            }}>
+              <div style={{ minWidth: 0 }}>
+                {desktopBlock}
+              </div>
+              {/* Sticky phone preview — stays in view while you scroll the
+                  desktop layout, mouse-wheel over it scrolls the phone
+                  thanks to the surface-hover hijack above. */}
+              <div style={{
+                position: 'sticky', top: 56, alignSelf: 'start',
+                paddingTop: 12, paddingBottom: 24,
+                display: 'flex', justifyContent: 'center',
+              }}>
+                {phoneBlock(phoneFitScale)}
+              </div>
+            </div>
+          )
+        })()}
 
       </main>
+
+      {/* Revision progress toast — top-centre, narrates the SSE stream as
+          days are rewritten so the user sees "Day 3 updated" / "Swapped X → Y"
+          instead of staring at the approve gate wondering if anything changed. */}
+      <AnimatePresence>
+        {reviseToast && (
+          <motion.div
+            key={`toast-${reviseToast.text}`}
+            initial={{ y: -16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -12, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+            style={{
+              position: 'fixed', top: 84, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 120, pointerEvents: 'none',
+              maxWidth: 'min(560px, calc(100vw - 40px))',
+              padding: '12px 18px',
+              borderRadius: 14,
+              background: 'rgba(14,11,8,0.94)',
+              border: `1px solid ${reviseToast.kind === 'error' ? 'rgba(248,113,113,0.45)'
+                                : reviseToast.kind === 'done'  ? `${SKY}55`
+                                :                                'rgba(139,92,246,0.45)'}`,
+              boxShadow: `0 16px 48px rgba(0,0,0,0.55), 0 0 24px ${
+                reviseToast.kind === 'error' ? 'rgba(248,113,113,0.18)'
+              : reviseToast.kind === 'done'  ? `${SKY}22`
+              :                                'rgba(139,92,246,0.20)'
+              }`,
+              backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+              display: 'flex', alignItems: 'center', gap: 12,
+            }}
+          >
+            {reviseToast.kind === 'progress' && (
+              <motion.span
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1.1, repeat: Infinity, ease: 'linear' }}
+                style={{ width: 14, height: 14, borderRadius: '50%',
+                         border: `1.5px solid rgba(139,92,246,0.30)`,
+                         borderTopColor: '#8B5CF6', flexShrink: 0 }}
+              />
+            )}
+            {reviseToast.kind === 'done'  && <Check size={14} style={{ color: SKY, flexShrink: 0 }}/>}
+            {reviseToast.kind === 'error' && (
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#F87171', flexShrink: 0 }}/>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+              <span style={{
+                fontFamily: '"Inter Tight",sans-serif', fontSize: 12,
+                letterSpacing: '0.02em', color: BONE, fontWeight: 500,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {reviseToast.text}
+              </span>
+              {reviseToast.sub && (
+                <span style={{
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                  color: MUTE, fontWeight: 300,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {reviseToast.sub}
+                </span>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Companion prompt — slides up when the pipeline 'done' event fires,
           asks Yes/No to meeting new people for this trip. Non-blocking. */}
@@ -790,21 +1023,24 @@ export default function Itinerary() {
                 Revise
               </motion.button>
               <motion.button
-                whileHover={!approveBusy ? { scale: 1.04, boxShadow: '0 0 22px rgba(16,185,129,0.50)' } : {}}
+                whileHover={!approveBusy ? { scale: 1.03, boxShadow: '0 0 22px rgba(16,185,129,0.50)' } : {}}
                 whileTap={!approveBusy ? { scale: 0.97 } : {}}
                 onClick={handleApprove}
                 disabled={approveBusy}
                 style={{
-                  padding: '10px 22px',
+                  padding: '11px 22px',
                   background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
                   border: 'none', borderRadius: 18,
                   cursor: approveBusy ? 'wait' : 'pointer',
-                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em',
-                  textTransform: 'uppercase', color: '#0a0807', fontWeight: 600,
+                  // Longer sentence — keep sentence case + lower letter-spacing
+                  // so the copy reads naturally instead of shouting.
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 12,
+                  letterSpacing: '0.01em', color: '#0a0807', fontWeight: 600,
                   opacity: approveBusy ? 0.75 : 1,
+                  whiteSpace: 'nowrap',
                 }}
               >
-                {approveBusy ? 'Locking…' : 'Approve · Lock in'}
+                {approveBusy ? 'Locking…' : "I'm happy with the proposed itinerary and approve!"}
               </motion.button>
             </div>
             {approveError && (
@@ -889,7 +1125,7 @@ export default function Itinerary() {
                   opacity: (reviseBusy || !reviseText.trim()) ? 0.5 : 1,
                 }}
               >
-                {reviseBusy ? 'Rewriting…' : 'Send feedback'}
+                {reviseBusy ? 'Sending…' : 'Send feedback'}
               </motion.button>
             </div>
           </motion.div>
@@ -1729,7 +1965,7 @@ function PhoneBootScreen() {
   )
 }
 
-function PhoneStage({ children, scale = 1 }) {
+function PhoneStage({ children, scale = 1, surfaceRef }) {
   // Mouse-tracked 3D tilt with spring smoothing — the phone reads as a
   // physical object the cursor is holding. All hooks declared at the top
   // of the component, no hook calls inside JSX (React 18 prod is strict).
@@ -1761,6 +1997,7 @@ function PhoneStage({ children, scale = 1 }) {
   // shorter than PHONE_H (high browser zoom, short laptop screens, etc.).
   return (
     <motion.div
+      ref={surfaceRef}
       initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 1, ease, delay: 0.15 }}

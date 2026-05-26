@@ -349,6 +349,279 @@ function TripStoryChip({ trip, onOpen }) {
 }
 
 
+// ── Instagram-style stories ──────────────────────────────────────────────
+//
+// A horizontal strip of circular author avatars at the top of the feed,
+// each tappable to open a fullscreen story viewer with the post's image
+// + caption. Auto-advances through stories from different authors with
+// a Stories-style progress bar at the top. Tap left/right to navigate,
+// X or backdrop to close.
+//
+// We dedupe by author and keep the newest post per author so the strip
+// shows one ring per active traveller (matches IG semantics — one
+// "story" per user, not per item).
+
+function dedupeStoriesByAuthor(posts) {
+  const seen = new Map()  // author_id → newest post
+  for (const p of posts || []) {
+    if (!p?.image_url) continue   // no image → no story
+    const key = p.author_id || p.author_name || p.post_id
+    if (!seen.has(key)) seen.set(key, p)
+    // First occurrence wins; posts are already newest-first.
+  }
+  return [...seen.values()]
+}
+
+function StoryAvatar({ post, viewed, onOpen }) {
+  // Gradient ring uses gold→violet→gold, matching IG's unviewed-story
+  // colours adapted to the Sonder palette. `viewed` flips to a flat
+  // muted ring so users can tell what they've already seen this session.
+  const ringBg = viewed
+    ? `linear-gradient(135deg, rgba(232,212,168,0.18) 0%, rgba(139,92,246,0.18) 100%)`
+    : `conic-gradient(from 0deg, ${GOLD}, ${VIOLET}, ${ROSE}, ${GOLD})`
+  return (
+    <motion.button
+      layout
+      initial={{ opacity: 0, y: 6, scale: 0.92 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.92 }}
+      transition={{ duration: 0.35, ease }}
+      whileHover={{ y: -3 }}
+      whileTap={{ scale: 0.95 }}
+      onClick={() => onOpen?.(post)}
+      style={{
+        flex: '0 0 auto', width: 84,
+        background: 'transparent', border: 'none', padding: 0,
+        cursor: 'pointer',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+      }}
+      title={`${post.author_name || 'Traveller'} · tap to view`}
+    >
+      <div style={{
+        position: 'relative', width: 70, height: 70, borderRadius: '50%',
+        padding: 2.5, background: ringBg,
+      }}>
+        <div style={{
+          width: '100%', height: '100%', borderRadius: '50%',
+          background: BG, padding: 2, boxSizing: 'border-box',
+        }}>
+          <div style={{
+            width: '100%', height: '100%', borderRadius: '50%',
+            overflow: 'hidden',
+            background: 'linear-gradient(160deg, rgba(20,15,10,1) 0%, rgba(8,8,7,1) 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {post.author_avatar
+              ? <img src={post.author_avatar} alt={post.author_name}
+                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+              : <span style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 24, color: GOLD }}>
+                  {initials(post.author_name)}
+                </span>}
+          </div>
+        </div>
+      </div>
+      <p style={{
+        fontFamily: '"Inter Tight",sans-serif', fontSize: 10, fontWeight: 500,
+        color: BONE, margin: 0, letterSpacing: '0.02em',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        maxWidth: 84, textAlign: 'center',
+      }}>
+        {(post.author_name || 'Traveller').split(' ')[0]}
+      </p>
+    </motion.button>
+  )
+}
+
+// Stories viewer — fullscreen, IG-style. Auto-advances every STORY_MS,
+// tap left/right to step manually, X / backdrop click to close.
+const STORY_MS = 5500
+
+function StoryViewer({ stories, startIndex = 0, onClose, onViewed }) {
+  const [idx, setIdx] = useState(startIndex)
+  const [paused, setPaused] = useState(false)
+  const story = stories[idx]
+
+  // Auto-advance progress bar. Re-keys on idx so each slide resets.
+  useEffect(() => {
+    if (!story) return
+    onViewed?.(story)
+    if (paused) return
+    const t = setTimeout(() => {
+      if (idx + 1 >= stories.length) onClose?.()
+      else setIdx(idx + 1)
+    }, STORY_MS)
+    return () => clearTimeout(t)
+  }, [idx, paused, story, stories.length, onClose, onViewed])
+
+  // Keyboard nav (esc / arrows).
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') onClose?.()
+      else if (e.key === 'ArrowRight') setIdx(i => Math.min(stories.length - 1, i + 1))
+      else if (e.key === 'ArrowLeft')  setIdx(i => Math.max(0, i - 1))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [stories.length, onClose])
+
+  if (!story) return null
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        background: 'rgba(2,2,2,0.95)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={() => setPaused(true)}
+        onPointerUp={() => setPaused(false)}
+        onPointerLeave={() => setPaused(false)}
+        style={{
+          position: 'relative', width: 'min(420px, 100%)',
+          aspectRatio: '9 / 16', maxHeight: '95vh',
+          borderRadius: 16, overflow: 'hidden',
+          background: `linear-gradient(160deg, rgba(22,18,12,1) 0%, rgba(8,8,7,1) 100%)`,
+          boxShadow: '0 30px 80px rgba(0,0,0,0.7)',
+        }}
+      >
+        {/* Image — full bleed */}
+        {story.image_url && (
+          <img src={story.image_url} alt={story.author_name}
+               style={{
+                 position: 'absolute', inset: 0, width: '100%', height: '100%',
+                 objectFit: 'cover',
+               }}/>
+        )}
+        {/* Top scrim for legibility of progress + header */}
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: 140,
+          background: 'linear-gradient(180deg, rgba(0,0,0,0.65) 0%, transparent 100%)',
+          pointerEvents: 'none',
+        }}/>
+        {/* Bottom scrim for caption */}
+        <div style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0, height: 220,
+          background: 'linear-gradient(0deg, rgba(0,0,0,0.85) 0%, transparent 100%)',
+          pointerEvents: 'none',
+        }}/>
+
+        {/* Progress segments at the top, one per story */}
+        <div style={{
+          position: 'absolute', top: 10, left: 10, right: 10,
+          display: 'flex', gap: 4, zIndex: 3,
+        }}>
+          {stories.map((_, i) => (
+            <div key={i} style={{
+              flex: 1, height: 2.5, borderRadius: 999,
+              background: 'rgba(255,255,255,0.25)', overflow: 'hidden',
+            }}>
+              {i < idx && (
+                <div style={{ width: '100%', height: '100%', background: BONE }}/>
+              )}
+              {i === idx && (
+                <motion.div
+                  key={`${idx}-${paused}`}
+                  initial={{ width: '0%' }}
+                  animate={{ width: paused ? undefined : '100%' }}
+                  transition={{ duration: STORY_MS / 1000, ease: 'linear' }}
+                  style={{ height: '100%', background: BONE }}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Header: avatar + name + age */}
+        <div style={{
+          position: 'absolute', top: 24, left: 14, right: 50, zIndex: 4,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: '50%', overflow: 'hidden',
+            border: '1.5px solid rgba(255,255,255,0.4)',
+            background: '#1a1410',
+          }}>
+            {story.author_avatar
+              ? <img src={story.author_avatar} alt=""
+                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+              : <span style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '100%', height: '100%', color: GOLD,
+                  fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 14,
+                }}>
+                  {initials(story.author_name)}
+                </span>}
+          </div>
+          <span style={{
+            fontFamily: '"Inter Tight",sans-serif', fontSize: 13, fontWeight: 600,
+            color: BONE,
+          }}>
+            {story.author_name || 'Traveller'}
+          </span>
+          {story.created_at && (
+            <span style={{
+              fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
+              color: 'rgba(244,237,224,0.65)',
+            }}>
+              · {timeAgo(story.created_at)}
+            </span>
+          )}
+        </div>
+
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          aria-label="Close story"
+          style={{
+            position: 'absolute', top: 22, right: 14, zIndex: 5,
+            width: 30, height: 30, borderRadius: '50%',
+            background: 'rgba(0,0,0,0.45)', border: 'none', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: BONE,
+          }}
+        >
+          <X size={16}/>
+        </button>
+
+        {/* Caption */}
+        <div style={{
+          position: 'absolute', bottom: 24, left: 18, right: 18, zIndex: 4,
+        }}>
+          <p style={{
+            fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+            fontSize: 19, color: BONE, lineHeight: 1.35, margin: 0,
+            textShadow: '0 2px 8px rgba(0,0,0,0.6)',
+          }}>
+            {story.body || ''}
+          </p>
+        </div>
+
+        {/* Tap zones — left third = back, right two-thirds = forward */}
+        <div
+          onClick={(e) => { e.stopPropagation(); setIdx(i => Math.max(0, i - 1)) }}
+          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: '33%', zIndex: 2 }}
+        />
+        <div
+          onClick={(e) => {
+            e.stopPropagation()
+            if (idx + 1 >= stories.length) onClose?.()
+            else setIdx(idx + 1)
+          }}
+          style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: '67%', zIndex: 2 }}
+        />
+      </div>
+    </motion.div>
+  )
+}
+
+
 // ── Reactions row (multi-emoji) ─────────────────────────────────────────
 //
 // Five emoji picker, IG / Slack register. Client-side toggle for now —
@@ -1140,6 +1413,11 @@ export default function DashboardPulse({ selfUid }) {
   const [joinTarget, setJoinTarget] = useState(null)
   const [joinBusy, setJoinBusy] = useState(false)
   const [joinErr, setJoinErr] = useState(null)
+  // Stories viewer state. `viewed` tracks which story slugs were opened
+  // this session so the avatar ring can dim after viewing (IG semantics).
+  const [storyOpen, setStoryOpen] = useState(false)
+  const [storyStart, setStoryStart] = useState(0)
+  const [viewedStories, setViewedStories] = useState(() => new Set())
   const [tripPreview, setTripPreview] = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [verdict, setVerdict] = useState(null)
@@ -1305,6 +1583,10 @@ export default function DashboardPulse({ selfUid }) {
   // cap here as a safety net in case the invariant ever drifts.
   const tripsToShow = useMemo(() => trips.slice(0, PULSE_MAX), [trips])
   const postsToShow = useMemo(() => posts.slice(0, PULSE_MAX), [posts])
+  // Stories = posts with images, deduped to one slide per author.
+  // Order matches the feed (newest first) so the strip reads left-to-
+  // right as "most recent first".
+  const stories = useMemo(() => dedupeStoriesByAuthor(posts), [posts])
 
   return (
     <section style={{
@@ -1378,12 +1660,18 @@ export default function DashboardPulse({ selfUid }) {
           </p>
         </div>
 
-        {/* ──── HORIZONTAL TRIPS STRIP (IG-stories register) ──── */}
+        {/* ──── STORIES STRIP (Instagram-register) ────
+            Replaces the previous "Open invitations" strip. Stories
+            are derived from posts with images — one circular avatar
+            per author, tap to open the fullscreen viewer with the
+            image + caption. Discovery-via-trips still lives further
+            down via the synthetic agents loop; the stories strip is
+            pure social signal. */}
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-            <Compass size={11} style={{ color: VIOLET }}/>
+            <Sparkles size={11} style={{ color: GOLD }}/>
             <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
-              Open invitations
+              Stories
             </p>
           </div>
           <div style={{
@@ -1394,28 +1682,29 @@ export default function DashboardPulse({ selfUid }) {
             minHeight: 100,
           }}>
             <AnimatePresence initial={false}>
-              {tripsToShow.map(t => (
-                <TripStoryChip
-                  key={t.itinerary_id}
-                  trip={t}
-                  onOpen={openJoinModal}
+              {stories.map((s, i) => (
+                <StoryAvatar
+                  key={s.post_id || `${s.author_id}-${i}`}
+                  post={s}
+                  viewed={viewedStories.has(s.post_id)}
+                  onOpen={() => { setStoryStart(i); setStoryOpen(true) }}
                 />
               ))}
             </AnimatePresence>
-            {tripsToShow.length === 0 && (
+            {stories.length === 0 && (
               <div style={{
                 padding: '20px 22px', borderRadius: 14,
-                background: `linear-gradient(135deg, ${VIOLET}10 0%, rgba(232,212,168,0.03) 100%)`,
-                border: `1px solid ${VIOLET}33`,
+                background: `linear-gradient(135deg, ${GOLD}10 0%, rgba(232,212,168,0.03) 100%)`,
+                border: `1px solid ${GOLD}33`,
                 display: 'inline-flex', alignItems: 'center', gap: 12,
               }}>
-                <MapPin size={16} style={{ color: VIOLET }}/>
+                <Sparkles size={16} style={{ color: GOLD }}/>
                 <div>
                   <p style={{ fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic', fontSize: 16, color: BONE, margin: 0, lineHeight: 1.2 }}>
-                    Trips are warming up.
+                    No stories yet.
                   </p>
                   <p style={{ fontFamily: '"Inter Tight",sans-serif', fontWeight: 300, fontSize: 11, color: MUTE, margin: '2px 0 0', letterSpacing: '0.02em' }}>
-                    Fresh invitations land here every minute.
+                    Travellers share moments here — yours can be the first.
                   </p>
                 </div>
               </div>
@@ -1486,6 +1775,27 @@ export default function DashboardPulse({ selfUid }) {
             preview={tripPreview}
             previewLoading={previewLoading}
             verdict={verdict}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Stories viewer — fullscreen, auto-advancing. Marks each
+          opened post_id as viewed so the avatar ring dims after. */}
+      <AnimatePresence>
+        {storyOpen && stories.length > 0 && (
+          <StoryViewer
+            stories={stories}
+            startIndex={Math.min(storyStart, stories.length - 1)}
+            onClose={() => setStoryOpen(false)}
+            onViewed={(s) => {
+              if (!s?.post_id) return
+              setViewedStories(prev => {
+                if (prev.has(s.post_id)) return prev
+                const next = new Set(prev)
+                next.add(s.post_id)
+                return next
+              })
+            }}
           />
         )}
       </AnimatePresence>

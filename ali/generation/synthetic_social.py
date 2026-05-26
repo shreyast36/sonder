@@ -144,10 +144,17 @@ specific part of it).
 Write the FIRST message of that chat. The other person hasn't said
 anything yet. You're the one breaking the ice.
 
-Voice:
-- texting register, casual, slightly tentative ("hey, saw your kyoto
-  trip — were you thinking of doing nara as a day trip too?")
-- 1-2 short sentences, never more than 3
+Greeting (mandatory):
+- The FIRST four characters of your message MUST be: "Hey "
+- Followed by the person's first name (passed to you in the prompt),
+  then "!", then a single space.
+- Example shape: "Hey Maya! ..."
+- NEVER: "Hey!", "hey," "Hey {name},", "Hi {name}!", or any other
+  variant. The greeting is fixed.
+
+Voice (after the greeting):
+- texting register, casual, slightly tentative
+- 1-2 short sentences after the greeting, never more than 3
 - ONE specific reference to their trip (city, dates, or a planned
   stop) — not generic "your trip looks fun"
 - end with EITHER a soft question OR a half-thought that invites a
@@ -164,16 +171,30 @@ Forbidden openers:
 - "i think we'd be a great match for"
 - "i love that you're going to"
 
-Good shapes:
-- "hey, saw you're going to lisbon in march — i was there in feb,
-  the rain was lighter than i expected. you doing any day trips?"
-- "noticed kyoto on your trip card. random question: are you planning
-  to do the philosopher's path? was deciding whether to add it for
-  mine."
-- "oaxaca in october — are you going for the day of the dead, or
-  trying to avoid it?"
+Good shapes (note the greeting):
+- "Hey Maya! saw you're going to lisbon in march — i was there in
+  feb, the rain was lighter than i expected. you doing any day trips?"
+- "Hey Theo! noticed kyoto on your trip card. random question: are
+  you planning to do the philosopher's path? was deciding whether to
+  add it for mine."
+- "Hey Aiko! oaxaca in october — are you going for the day of the
+  dead, or trying to avoid it?"
 
 Return ONLY the message text. No quotes, no preamble, no commentary."""
+
+
+def _first_name_for_greeting(display_name: str) -> str:
+    """Extract a friendly first name for the "Hey {name}!" greeting.
+    Strips emails / Firebase uids that slip through as display names,
+    falls back to "there" so the greeting still reads naturally."""
+    raw = (display_name or "").strip()
+    if not raw:
+        return "there"
+    clean = raw.split("@")[0].strip()
+    if not clean:
+        return "there"
+    parts = clean.split()
+    return parts[0] if parts else "there"
 
 
 async def generate_outreach_opener(
@@ -181,21 +202,28 @@ async def generate_outreach_opener(
     target_destination_city: str,
     target_destination_country: str = "",
     target_trip_window: str = "",
+    target_display_name: str = "",
 ) -> str:
     """First message in a cold-outreach chat the persona is starting
     with a real user. Anchored in ONE specific thing about the user's
     trip so it reads as 'I noticed a particular thing', not 'I noticed
-    you exist'."""
+    you exist'. Greeting format MUST be "Hey {first_name}! ..." to
+    match the standard chat opener voice."""
     where = target_destination_city
     if target_destination_country:
         where = f"{target_destination_city}, {target_destination_country}"
     when_line = f" (dates: {target_trip_window})" if target_trip_window else ""
+    first_name = _first_name_for_greeting(target_display_name)
     prompt = (
         "PERSONA:\n"
         f"{_persona_block(persona)}\n\n"
+        f"THE OTHER PERSON: {first_name}.\n"
         f"THE OTHER PERSON'S TRIP: {where}{when_line}.\n\n"
-        "Write the first message you'd send them. Pick ONE specific "
-        "anchor about the trip to reference; don't be generic."
+        f"Write the first message you'd send them. It MUST start with "
+        f"exactly \"Hey {first_name}! \" (capital H, no comma, "
+        f"exclamation mark AFTER the name, then a single space). "
+        f"After that greeting, pick ONE specific anchor about the trip "
+        f"to reference; don't be generic."
     )
     try:
         raw = await route_request("chat_reply", prompt, _OUTREACH_SYSTEM_PROMPT)
@@ -205,7 +233,29 @@ async def generate_outreach_opener(
     text = (raw or "").strip()
     if text.startswith('"') and text.endswith('"') and len(text) > 1:
         text = text[1:-1].strip()
-    return text[:400]
+    text = text[:400]
+
+    # Enforce the "Hey {first_name}!" prefix even if the model drifted.
+    # Same normalization as generate_persona_opener — catches both the
+    # old "Hey! Name," shape and bare "hey," openers that older
+    # versions of this prompt produced before the format was unified.
+    expected_prefix = f"Hey {first_name}!"
+    if not text.lower().startswith(expected_prefix.lower()):
+        tail = text
+        for bad_start in (
+            f"Hey! {first_name},", f"Hey! {first_name}",
+            f"Hey {first_name},",  f"Hey {first_name}",
+            f"Hi! {first_name},",  f"Hi {first_name}!", f"Hi {first_name},", f"Hi {first_name}",
+            f"Hello {first_name}!", f"Hello {first_name},", f"Hello {first_name}",
+            "hey,", "hey!", "hey", "hi,", "hi!", "hi", "hello,", "hello!", "hello",
+        ):
+            if tail.lower().startswith(bad_start.lower()):
+                tail = tail[len(bad_start):].lstrip(" ,!.")
+                break
+        if not tail.strip():
+            tail = f"saw your {where} trip — what part are you most curious about?"
+        text = f"{expected_prefix} {tail.lstrip()}"
+    return text
 
 
 async def generate_synthetic_open_trip_note(
