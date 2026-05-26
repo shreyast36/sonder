@@ -48,33 +48,34 @@ async def destination_photo(
 # engine handles the actual photo pick per query; "aerial" keyword
 # keeps the Ken-Burns simulation reading as flyover.
 _LUXURY_BACKDROP_QUERIES = [
-    # White sand + turquoise water tropical beaches.
-    # Keywords push Pixabay toward the iconic colour palette —
-    # "turquoise" and "white sand" filter out murky shorelines,
-    # and pairing with category=nature + editors_choice keeps
-    # tourists / hotels out of frame.
-    "white sand beach turquoise water",
-    "Maldives turquoise lagoon",
-    "Bora Bora turquoise lagoon",
-    "Whitsunday whitehaven beach",
-    "Phi Phi Islands turquoise water",
-    "Seychelles white sand beach",
-    "Bahamas turquoise water beach",
-    "Caribbean turquoise lagoon",
-    "Palawan turquoise lagoon",
-    "tropical paradise white sand",
-    # Snow-capped peaks, alpine lakes, glacier landscapes.
-    # "snow peaks" / "alpine" keeps green hillside / lowland
-    # results out; pairs with editors_choice for clean compositions.
-    "Swiss Alps Matterhorn snow",
-    "Patagonia Torres del Paine snow",
-    "Dolomites Italy snow peaks",
-    "Banff Moraine Lake alpine",
-    "Lofoten Islands snow mountains",
-    "Iceland snow mountains",
-    "Himalaya snow peaks",
-    "Milford Sound mountains fjord",
-    "Norway fjord snow mountains",
+    # Pristine tropical paradise beaches — NO boats, NO aerials, NO
+    # people, NO architecture. Queries lean on "paradise" / "pristine"
+    # / "secluded" / "crystal" because those keywords on Pixabay
+    # consistently rank empty-beach landscape compositions ahead of
+    # the iconic-but-cluttered destination shots (longtail boats off
+    # Phi Phi, junks on Halong Bay, overwater bungalows in Maldives).
+    "pristine tropical beach turquoise",
+    "secluded white sand beach paradise",
+    "crystal clear turquoise water beach",
+    "Maldives white sand paradise",
+    "Bora Bora paradise sunset beach",
+    "Whitsunday whitehaven empty beach",
+    "Seychelles pristine beach",
+    "Bahamas paradise white sand",
+    "tropical lagoon paradise",
+    "remote tropical beach turquoise",
+    # Pristine alpine + snow-peak landscapes. "Alpenglow" / "sunrise"
+    # / "winter" bias toward dramatic light + clean compositions, no
+    # ski-resort buildings, no boats on alpine lakes.
+    "Swiss Alps Matterhorn alpenglow",
+    "Patagonia Torres del Paine sunrise",
+    "Dolomites Italy sunrise peaks",
+    "Moraine Lake Banff alpine",
+    "Iceland highlands mountains",
+    "Lofoten Islands snowy peaks",
+    "Himalaya snow summit",
+    "Milford Sound fjord landscape",
+    "Norway fjord winter mountains",
 ]
 
 
