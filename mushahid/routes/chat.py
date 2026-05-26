@@ -280,6 +280,33 @@ async def get_messages(session_id: str, uid: str = Depends(verify_token)):
     return {"messages": msgs}
 
 
+@router.delete("/chat/session/{session_id}")
+async def delete_session(session_id: str, uid: str = Depends(verify_token)):
+    """Hard-delete a chat session + its messages subcollection. Used by
+    the inbox delete-row action — lets users prune dead conversations
+    without touching the trip they were attached to.
+
+    Auth: requires the caller to be a participant in the session. The
+    in-memory _sessions cache is also evicted so the WS hot path
+    doesn't keep serving a zombie session after the doc is gone.
+    """
+    await _assert_participant(session_id, uid)
+    from mushahid.realtime.firestore import delete_chat_session_and_messages
+    removed = await delete_chat_session_and_messages(session_id)
+    # Evict the in-memory mirror so any subsequent WS / poll request
+    # for this session returns 404 instead of stale data.
+    _sessions.pop(session_id, None)
+    try:
+        from mushahid.monitoring import capture
+        capture(uid, "chat_session_deleted", {
+            "session_id": session_id,
+            "messages_removed": removed.get("messages", 0),
+        })
+    except Exception:
+        pass
+    return {"ok": True, **removed}
+
+
 @router.get("/inbox")
 async def list_inbox(uid: str = Depends(verify_token)):
     """Every chat session the user is in, summarised for the inbox panel.

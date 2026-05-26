@@ -737,6 +737,60 @@ async def list_chat_sessions_for_user(user_id: str) -> list[dict]:
         return []
 
 
+async def delete_chat_session_and_messages(session_id: str) -> dict:
+    """Hard-delete a chat session + every message in its messages
+    subcollection. Returns a count of what was removed. Caller is
+    responsible for the participant auth check; this helper trusts the
+    session_id it's given.
+
+    Mirrors the structure of delete_itinerary_and_related but scoped
+    to a single chat — used by the inbox delete-row action so users
+    can prune dead conversations without nuking the trip they were
+    attached to.
+    """
+    removed = {"session": 0, "messages": 0}
+    if LOCAL_MODE:
+        key = f"chat:{session_id}"
+        val = _store.pop(key, None)
+        if val is not None:
+            removed["session"] = 1
+            removed["messages"] = len(val.get("messages") or [])
+        return removed
+
+    db = get_db()
+    # Messages subcollection first, paged in 200-doc batches.
+    try:
+        while True:
+            batch = await asyncio.to_thread(
+                lambda: list(db.collection("chat_sessions")
+                               .document(session_id)
+                               .collection("messages")
+                               .limit(200)
+                               .stream())
+            )
+            if not batch:
+                break
+            for m in batch:
+                try:
+                    await asyncio.to_thread(lambda r=m.reference: r.delete())
+                    removed["messages"] += 1
+                except Exception as e:
+                    logger.warning("delete chat message %s/%s failed: %s", session_id, m.id, e)
+            if len(batch) < 200:
+                break
+    except Exception as e:
+        logger.warning("paged delete of messages for session %s failed: %s", session_id, e)
+    # Then the session doc itself.
+    try:
+        await asyncio.to_thread(
+            lambda: db.collection("chat_sessions").document(session_id).delete()
+        )
+        removed["session"] = 1
+    except Exception as e:
+        logger.warning("delete chat session %s failed: %s", session_id, e)
+    return removed
+
+
 async def list_chat_messages(session_id: str) -> list[dict]:
     """Return all messages for a session in time order. Falls back to an
     empty list when the session has no messages yet."""

@@ -479,6 +479,12 @@ export async function listInbox() {
   return get('/api/inbox')
 }
 
+// Hard-delete a chat session + its messages subcollection. Inbox row
+// delete action. Backend asserts participant auth before deleting.
+export async function deleteChatSession(sessionId) {
+  return _del(`/api/chat/session/${encodeURIComponent(sessionId)}`)
+}
+
 export async function listMyJoinRequests({ asOwner = false } = {}) {
   const q = asOwner ? '?as=owner' : ''
   return get(`/api/discover/join-requests${q}`)

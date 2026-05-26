@@ -3,10 +3,10 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import {
   Inbox as InboxIcon, MessageCircle, Loader2,
-  Heart, Clock, Sparkles,
+  Heart, Clock, Sparkles, Trash2,
 } from 'lucide-react'
 import { BG, BONE, GOLD, MUTE, DIM, HAIRLINE, ease } from '../lib/tokens'
-import { listInbox } from '../lib/api'
+import { listInbox, deleteChatSession } from '../lib/api'
 import SynthBadge from './SynthBadge'
 
 const ROSE   = '#F43F5E'
@@ -101,7 +101,7 @@ function matchesCategory(session, cat, readMap) {
 
 // ── Row ─────────────────────────────────────────────────────────────────
 
-function InboxRow({ row, selfUid, unread, onClick, index }) {
+function InboxRow({ row, selfUid, unread, onClick, onDelete, deleting, index }) {
   const isMine = row.last_sender_id === selfUid
   const accent =
     unread                                ? ROSE  :
@@ -193,6 +193,55 @@ function InboxRow({ row, selfUid, unread, onClick, index }) {
           Matched
         </span>
       )}
+
+      {/* Per-row delete — small trash icon, low-attention. Stops
+          propagation so it doesn't open the chat. Uses window.confirm
+          so users can't accidentally nuke a conversation. */}
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label="Delete conversation"
+        onClick={(e) => {
+          e.stopPropagation()
+          if (deleting) return
+          const name = row.other_name || 'this conversation'
+          if (window.confirm(`Delete the conversation with ${name}? This removes every message — can't be undone.`)) {
+            onDelete?.(row)
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            e.stopPropagation()
+            e.currentTarget.click()
+          }
+        }}
+        style={{
+          flexShrink: 0,
+          width: 28, height: 28, borderRadius: 8,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'transparent',
+          border: `1px solid transparent`,
+          cursor: deleting ? 'wait' : 'pointer',
+          color: DIM, transition: 'all 0.18s',
+          opacity: deleting ? 0.5 : 0.55,
+        }}
+        onMouseEnter={(e) => {
+          if (deleting) return
+          e.currentTarget.style.borderColor = `${ROSE}55`
+          e.currentTarget.style.background = `${ROSE}10`
+          e.currentTarget.style.color = ROSE
+          e.currentTarget.style.opacity = 1
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.borderColor = 'transparent'
+          e.currentTarget.style.background = 'transparent'
+          e.currentTarget.style.color = DIM
+          e.currentTarget.style.opacity = deleting ? 0.5 : 0.55
+        }}
+      >
+        <Trash2 size={13}/>
+      </span>
     </motion.button>
   )
 }
@@ -263,6 +312,33 @@ export default function InboxLayout({ selfUid }) {
     setReadMap(next)
     saveReadMap(selfUid, next)
     navigate(`/chat/${encodeURIComponent(row.session_id)}`)
+  }
+
+  const [deletingId, setDeletingId] = useState(null)
+
+  async function handleDeleteRow(row) {
+    if (!row?.session_id || deletingId) return
+    const id = row.session_id
+    setDeletingId(id)
+    // Optimistic — drop the row immediately. The backend cascade
+    // will catch up; if it fails we re-fetch and the row comes back.
+    const snapshot = rows
+    const next = rows.filter(r => r.session_id !== id)
+    setRows(next)
+    saveRows(selfUid, next)
+    // Drop the per-session read marker too — no point keeping it.
+    const rmap = { ...readMap }
+    if (rmap[id]) { delete rmap[id]; setReadMap(rmap); saveReadMap(selfUid, rmap) }
+    try {
+      await deleteChatSession(id)
+    } catch (err) {
+      console.warn('deleteChatSession failed:', err?.message || err)
+      // Restore on error so the user isn't silently lying to.
+      setRows(snapshot)
+      saveRows(selfUid, snapshot)
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   function markAllRead() {
@@ -434,6 +510,8 @@ export default function InboxLayout({ selfUid }) {
               unread={isUnread(r, readMap)}
               index={i}
               onClick={() => openRow(r)}
+              onDelete={handleDeleteRow}
+              deleting={deletingId === r.session_id}
             />
           ))}
         </AnimatePresence>
