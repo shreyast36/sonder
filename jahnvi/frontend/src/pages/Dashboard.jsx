@@ -731,16 +731,44 @@ function EmptyStateMovieOverlay({ greeting, firstName }) {
         pointerEvents: 'none',
       }}
     >
+      {/* Dark radial scrim BEHIND the text — guarantees legibility on
+          any backdrop (sand, snow, sky, cliff) the reel cuts to. Blurred
+          so the edge is feathered, opacity-pulsed slowly so it breathes
+          with the photo behind. */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: [0.55, 0.75, 0.55] }}
+        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute',
+          top: '20%', left: '10%', right: '10%', bottom: '20%',
+          background: 'radial-gradient(ellipse 70% 80% at center, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.45) 45%, transparent 80%)',
+          filter: 'blur(28px)',
+          pointerEvents: 'none', zIndex: 0,
+        }}
+      />
+
       <motion.span
         initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1.4, delay: 0.6, ease }}
+        animate={{
+          opacity: 1, y: 0,
+          letterSpacing: ['0.50em', '0.56em', '0.50em'],
+        }}
+        transition={{
+          opacity: { duration: 1.4, delay: 0.6, ease },
+          y:       { duration: 1.4, delay: 0.6, ease },
+          letterSpacing: { duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 2 },
+        }}
         style={{
-          fontFamily: '"Inter Tight",sans-serif', fontSize: 11,
-          letterSpacing: '0.50em', textTransform: 'uppercase',
-          color: GOLD, marginBottom: 22,
-          textShadow: `0 0 22px ${GOLD}88, 0 2px 12px rgba(0,0,0,0.9)`,
-          fontWeight: 500,
+          position: 'relative', zIndex: 1,
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 12,
+          textTransform: 'uppercase',
+          color: '#fff8e3', marginBottom: 22,
+          textShadow:
+            '0 2px 12px rgba(0,0,0,0.95), ' +
+            '0 0 18px rgba(0,0,0,0.85), ' +
+            '0 0 28px rgba(212,182,134,0.55)',
+          fontWeight: 600,
         }}
       >
         ✦ {greeting}
@@ -748,20 +776,48 @@ function EmptyStateMovieOverlay({ greeting, firstName }) {
 
       <motion.h1
         initial={{ opacity: 0, y: 22, filter: 'blur(12px)' }}
-        animate={{ opacity: 1, y: 0,  filter: 'blur(0px)' }}
-        transition={{ duration: 1.8, delay: 0.85, ease: [0.16, 1, 0.3, 1] }}
+        animate={{
+          opacity: 1, y: 0, filter: 'blur(0px)',
+          // Light sweep — bright band travels across the letters every
+          // 6s. backgroundSize is 220% so there's a moving highlight on
+          // top of a near-white base.
+          backgroundPositionX: ['220%', '-120%'],
+        }}
+        transition={{
+          opacity: { duration: 1.8, delay: 0.85, ease: [0.16, 1, 0.3, 1] },
+          y:       { duration: 1.8, delay: 0.85, ease: [0.16, 1, 0.3, 1] },
+          filter:  { duration: 1.8, delay: 0.85, ease: [0.16, 1, 0.3, 1] },
+          backgroundPositionX: { duration: 6, repeat: Infinity, ease: 'linear', delay: 2.4 },
+        }}
         style={{
+          position: 'relative', zIndex: 1,
           fontFamily: '"Cormorant Garamond",serif',
           fontStyle: 'italic', fontWeight: 400,
           fontSize: 'clamp(72px, 10vw, 148px)',
-          color: BONE, lineHeight: 0.95, margin: 0,
+          lineHeight: 0.95, margin: 0,
           letterSpacing: '-0.025em',
-          textShadow: '0 6px 56px rgba(0,0,0,0.95), 0 0 80px rgba(212,182,134,0.18)',
-          background: `linear-gradient(180deg, #fdf7e8 0%, #d4b686 100%)`,
-          WebkitBackgroundClip: 'text',
+          // Bright white base + a soft gold highlight band that pans
+          // across via backgroundPositionX. Reads cleanly on dark AND
+          // light backgrounds because the base is white, not warm gold.
+          background:
+            'linear-gradient(110deg, ' +
+              '#ffffff 0%, ' +
+              '#ffffff 38%, ' +
+              '#ffe9b8 50%, ' +   // shimmer highlight band
+              '#ffffff 62%, ' +
+              '#ffffff 100%)',
+          backgroundSize: '220% 100%',
           backgroundClip: 'text',
+          WebkitBackgroundClip: 'text',
           color: 'transparent',
           WebkitTextFillColor: 'transparent',
+          // Stacked drop-shadows for separation: heavy dark for contrast,
+          // soft warm halo for glow. Stays readable on white sand AND
+          // dark sea cliffs.
+          filter:
+            'drop-shadow(0 4px 24px rgba(0,0,0,0.95)) ' +
+            'drop-shadow(0 0 36px rgba(0,0,0,0.55)) ' +
+            'drop-shadow(0 0 64px rgba(212,182,134,0.30))',
         }}
       >
         {firstName || 'Welcome'}
