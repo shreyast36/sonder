@@ -1452,49 +1452,52 @@ export default function Dashboard() {
           }}
         />
 
-        {/* Left ornament — hairline + gold diamond marker */}
-        <svg width="70" height="14" viewBox="0 0 70 14"
-          style={{ position: 'relative', zIndex: 1, flexShrink: 0, marginRight: 18 }}>
-          <defs>
-            <linearGradient id="banner-left" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%"  stopColor="transparent"/>
-              <stop offset="100%" stopColor="#d4b686" stopOpacity="0.9"/>
-            </linearGradient>
-          </defs>
-          <line x1="0" y1="7" x2="50" y2="7" stroke="url(#banner-left)" strokeWidth="0.8"/>
-          <path d="M56 7 L62 3 L68 7 L62 11 Z" fill="#d4b686" fillOpacity="0.85"/>
-        </svg>
-
         {/* Centre — rotating 3D Sonder mark */}
-        <div style={{ position: 'relative', zIndex: 1 }}>
+        <div style={{ position: 'relative', zIndex: 1, marginRight: 22 }}>
           <SonderMark3D size={64} spin spinSpeed={0.45} />
         </div>
 
-        {/* Right ornament — mirror of left */}
-        <svg width="70" height="14" viewBox="0 0 70 14"
-          style={{ position: 'relative', zIndex: 1, flexShrink: 0, marginLeft: 18 }}>
-          <defs>
-            <linearGradient id="banner-right" x1="1" y1="0" x2="0" y2="0">
-              <stop offset="0%"  stopColor="transparent"/>
-              <stop offset="100%" stopColor="#d4b686" stopOpacity="0.9"/>
-            </linearGradient>
-          </defs>
-          <path d="M2 7 L8 3 L14 7 L8 11 Z" fill="#d4b686" fillOpacity="0.85"/>
-          <line x1="20" y1="7" x2="70" y2="7" stroke="url(#banner-right)" strokeWidth="0.8"/>
-        </svg>
-
-        {/* Latin year tag — right edge, monospace separator-style */}
-        <span style={{
-          fontFamily: 'ui-monospace, monospace', fontSize: 10,
-          letterSpacing: '0.32em', textTransform: 'uppercase',
-          color: 'rgba(212,182,134,0.7)', fontWeight: 500,
-          textShadow: `0 0 14px rgba(212,182,134,0.35)`,
+        {/* Year mark — dramatic Cormorant italic Roman numerals on
+            an inline EST. caps prefix, separated by a gold rule. Reads
+            as a founding-date plaque, not a UI label. */}
+        <div style={{
           position: 'relative', zIndex: 1,
-          paddingLeft: 18, borderLeft: '1px solid rgba(212,182,134,0.3)',
-          marginLeft: 4,
+          paddingLeft: 24,
+          borderLeft: '1px solid rgba(212,182,134,0.40)',
+          marginLeft: 6,
+          display: 'flex', alignItems: 'baseline', gap: 12,
+          boxShadow: 'inset 1px 0 0 rgba(255,250,235,0.08)',
         }}>
-          Est. MMXXVI
-        </span>
+          <span style={{
+            fontFamily: '"Inter Tight",sans-serif', fontSize: 9, fontWeight: 700,
+            letterSpacing: '0.55em', textTransform: 'uppercase', textIndent: '0.55em',
+            color: 'rgba(212,182,134,0.75)',
+            textShadow: '0 0 14px rgba(212,182,134,0.45)',
+            lineHeight: 1, paddingBottom: 4,
+          }}>
+            Est.
+          </span>
+          <span style={{
+            fontFamily: '"Cormorant Garamond",serif',
+            fontStyle: 'italic', fontWeight: 500,
+            fontSize: 32, lineHeight: 0.9,
+            letterSpacing: '0.18em', textIndent: '0.09em',
+            background: 'linear-gradient(180deg, #fdf2d4 0%, #f0dcb0 35%, #d4b686 60%, #7a5a36 100%)',
+            WebkitBackgroundClip: 'text',
+            backgroundClip: 'text',
+            color: 'transparent',
+            WebkitTextFillColor: 'transparent',
+            // Layered text shadow — close warm halo + wider soft glow
+            // gives the numerals the embossed-on-brass feel.
+            textShadow:
+              '0 0 30px rgba(212,182,134,0.55), ' +
+              '0 0 60px rgba(212,182,134,0.30), ' +
+              '0 2px 14px rgba(0,0,0,0.85)',
+            filter: 'drop-shadow(0 1px 0 rgba(255,250,235,0.18))',
+          }}>
+            MMXXVI
+          </span>
+        </div>
       </div>
 
       {/* greeting */}
