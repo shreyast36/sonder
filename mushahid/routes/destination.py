@@ -41,23 +41,25 @@ async def destination_photo(
     return {"url": None, "query": None}
 
 
-# Hand-curated luxury destination queries powering the dashboard's
-# cinematic Pixabay backdrop. Skews toward aerial / drone / overwater
-# vibes so the Ken-Burns simulation reads as flyover. Pixabay's
-# relevance engine handles the actual photo pick per query.
+# Hand-curated lush-exotic-landscape queries powering the dashboard's
+# cinematic Pixabay backdrop. NO architecture, NO cityscapes, NO
+# hotels — only natural landscapes (rice terraces, jungle waterfalls,
+# limestone karsts, lagoons, granite islands). Pixabay's relevance
+# engine handles the actual photo pick per query; "aerial" keyword
+# keeps the Ken-Burns simulation reading as flyover.
 _LUXURY_BACKDROP_QUERIES = [
-    "Maldives aerial",
-    "Bora Bora overwater",
-    "Santorini aerial",
     "Bali rice terraces aerial",
-    "Seychelles beach",
-    "Amalfi Coast aerial",
-    "Capri Italy aerial",
-    "Tahiti lagoon aerial",
-    "Mauritius aerial",
-    "Dubai luxury aerial",
-    "Tulum aerial",
-    "Phi Phi Islands aerial",
+    "Maldives atoll aerial lagoon",
+    "Bora Bora lagoon aerial",
+    "Halong Bay Vietnam aerial",
+    "Palawan El Nido aerial",
+    "Costa Rica jungle waterfall",
+    "Iguazu Falls jungle aerial",
+    "Hawaii Na Pali coast aerial",
+    "Phi Phi Islands aerial nature",
+    "Seychelles granite islands aerial",
+    "Banaue rice terraces aerial",
+    "Faroe Islands cliffs aerial",
 ]
 
 
