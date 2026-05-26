@@ -65,6 +65,13 @@ export default function Itinerary() {
   const [saved, setSaved]         = useState(false)
   const [showCompanionPrompt, setShowCompanionPrompt] = useState(false)
   const [companionPromptDismissed, setCompanionPromptDismissed] = useState(false)
+  // True only on the immediate post-generation screen (PersonaReveal →
+  // SSE → /itinerary). False when entering /itinerary via "View
+  // itinerary" from the dashboard. Drives whether the approve/revise
+  // gate is rendered at all — once the user leaves and comes back, the
+  // editing surface is gone regardless of approval_status. View mode
+  // means read-only, full stop.
+  const [isCreationFlow, setIsCreationFlow] = useState(false)
   // Approval-gate state: every itinerary lands as a draft. User must
   // explicitly approve or request revisions before it locks. Until
   // they choose, the gate sticks at the bottom of the page.
@@ -217,6 +224,7 @@ export default function Itinerary() {
         if (!raw) { navigate('/preferences'); return }
         let profile
         try { profile = JSON.parse(raw) } catch { navigate('/preferences'); return }
+        setIsCreationFlow(true)
         start(profile)
         return
       }
@@ -485,9 +493,12 @@ export default function Itinerary() {
     // Finalized trips are read-only — no point inviting the user to
     // look for new co-travellers on a trip they've already locked in.
     if (itinerary.approval_status === 'finalized') return
+    // View-mode opens (dashboard → "View itinerary") are also read-only;
+    // the companion question already had its moment during creation.
+    if (!isCreationFlow) return
     const t = setTimeout(() => setShowCompanionPrompt(true), 1400)
     return () => clearTimeout(t)
-  }, [itinerary, showCompanionPrompt, companionPromptDismissed])
+  }, [itinerary, showCompanionPrompt, companionPromptDismissed, isCreationFlow])
 
   // ── Phone behaviour: power-on, autoscale, wheel routing ────────────────────
   // Phone starts asleep. User taps the screen (or the right-side power
@@ -915,7 +926,7 @@ export default function Itinerary() {
       {/* Companion prompt — slides up when the pipeline 'done' event fires,
           asks Yes/No to meeting new people for this trip. Non-blocking. */}
       <AnimatePresence>
-        {showCompanionPrompt && !companionPromptDismissed && itinerary && itinerary.approval_status !== 'finalized' && (
+        {showCompanionPrompt && !companionPromptDismissed && itinerary && itinerary.approval_status !== 'finalized' && isCreationFlow && (
           <motion.div
             key="companion-prompt"
             initial={{ y: 80, opacity: 0 }}
@@ -982,7 +993,7 @@ export default function Itinerary() {
           without approval_status are treated as draft for back-compat —
           they only finalize after explicit approval. */}
       <AnimatePresence>
-        {itinerary && itinerary.approval_status !== 'finalized' && !reviseOpen && (
+        {itinerary && itinerary.approval_status !== 'finalized' && !reviseOpen && isCreationFlow && (
           <motion.div
             key="approval-gate"
             initial={{ y: 80, opacity: 0 }}
@@ -1055,7 +1066,7 @@ export default function Itinerary() {
         )}
 
         {/* Revise sheet — feedback textarea when user clicks Revise. */}
-        {itinerary && itinerary.approval_status !== 'finalized' && reviseOpen && (
+        {itinerary && itinerary.approval_status !== 'finalized' && reviseOpen && isCreationFlow && (
           <motion.div
             key="revise-sheet"
             initial={{ y: 80, opacity: 0 }}
