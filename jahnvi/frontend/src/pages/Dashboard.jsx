@@ -258,13 +258,46 @@ function LiveTravellersStrip({ onJump }) {
 // planning. Four destination shortcuts pre-fill /preferences so a user
 // who's curious can land on the form already partway through.
 
+// Slowly rotating destination names that fade through one-at-a-time
+// beneath the headline. Pure typography — no buttons, no shortcuts —
+// just an atmospheric "places exist" reminder. Each name lives ~3.4s.
+const INSPIRATION_PLACES = [
+  'Lisbon',     'Kyoto',       'Patagonia',  'Reykjavík',
+  'Marrakech',  'Hoi An',      'Santorini',  'Banff',
+  'Cape Town',  'Bora Bora',   'Tulum',      'Tbilisi',
+  'Dolomites',  'Seychelles',  'Palawan',    'Mexico City',
+]
+
 function EmptyStateInspiration() {
-  // Right column when the user has zero trips. No CTAs — the nav's
-  // "Plan a trip" button is the only path to /preferences. This panel
-  // just sets the tone: gold eyebrow, italic headline, one-line nudge.
+  // Right column when the user has zero trips. No CTAs anywhere on
+  // this surface — the nav's "Plan a trip" button is the only path
+  // to /preferences. This panel just sets mood.
+  const [idx, setIdx] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setIdx(i => (i + 1) % INSPIRATION_PLACES.length), 3400)
+    return () => clearInterval(t)
+  }, [])
+
   return (
-    <div>
-      <div style={{ marginBottom: 24 }}>
+    <div style={{ position: 'relative', paddingTop: 4 }}>
+      {/* Soft ambient gold halo behind the panel — slow breathing
+          scale + opacity so the whole column feels alive without
+          any explicit interaction. */}
+      <motion.div
+        animate={{
+          opacity: [0.18, 0.32, 0.18],
+          scale:   [1, 1.06, 1],
+        }}
+        transition={{ duration: 7.5, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          position: 'absolute', top: -40, left: -40, right: -40, bottom: -40,
+          background: `radial-gradient(ellipse 65% 55% at 35% 30%, ${GOLD}26 0%, transparent 65%)`,
+          filter: 'blur(8px)',
+          pointerEvents: 'none', zIndex: 0,
+        }}
+      />
+
+      <div style={{ position: 'relative', zIndex: 1, marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <motion.span
             animate={{ opacity: [0.4, 1, 0.4] }}
@@ -288,11 +321,58 @@ function EmptyStateInspiration() {
         </motion.h2>
       </div>
 
+      {/* Rotating destination cue — single italic word that cross-fades
+          every ~3.4s. No link, no button, just rhythm. A thin gold
+          hairline above grounds the typography against the soft halo. */}
+      <div style={{ position: 'relative', zIndex: 1, marginTop: 36, marginBottom: 28 }}>
+        <div style={{
+          height: 1, width: 48,
+          background: `linear-gradient(to right, ${GOLD}, transparent)`,
+          marginBottom: 22,
+        }}/>
+        <p style={{
+          fontFamily: '"Inter Tight",sans-serif', fontSize: 9,
+          letterSpacing: '0.30em', textTransform: 'uppercase',
+          color: MUTE, margin: 0, marginBottom: 12,
+        }}>
+          Tonight maybe —
+        </p>
+        <div style={{ minHeight: 56, position: 'relative' }}>
+          <AnimatePresence mode="wait">
+            <motion.span
+              key={INSPIRATION_PLACES[idx]}
+              initial={{ opacity: 0, y: 14, filter: 'blur(6px)' }}
+              animate={{ opacity: 1, y: 0,  filter: 'blur(0px)' }}
+              exit={{    opacity: 0, y: -14, filter: 'blur(6px)' }}
+              transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
+              style={{
+                position: 'absolute', top: 0, left: 0,
+                fontFamily: '"Cormorant Garamond",serif',
+                fontStyle: 'italic', fontWeight: 400,
+                fontSize: 44, color: BONE, lineHeight: 1.0,
+                letterSpacing: '-0.02em',
+                background: GOLD_GRAD,
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                textShadow: `0 0 32px ${GOLD}33`,
+              }}
+            >
+              {INSPIRATION_PLACES[idx]}
+            </motion.span>
+          </AnimatePresence>
+        </div>
+      </div>
+
       <p style={{
-        fontFamily: '"Inter Tight",sans-serif', fontWeight: 300,
-        fontSize: 13, color: MUTE, lineHeight: 1.6, marginTop: 0,
+        position: 'relative', zIndex: 1,
+        fontFamily: '"Cormorant Garamond",serif', fontWeight: 300,
+        fontStyle: 'italic',
+        fontSize: 17, color: MUTE, lineHeight: 1.45,
+        marginTop: 8,
       }}>
-        Plan one trip and the rest of the room — matches, journal, shared itineraries — opens up.
+        Plan one trip and the rest of the room — matches, journal,
+        shared itineraries — opens up.
       </p>
     </div>
   )
