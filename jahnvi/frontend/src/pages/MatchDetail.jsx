@@ -270,48 +270,76 @@ export default function MatchDetail() {
             </div>
           )}
 
-          {/* CTAs */}
+          {/* CTAs — the vibe-check chat only makes sense pre-approval.
+              Once the user has mutually approved this match the chat
+              surface is done; the relationship lives on /shared/{id}
+              and this page is just a profile view. */}
           <div style={{ marginTop: 44, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <motion.button
-              whileHover={!starting ? { y: -2, boxShadow: `0 12px 32px ${VIOLET}55` } : {}}
-              whileTap={!starting ? { scale: 0.98 } : {}}
-              disabled={starting}
-              onClick={async () => {
-                if (starting) return
-                setStarting(true)
-                setStartError(null)
-                try {
-                  const { session } = await startChat(
-                    profile.profile_id,
-                    currentItineraryId || '',
-                    typeof data?.match_score === 'number' ? data.match_score : null,
-                    typeof data?.retrieval_score === 'number' ? data.retrieval_score : null,
-                  )
-                  navigate(`/chat/${session.session_id}`)
-                } catch (e) {
-                  setStartError(e?.message || 'Could not start the chat')
-                  setStarting(false)
-                }
-              }}
-              style={{ width: '100%', padding: '17px 0',
-                background: `linear-gradient(135deg, ${VIOLET} 0%, #6D28D9 100%)`,
-                border: 'none', borderRadius: 12, cursor: starting ? 'wait' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em',
-                textTransform: 'uppercase', fontWeight: 500, color: '#fff',
-                boxShadow: `0 6px 24px ${VIOLET}44`,
-                opacity: starting ? 0.7 : 1 }}
-            >
-              <MessageCircle size={13}/>
-              {starting ? 'Opening chat…' : `Chat to vibe-check ${profile.display_name.split(' ')[0]}`}
-            </motion.button>
-            <p style={{
-              fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
-              letterSpacing: '0.14em', textTransform: 'uppercase',
-              color: 'rgba(232,212,168,0.45)', textAlign: 'center', margin: '2px 0 0',
-            }}>
-              You'll both decide after
-            </p>
+            {data?.is_locked_in ? (
+              <div style={{
+                padding: '16px 20px', borderRadius: 12,
+                background: `linear-gradient(135deg, rgba(16,185,129,0.10) 0%, rgba(16,185,129,0.04) 100%)`,
+                border: `1px solid rgba(16,185,129,0.30)`,
+                textAlign: 'center',
+              }}>
+                <p style={{
+                  fontFamily: '"Cormorant Garamond",serif', fontStyle: 'italic',
+                  fontSize: 18, color: BONE, margin: 0, lineHeight: 1.3,
+                }}>
+                  You're already planning together.
+                </p>
+                <p style={{
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                  letterSpacing: '0.16em', textTransform: 'uppercase',
+                  color: 'rgba(16,185,129,0.85)', margin: '8px 0 0',
+                }}>
+                  Locked-in match · head to the shared trip
+                </p>
+              </div>
+            ) : (
+              <>
+                <motion.button
+                  whileHover={!starting ? { y: -2, boxShadow: `0 12px 32px ${VIOLET}55` } : {}}
+                  whileTap={!starting ? { scale: 0.98 } : {}}
+                  disabled={starting}
+                  onClick={async () => {
+                    if (starting) return
+                    setStarting(true)
+                    setStartError(null)
+                    try {
+                      const { session } = await startChat(
+                        profile.profile_id,
+                        currentItineraryId || '',
+                        typeof data?.match_score === 'number' ? data.match_score : null,
+                        typeof data?.retrieval_score === 'number' ? data.retrieval_score : null,
+                      )
+                      navigate(`/chat/${session.session_id}`)
+                    } catch (e) {
+                      setStartError(e?.message || 'Could not start the chat')
+                      setStarting(false)
+                    }
+                  }}
+                  style={{ width: '100%', padding: '17px 0',
+                    background: `linear-gradient(135deg, ${VIOLET} 0%, #6D28D9 100%)`,
+                    border: 'none', borderRadius: 12, cursor: starting ? 'wait' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                    fontFamily: '"Inter Tight",sans-serif', fontSize: 10, letterSpacing: '0.22em',
+                    textTransform: 'uppercase', fontWeight: 500, color: '#fff',
+                    boxShadow: `0 6px 24px ${VIOLET}44`,
+                    opacity: starting ? 0.7 : 1 }}
+                >
+                  <MessageCircle size={13}/>
+                  {starting ? 'Opening chat…' : `Chat to vibe-check ${profile.display_name.split(' ')[0]}`}
+                </motion.button>
+                <p style={{
+                  fontFamily: '"Inter Tight",sans-serif', fontSize: 10,
+                  letterSpacing: '0.14em', textTransform: 'uppercase',
+                  color: 'rgba(232,212,168,0.45)', textAlign: 'center', margin: '2px 0 0',
+                }}>
+                  You'll both decide after
+                </p>
+              </>
+            )}
             {startError && (
               <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 11, color: '#F87171', textAlign: 'center', margin: 0 }}>
                 {startError}

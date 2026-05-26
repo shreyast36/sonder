@@ -127,3 +127,13 @@ class CoTravellerMatch(BaseModel):
     # this, score_compatibility re-runs with retrieval_score=0 and silently
     # deflates the persona's reciprocal-approval probability.
     retrieval_score:         float = 0.0
+    # True iff the signed-in viewer has already passed mutual approval
+    # with this profile on any trip (i.e. there exists a ChatSession
+    # between them with approval_status=approved). The detail page reads
+    # this to hide the "Chat to vibe-check" CTA — once you're locked in,
+    # the chat surface that exists to evaluate compatibility is done
+    # doing its job, and the relationship lives on the shared-itinerary
+    # surface instead. Returned only by /cotraveller/profile/{id}; the
+    # /matches route never surfaces locked-in personas in the first place
+    # (the active_pair short-circuit blocks the list).
+    is_locked_in:            bool  = False

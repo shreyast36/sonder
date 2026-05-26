@@ -482,6 +482,9 @@ export default function Itinerary() {
   // covers view mode where no events fire.
   useEffect(() => {
     if (!itinerary || showCompanionPrompt || companionPromptDismissed) return
+    // Finalized trips are read-only — no point inviting the user to
+    // look for new co-travellers on a trip they've already locked in.
+    if (itinerary.approval_status === 'finalized') return
     const t = setTimeout(() => setShowCompanionPrompt(true), 1400)
     return () => clearTimeout(t)
   }, [itinerary, showCompanionPrompt, companionPromptDismissed])
@@ -912,7 +915,7 @@ export default function Itinerary() {
       {/* Companion prompt — slides up when the pipeline 'done' event fires,
           asks Yes/No to meeting new people for this trip. Non-blocking. */}
       <AnimatePresence>
-        {showCompanionPrompt && !companionPromptDismissed && itinerary && (
+        {showCompanionPrompt && !companionPromptDismissed && itinerary && itinerary.approval_status !== 'finalized' && (
           <motion.div
             key="companion-prompt"
             initial={{ y: 80, opacity: 0 }}

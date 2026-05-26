@@ -322,6 +322,26 @@ async def get_cotraveller_profile(
             profile, candidate,
             retrieval_score=float(retrieval_score) if retrieval_score is not None else 0.0,
         )
+        # Has the viewer already passed mutual approval with this profile?
+        # If yes, the detail page hides the "Chat to vibe-check" CTA — that
+        # button only makes sense for evaluation chats, not for relationships
+        # the user has already committed to on the shared-itinerary surface.
+        # Re-uses _session_filters which already walks every chat session
+        # for this user; we just check if profile_id ever showed up as the
+        # approved counterpart on any trip.
+        try:
+            from mushahid.realtime.firestore import list_chat_sessions_for_user
+            sessions = await list_chat_sessions_for_user(uid)
+            is_locked = any(
+                s.get("profile_id") == profile_id
+                and s.get("approval_status") == "approved"
+                for s in sessions
+            )
+            if is_locked:
+                match = match.model_copy(update={"is_locked_in": True})
+        except Exception as e:
+            logger.warning("locked-in lookup failed for %s/%s: %s", uid, profile_id, e)
+
         # Analytics: detail-page click-through. Combined with match_found
         # (impressions) this gives match CTR.
         try:
