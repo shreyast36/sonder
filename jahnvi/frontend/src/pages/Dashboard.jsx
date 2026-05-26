@@ -1663,17 +1663,19 @@ export default function Dashboard() {
         style={{ flex: 1, display: 'grid', gridTemplateColumns: '1.4fr 1fr', maxWidth: 1240, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
 
         {/* LEFT — trip card */}
-        <motion.div variants={reveal} style={{ padding: '52px 52px', borderRight: `1px solid ${HAIRLINE}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
-            <motion.span
-              animate={{ opacity: [0.4, 1, 0.4] }}
-              transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ width: 6, height: 6, borderRadius: '50%', background: AMBER, boxShadow: `0 0 10px ${AMBER}` }}
-            />
-            <p style={{ fontFamily: '"Inter Tight",sans-serif', fontSize: 9, letterSpacing: '0.30em', textTransform: 'uppercase', color: MUTE, margin: 0 }}>
-              Upcoming trip
-            </p>
-          </div>
+        <motion.div variants={reveal} style={{ padding: '52px 52px', borderRight: `1px solid rgba(212,182,134,0.18)`, position: 'relative' }}>
+          {/* Subtle gold gradient on the column divider — pulls the
+              left-right split out of "web column" into "leather
+              portfolio spread." */}
+          <div style={{
+            position: 'absolute', top: '15%', right: -1, width: 1, height: '70%',
+            background: `linear-gradient(180deg, transparent 0%, ${GOLD}33 30%, ${GOLD}33 70%, transparent 100%)`,
+            pointerEvents: 'none',
+          }}/>
+          <PremiumHeader
+            eyebrow="Currently On File"
+            headline="Your upcoming journey."
+          />
 
           {trip ? (
             <motion.div
