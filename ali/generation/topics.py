@@ -890,15 +890,22 @@ def _build_persona_system(
             f"HARD CONSTRAINT — STAY INSIDE THIS TRIP.\n"
             f"The trip is to {dest}. You matched with this person specifically "
             f"for this trip and nothing else.{digest_line}\n\n"
-            f"Talk ONLY about: {dest} and the activities above. Reference "
-            f"specific stops from the itinerary when grounding the conversation "
-            f"in something concrete.\n\n"
+            f"This means: every conversation thread lives inside {dest} and the "
+            f"experience of being there together. You can talk about anything "
+            f"that fits this destination — hiking, food, neighbourhoods, "
+            f"transit, weather, packing, what to expect, what you're hoping for, "
+            f"how you'd react to specific scenarios there — even when those "
+            f"things are NOT on the planned itinerary above. The itinerary is "
+            f"a starting point, not a fence. If they ask about a topic, ENGAGE "
+            f"with that topic in the context of {dest}; do not pivot to a "
+            f"planned stop just because it's on the list.\n\n"
             f"DO NOT, under any circumstances:\n"
             f"- mention your own home city, where you live, or where you are based\n"
             f"- talk about past trips you've taken to other places\n"
             f"- suggest alternative destinations or pivot the trip elsewhere\n"
             f"- ask the other person about cities other than {dest}\n"
             f"- describe your day-to-day life outside of this trip context\n"
+            f"- ignore what they just asked about in favour of a planned stop\n"
             f"If the other person brings up another city, briefly acknowledge it "
             f"and redirect to {dest}. This rule overrides every other inclination "
             f"in your profile, including your own preferred_destination.\n\n"
@@ -1006,6 +1013,22 @@ async def generate_chat_reply(
             "another place.\n\n"
         )
 
+    cleaned_last = _clean_text(last_message)
+    # Topic-anchor directive — repeated explicitly because the model
+    # was pivoting to planned-itinerary items even when the user
+    # asked about something else (hiking, food preferences, weather,
+    # etc.). The reply must address what they actually said FIRST;
+    # itinerary stops only get referenced when they fit the topic.
+    topic_anchor = (
+        f"\n\nTHE TOPIC THEY RAISED: \"{cleaned_last}\"\n"
+        f"Your reply MUST stay on this topic. Address what they actually "
+        f"asked or said — don't pivot to a planned activity just because "
+        f"it's on the itinerary. If they asked about hiking, talk about "
+        f"hiking. If they asked about food, talk about food. Plans on the "
+        f"itinerary are useful when they directly fit the topic; "
+        f"otherwise leave them alone."
+    )
+
     if transcript:
         # Count how many of your recent turns ended with a question so
         # the model can self-check and avoid stacking interrogatives.
@@ -1024,17 +1047,19 @@ async def generate_chat_reply(
             f"{scope_line}"
             "CONVERSATION SO FAR (ME = you, THEM = the other person):\n"
             f"{transcript}\n\n"
-            f"THEM just said: {_clean_text(last_message)}\n\n"
-            f"Your turn. Reply in character, tied to the destination or one "
-            f"of the planned stops. {breathe_hint}"
+            f"THEM just said: {cleaned_last}"
+            f"{topic_anchor}\n\n"
+            f"Your turn. Reply in character, anchored to the topic they "
+            f"raised. {breathe_hint}"
         )
     else:
         prompt = (
             f"{scope_line}"
-            f"THEM just said: {_clean_text(last_message)}\n\n"
-            "This is the start of your conversation. Reply in character. Anchor "
-            "your reply in the destination or one specific planned stop — do not "
-            "introduce yourself by city or background."
+            f"THEM just said: {cleaned_last}"
+            f"{topic_anchor}\n\n"
+            "This is the start of your conversation. Reply in character, "
+            "addressing the topic they raised. Do not introduce yourself by "
+            "city or background."
         )
 
     # SMALL tier — these are 1-3 sentence text replies; LARGE adds latency
