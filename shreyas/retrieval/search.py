@@ -180,6 +180,14 @@ async def get_cotraveller_by_id(profile_id: str) -> "CoTravellerProfile | None":
             voice_id              = _extract_voice_id(md),
             compatibility_signals = _json_decode(md.get("compatibility_signals_json")),
             is_seed               = bool(md.get("is_seed", False)),
+            # Couple sidecar fields — written by seed_couple_cotravellers
+            # under different metadata keys ("couple_protagonist",
+            # "couple_partner", "couple_partner_age"). Surface them on
+            # the schema so the chat prompt builder can give the LLM a
+            # clear single identity instead of "you ARE Mira & Theo".
+            protagonist_name = (md.get("couple_protagonist") or "").strip() or None,
+            partner_name     = (md.get("couple_partner") or "").strip() or None,
+            partner_age      = (int(md["couple_partner_age"]) if md.get("couple_partner_age") not in (None, "") else None),
         )
     except Exception as e:
         logger.warning("get_cotraveller_by_id parse failed for %s: %s", profile_id, e)
@@ -264,6 +272,13 @@ async def search_cotravellers(
                 voice_id              = _extract_voice_id(md),
                 compatibility_signals = _json_decode(md.get("compatibility_signals_json")),
                 is_seed               = bool(md.get("is_seed", False)),
+                # Couple sidecar fields — written by seed_couple_cotravellers
+                # under "couple_protagonist" / "couple_partner" /
+                # "couple_partner_age" so the chat prompt builder can give
+                # the LLM a single identity instead of "you ARE Mira & Theo".
+                protagonist_name = (md.get("couple_protagonist") or "").strip() or None,
+                partner_name     = (md.get("couple_partner") or "").strip() or None,
+                partner_age      = (int(md["couple_partner_age"]) if md.get("couple_partner_age") not in (None, "") else None),
             )
             # Pinecone cosine score — clipped to [0, 1] for the
             # ranker's pinecone_passthrough feature. None when the

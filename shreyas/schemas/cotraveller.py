@@ -74,6 +74,19 @@ class CoTravellerProfile(BaseModel):
     # surface where a synthetic persona could be mistaken for a real user.
     is_seed: bool = False
 
+    # ── Couple-only fields (travel_style == "couple") ──────────────────────
+    # Couple personas are written as a PAIR. `display_name` is "Mira & Theo";
+    # `protagonist_name` is the side that drives chat (e.g. Mira) and
+    # `partner_name` is the other (e.g. Theo). Speaker prompts use these
+    # to give the LLM a clear identity ("you ARE Mira, your partner is
+    # Theo") and a "we" voice for shared plans — without them, the model
+    # interprets "Mira & Theo" as two people and hallucinates between
+    # them turn to turn. Both default None so solo personas don't have
+    # to care.
+    protagonist_name: Optional[str] = None
+    partner_name:     Optional[str] = None
+    partner_age:      Optional[int] = None
+
 
 class CompanionPrefs(BaseModel):
     """

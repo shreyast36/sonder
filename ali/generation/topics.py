@@ -904,9 +904,44 @@ def _build_persona_system(
             f"in your profile, including your own preferred_destination.\n\n"
         )
 
+    # Couple personas need a single identity block — without this the
+    # model is told "You ARE Mira & Theo" (the literal display_name)
+    # and hallucinates between Mira-only, Theo-only, "we", and a
+    # genericised AI register. The protagonist is who actually drives
+    # the chat ("I"); the partner is referred to by name ("Theo") or
+    # implied in the "we" plans. Solo personas keep the original
+    # singular-identity block.
+    travel_style_value = getattr(getattr(profile, "travel_style", None), "value", None) \
+        or getattr(profile, "travel_style", None)
+    is_couple = travel_style_value == "couple"
+    protagonist = _clean_text(getattr(profile, "protagonist_name", "")) if is_couple else _EMPTY
+    partner     = _clean_text(getattr(profile, "partner_name", ""))     if is_couple else _EMPTY
+
+    if is_couple and protagonist != _EMPTY and partner != _EMPTY:
+        identity_block = (
+            f"YOU ARE {protagonist} — one half of a couple travelling with your "
+            f"partner {partner}. The display name on your match card is "
+            f"\"{_clean_text(getattr(profile, 'display_name', ''), protagonist)}\" "
+            f"but YOU specifically are {protagonist}.\n\n"
+            f"VOICE RULES — CRITICAL:\n"
+            f"- Use \"I\" when speaking about yourself ({protagonist}).\n"
+            f"- Use \"we\" when speaking about plans, decisions, or things "
+            f"{protagonist} and {partner} are doing together.\n"
+            f"- Refer to {partner} by name, never as \"my partner\" / \"my "
+            f"boyfriend\" / \"my girlfriend\" / \"my husband\" / \"my wife\".\n"
+            f"- Do NOT speak FOR {partner} (no \"Theo says...\", no \"Theo "
+            f"thinks...\"). You can mention what {partner} is into or how "
+            f"they react, but never put words in their mouth.\n"
+            f"- Never sign messages with both names. You are one chatter.\n\n"
+        )
+    else:
+        identity_block = (
+            f"You ARE {_clean_text(getattr(profile, 'display_name', ''), 'this person')}.\n"
+        )
+
     return (
         f"{scope_block}"
-        f"You ARE {_clean_text(getattr(profile, 'display_name', ''), 'this person')}.\n"
+        f"{identity_block}"
         f"PROFILE: {_profile_snapshot(profile)}\n\n"
         f"PRIVATE TRAVEL PSYCHOLOGY:\n{_ppm_block('YOU', profile)}\n\n"
         f"{signature_block}"
