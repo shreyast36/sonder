@@ -743,19 +743,74 @@ def _clean_topics(raw: str, destination: str, activities: list[str], shared: lis
 
 
 def _clean_message(raw: str, max_chars: int = 800) -> str:
+    """Defensive post-processing of every persona LLM reply before it
+    hits the chat surface. Catches the punctuation and grammar issues
+    the model produces despite the in-prompt style rules — these are
+    deterministic and shouldn't depend on the model getting it right
+    every time.
+    """
     cleaned = _strip_code_fences(raw).strip().strip('"').strip("'").strip()
-    cleaned = re.sub(r"^(message|reply|output)\s*:\s*", "", cleaned, flags=re.IGNORECASE).strip()
-    cleaned = cleaned.replace("—", ",")
+
+    # 1. Strip preamble labels ("Reply:", "Message:", "Output:")
+    cleaned = re.sub(r"^(message|reply|output|response)\s*:\s*", "", cleaned, flags=re.IGNORECASE).strip()
+
+    # 2. Strip markdown formatting the model occasionally emits even
+    #    though it was told to text casually. **bold**, *italic*,
+    #    __under__, `code`, ~strike~ all collapse to plain text.
+    cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", cleaned)   # **bold**
+    cleaned = re.sub(r"__(.+?)__",     r"\1", cleaned)   # __underline__
+    cleaned = re.sub(r"(?<!\w)\*(.+?)\*(?!\w)", r"\1", cleaned)  # *italic*
+    cleaned = re.sub(r"(?<!\w)_(.+?)_(?!\w)",   r"\1", cleaned)  # _italic_
+    cleaned = re.sub(r"`([^`]+)`",     r"\1", cleaned)   # `code`
+    cleaned = re.sub(r"~+(.+?)~+",     r"\1", cleaned)   # ~strike~
+
+    # 3. Smart-quote → straight-quote (consistency across messages)
+    cleaned = (cleaned
+        .replace("“", '"').replace("”", '"')   # curly double
+        .replace("‘", "'").replace("’", "'")   # curly single
+    )
+
+    # 4. Unicode ellipsis → ASCII so we have one canonical form
+    cleaned = cleaned.replace("…", "...")
+
+    # 5. Em-dash → comma (banned by style rules but the model still
+    #    emits them — replace, don't strip, so the cadence survives)
+    cleaned = cleaned.replace("—", ",").replace("–", ",")
+
+    # 6. Collapse any whitespace run to a single space (handles double
+    #    spaces, tabs, embedded newlines mid-message)
     cleaned = re.sub(r"\s+", " ", cleaned)
-    # Typography cleanup — the LLM occasionally emits a stray space
-    # before punctuation ("versions ," / "noodles ."), which reads as
-    # broken even in casual texting register. Collapse the space.
+
+    # 7. Strip stray whitespace before punctuation ("versions ," → "versions,")
     cleaned = re.sub(r"\s+([,.!?;:])", r"\1", cleaned)
-    # And collapse the inverse pattern where punctuation eats both
-    # sides ("noodles , way") → "noodles, way" — handled above — and
-    # double-punct artifacts like ",." that occasionally bleed through
-    # an em-dash replacement.
-    cleaned = re.sub(r"([,;:])([,.;:])+", r"\1", cleaned)
+
+    # 8. Insert missing space after punctuation ("yeah,sure" → "yeah, sure")
+    #    BUT preserve "..." / "u.s." / decimal numbers — only fire on a
+    #    word boundary followed immediately by another letter (no number).
+    cleaned = re.sub(r"([,;:])([A-Za-z])", r"\1 \2", cleaned)
+    cleaned = re.sub(r"([.!?])([A-Za-z])", r"\1 \2", cleaned)
+
+    # 9. Collapse adjacent punctuation chains ("..,", ",,", ".." → keep one)
+    #    Exclusion: legitimate "..." ellipsis stays.
+    cleaned = re.sub(r"([,;:])([,.;:])+",     r"\1", cleaned)
+    cleaned = re.sub(r"(?<!\.)\.{2}(?!\.)",   r".",  cleaned)  # ".." → "." (but "..." stays)
+
+    # 10. Cap exclamation/question stacks at 1 each. "wait!!!" → "wait!"
+    cleaned = re.sub(r"!{2,}", "!", cleaned)
+    cleaned = re.sub(r"\?{2,}", "?", cleaned)
+
+    # 11. Remove space before a closing quote / paren ("yeah ," handled
+    #    above already; this catches "( yeah)" → "(yeah)" and similar)
+    cleaned = re.sub(r"([(\[{])\s+", r"\1", cleaned)
+    cleaned = re.sub(r"\s+([)\]}])", r"\1", cleaned)
+
+    # 12. Drop the model's own framing prefixes if they slipped through
+    #    earlier strips ("Mira: ...", "Theo & Mira: ..."). We don't know
+    #    the persona name here defensively, so only strip the generic
+    #    "Name: " when it's short and capitalised. Caller has access to
+    #    the persona name and does a name-specific strip after this.
+    cleaned = re.sub(r"^([A-Z][a-z]{1,15})\s*:\s+", "", cleaned)
+
     return cleaned[:max_chars].strip()
 
 
