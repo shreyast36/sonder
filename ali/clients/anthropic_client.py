@@ -1,5 +1,6 @@
 import anthropic
 from ali.clients.base import BaseLLMClient
+from ali.clients._retry import with_retry
 from shared.schemas import ModelTier
 from shared.config import ANTHROPIC_API_KEY, ANTHROPIC_SMALL_MODEL, ANTHROPIC_LARGE_MODEL
 
@@ -32,11 +33,14 @@ class AnthropicSmallClient(BaseLLMClient):
         return 0.000800  # claude-haiku-4-5: ~$0.80 per 1M input tokens
 
     async def complete(self, prompt: str, system: str = "", max_tokens: int = 1024) -> str:
-        response = await _get_client().messages.create(
-            model=self.model_name,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=max_tokens,
+        response = await with_retry(
+            lambda: _get_client().messages.create(
+                model=self.model_name,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+            ),
+            label=f"anthropic.{self.model_name}",
         )
         return response.content[0].text
 
@@ -111,13 +115,16 @@ class AnthropicSmallClient(BaseLLMClient):
             },
         }
 
-        response = await _get_client().messages.create(
-            model=self.model_name,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
-            tools=[tool],
-            tool_choice={"type": "tool", "name": "output_persona"},
-            max_tokens=max_tokens,
+        response = await with_retry(
+            lambda: _get_client().messages.create(
+                model=self.model_name,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                tools=[tool],
+                tool_choice={"type": "tool", "name": "output_persona"},
+                max_tokens=max_tokens,
+            ),
+            label=f"anthropic.{self.model_name}.tools",
         )
         # Extract the tool-call input block and return it as a JSON string.
         for block in response.content:
@@ -157,11 +164,14 @@ class AnthropicLargeClient(BaseLLMClient):
         return 0.003000  # claude-sonnet-4-6: $3.00 per 1M input tokens
 
     async def complete(self, prompt: str, system: str = "", max_tokens: int = 16384) -> str:
-        response = await _get_client().messages.create(
-            model=self.model_name,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=max_tokens,
+        response = await with_retry(
+            lambda: _get_client().messages.create(
+                model=self.model_name,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+            ),
+            label=f"anthropic.{self.model_name}",
         )
         return response.content[0].text
 

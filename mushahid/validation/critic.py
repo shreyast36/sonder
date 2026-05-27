@@ -84,13 +84,23 @@ async def _call_llm(client, provider: str, model: str, prompt: str, system: str,
     (gpt-5-mini, nvidia-nemotron) burn part of the budget on internal
     reasoning before emitting visible output — at 1024 the visible
     JSON was getting truncated to "" and the caller failed JSON parse.
+
+    Wrapped in `with_retry` so transient provider errors (Anthropic
+    529 Overloaded, NVIDIA 504 Gateway Timeout, OpenAI 429 Rate Limit)
+    are absorbed at the client level instead of cascading into a
+    cross-provider failover or a denied validation verdict.
     """
+    from ali.clients._retry import with_retry
+
     if provider == "anthropic":
-        response = await client.messages.create(
-            model=model,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=max_tokens,
+        response = await with_retry(
+            lambda: client.messages.create(
+                model=model,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+            ),
+            label=f"validator.anthropic.{model}",
         )
         return response.content[0].text
 
@@ -98,13 +108,16 @@ async def _call_llm(client, provider: str, model: str, prompt: str, system: str,
     # as an unknown field — it only accepts max_tokens. OpenAI proper
     # supports both, but max_completion_tokens is the post-o1 spelling.
     token_kwargs = {"max_tokens": max_tokens} if provider == "nvidia" else {"max_completion_tokens": max_tokens}
-    response = await client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ],
-        **token_kwargs,
+    response = await with_retry(
+        lambda: client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            **token_kwargs,
+        ),
+        label=f"validator.{provider}.{model}",
     )
     return response.choices[0].message.content
 

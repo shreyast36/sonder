@@ -1,5 +1,6 @@
 import openai
 from ali.clients.base import BaseLLMClient
+from ali.clients._retry import with_retry
 from shared.schemas import ModelTier
 from shared.config import OPENAI_API_KEY, OPENAI_SMALL_MODEL, OPENAI_LARGE_MODEL
 
@@ -34,13 +35,16 @@ class OpenAISmallClient(BaseLLMClient):
         return 0.000150  # gpt-4o-mini: $0.150 per 1M input tokens
 
     async def complete(self, prompt: str, system: str = "", max_tokens: int = 512) -> str:
-        response = await _get_client().chat.completions.create(
-            model=self.model_name,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            max_completion_tokens=max_tokens,
+        response = await with_retry(
+            lambda: _get_client().chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                max_completion_tokens=max_tokens,
+            ),
+            label=f"openai.{self.model_name}",
         )
         return response.choices[0].message.content
 
@@ -77,13 +81,16 @@ class OpenAILargeClient(BaseLLMClient):
         return 0.002500  # gpt-4o: $2.50 per 1M input tokens
 
     async def complete(self, prompt: str, system: str = "", max_tokens: int = 16384) -> str:
-        response = await _get_client().chat.completions.create(
-            model=self.model_name,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            max_completion_tokens=max_tokens,
+        response = await with_retry(
+            lambda: _get_client().chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                max_completion_tokens=max_tokens,
+            ),
+            label=f"openai.{self.model_name}",
         )
         return response.choices[0].message.content
 
